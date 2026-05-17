@@ -338,26 +338,6 @@ git diff
 
 确认没有改到别人文件，再提交。
 
-## 每日同步建议
-
-每天结束前，每个人在群里发 4 行：
-
-```text
-今天分支：
-完成内容：
-改动文件：
-明天计划：
-```
-
-示例：
-
-```text
-今天分支：feature/b-route-scoring
-完成内容：增加路线评分维度和三目标权重
-改动文件：route_service.py, scoring_service.py, route.py
-明天计划：接动态重规划
-```
-
 ## 推荐节奏
 
 ```text
