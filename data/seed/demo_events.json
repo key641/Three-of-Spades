@@ -1,0 +1,19 @@
+[
+  {
+    "event_type": "queue_spike",
+    "event_label": "餐厅排队 90 分钟",
+    "affected_category": "restaurant",
+    "queue_minutes": 90
+  },
+  {
+    "event_type": "traffic_jam",
+    "event_label": "路上交通拥堵",
+    "traffic_multiplier": 1.6
+  },
+  {
+    "event_type": "user_tired",
+    "event_label": "我们有点累了",
+    "preference_change": ["少走路", "室内休息"]
+  }
+]
+

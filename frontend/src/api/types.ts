@@ -1,0 +1,49 @@
+export interface AgentTraceStep {
+  step: string;
+  label: string;
+  status: string;
+}
+
+export interface RouteStop {
+  poi_id: string;
+  name: string;
+  category: string;
+  start_time: string;
+  end_time: string;
+  estimated_cost: number;
+  queue_minutes: number;
+  tags: string[];
+}
+
+export interface RouteScoreBreakdown {
+  quality: number;
+  queue: number;
+  budget: number;
+  distance: number;
+  preference: number;
+}
+
+export interface Route {
+  route_id: string;
+  title: string;
+  objective: string;
+  summary: string;
+  total_duration_minutes: number;
+  total_cost_per_person: number;
+  total_queue_minutes: number;
+  score: number;
+  score_breakdown: RouteScoreBreakdown;
+  stops: RouteStop[];
+  reasons: string[];
+  replan_reason?: string | null;
+}
+
+export interface ChatResponse {
+  session_id: string;
+  message: string;
+  need_clarification: boolean;
+  clarifying_question?: string | null;
+  routes: Route[];
+  agent_trace: AgentTraceStep[];
+}
+

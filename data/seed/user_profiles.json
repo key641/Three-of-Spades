@@ -1,0 +1,14 @@
+[
+  {
+    "user_id": "user_demo",
+    "tags": ["少排队", "吃好", "citywalk"],
+    "preference_weights": {
+      "quality": 0.3,
+      "queue": 0.25,
+      "distance": 0.2,
+      "budget": 0.15,
+      "preference": 0.1
+    }
+  }
+]
+
