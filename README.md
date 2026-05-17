@@ -50,6 +50,13 @@ pip install -r requirements.txt
 uvicorn app.main:app --reload --port 8000
 ```
 
+如果不想激活虚拟环境，也可以直接使用虚拟环境里的 Python：
+
+```bash
+cd backend
+.\.venv\Scripts\python.exe -m uvicorn app.main:app --reload --port 8000
+```
+
 前端：
 
 ```bash
@@ -59,6 +66,50 @@ npm run dev
 ```
 
 默认前端请求后端地址：`http://localhost:8000`。
+
+## Python 虚拟环境约定
+
+后端统一使用项目内虚拟环境，路径是：
+
+```text
+backend/.venv
+```
+
+推荐 Python 版本：
+
+```text
+Python 3.12.x
+```
+
+第一次拉取项目后，每位同学执行：
+
+```bash
+cd backend
+python -m venv .venv
+.\.venv\Scripts\activate
+pip install -r requirements.txt
+```
+
+之后每次开发后端前，先激活虚拟环境：
+
+```bash
+cd backend
+.\.venv\Scripts\activate
+```
+
+VS Code 里请选择这个解释器：
+
+```text
+D:\Document\New project\backend\.venv\Scripts\python.exe
+```
+
+如果项目路径不同，就选择自己本机项目目录下的：
+
+```text
+backend\.venv\Scripts\python.exe
+```
+
+不要直接使用全局 Python 环境开发后端，否则可能遇到 `pydantic`、`uvicorn`、`httpx` 等依赖版本冲突。
 
 ## 每个人重点看哪些文件
 
@@ -191,6 +242,7 @@ frontend/src/components/ChatPanel.tsx
 | `docs/architecture.md` | 工程架构说明 |
 | `docs/team_plan.md` | 三人分工和三周计划 |
 | `docs/ai_coding_guide.md` | AI coding 协作与执行指南 |
+| `docs/git_workflow.md` | Git 版本管理与团队协作指南 |
 | `docs/api_contract.md` | API 契约 |
 | `backend/README.md` | 后端说明 |
 | `frontend/README.md` | 前端说明 |

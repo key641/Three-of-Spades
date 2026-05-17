@@ -26,7 +26,36 @@ FastAPI 后端负责：
 ## 本地启动
 
 ```bash
+python -m venv .venv
+.\.venv\Scripts\activate
 pip install -r requirements.txt
 uvicorn app.main:app --reload --port 8000
 ```
 
+也可以不激活虚拟环境，直接运行：
+
+```bash
+.\.venv\Scripts\python.exe -m uvicorn app.main:app --reload --port 8000
+```
+
+## 虚拟环境说明
+
+后端统一使用项目内虚拟环境：
+
+```text
+backend/.venv
+```
+
+推荐 Python 版本：
+
+```text
+Python 3.12.x
+```
+
+VS Code 里请选择：
+
+```text
+backend\.venv\Scripts\python.exe
+```
+
+不要使用全局 Python 环境直接开发后端，避免和本机其他项目的依赖版本冲突。

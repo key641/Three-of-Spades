@@ -162,11 +162,34 @@
 
 ## 每个人的每日最小验证
 
+后端同学统一使用虚拟环境执行命令。第一次拉取项目后先运行：
+
+```bash
+cd backend
+python -m venv .venv
+.\.venv\Scripts\activate
+pip install -r requirements.txt
+```
+
+之后每次开发前激活：
+
+```bash
+cd backend
+.\.venv\Scripts\activate
+```
+
+也可以直接用：
+
+```bash
+cd backend
+.\.venv\Scripts\python.exe -m compileall app
+```
+
 ### A 验证
 
 ```bash
 cd backend
-python -m compileall app
+.\.venv\Scripts\python.exe -m compileall app
 ```
 
 然后请求：
@@ -186,7 +209,7 @@ POST http://127.0.0.1:8000/api/chat
 
 ```bash
 cd backend
-python -m compileall app
+.\.venv\Scripts\python.exe -m compileall app
 ```
 
 重点确认：
@@ -255,4 +278,3 @@ npm run build
 3. 是否把异常情况考虑进去。
 4. 是否有明显写死到 demo case 的逻辑。
 5. 是否还能通过对应验证命令。
-
