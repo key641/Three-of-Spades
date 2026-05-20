@@ -1,14 +1,6931 @@
-[
-  {
-    "user_id": "user_demo",
-    "tags": ["少排队", "吃好", "citywalk"],
-    "preference_weights": {
-      "quality": 0.3,
-      "queue": 0.25,
-      "distance": 0.2,
-      "budget": 0.15,
-      "preference": 0.1
+{
+  "schema_version": "1.0.0",
+  "description": "User profile mock data aligned with 字段设计.xlsx; preference value/confidence and travel_style are simplified for MVP.",
+  "score_convention": "Unless a field is a count, price, time, rating, distance, or coordinate, preference and suitability scores use a 0 to 1 range.",
+  "users": [
+    {
+      "user_id": "user_001",
+      "name": "林悦",
+      "basic_profile": {
+        "home_city": "上海",
+        "age_group": "25-34",
+        "mobility": "normal",
+        "dietary_restrictions": [],
+        "default_start_location": {
+          "name": "人民广场",
+          "lat": 31.2304,
+          "lng": 121.4737
+        }
+      },
+      "preference_profile": {
+        "budget_sensitivity": 0.52,
+        "walking_tolerance": 0.38,
+        "crowd_tolerance": 0.27,
+        "schedule_tightness": 0.47,
+        "novelty_preference": 0.53,
+        "comfort_preference": 0.59
+      },
+      "category_preferences": {
+        "museum": 0.4,
+        "restaurant": 0.47,
+        "shopping": 0.22,
+        "landmark": 0.38,
+        "cafe": 0.38,
+        "night_view": 0.32
+      },
+      "history_behavior": {
+        "liked_poi_ids": [
+          "poi_004",
+          "poi_011",
+          "poi_023"
+        ],
+        "disliked_poi_ids": [
+          "poi_012"
+        ],
+        "skipped_categories": [],
+        "common_adjust_actions": [
+          "more_relaxed",
+          "less_walking",
+          "lower_cost"
+        ]
+      },
+      "current_trip": {
+        "group_type": "couple",
+        "children_ages": [],
+        "start_location": {
+          "name": "人民广场地铁站",
+          "lat": 31.2304,
+          "lng": 121.4737
+        },
+        "time_window": {
+          "start": "09:00",
+          "end": "17:30"
+        },
+        "budget_total": 217,
+        "constraints": {
+          "indoor_only": false,
+          "no_queue": false,
+          "max_walking_min": 20,
+          "special_needs": []
+        },
+        "soft_preferences": {
+          "prefer_tags": [
+            "拍照",
+            "小众",
+            "文艺",
+            "夜景"
+          ],
+          "avoid_tags": [
+            "排队",
+            "商业化"
+          ]
+        },
+        "intent_confidence": 0.61,
+        "missing_params": []
+      }
+    },
+    {
+      "user_id": "user_002",
+      "name": "周明一家",
+      "basic_profile": {
+        "home_city": "杭州",
+        "age_group": "35-44",
+        "mobility": "elderly_friendly",
+        "dietary_restrictions": [
+          "no_spicy"
+        ],
+        "default_start_location": {
+          "name": "上海虹桥站",
+          "lat": 31.1947,
+          "lng": 121.3188
+        }
+      },
+      "preference_profile": {
+        "budget_sensitivity": 0.69,
+        "walking_tolerance": 0.51,
+        "crowd_tolerance": 0.34,
+        "schedule_tightness": 0.66,
+        "novelty_preference": 0.76,
+        "comfort_preference": 0.88
+      },
+      "category_preferences": {
+        "museum": 0.45,
+        "restaurant": 0.56,
+        "shopping": 0.26,
+        "landmark": 0.44,
+        "cafe": 0.46,
+        "night_view": 0.44
+      },
+      "history_behavior": {
+        "liked_poi_ids": [
+          "poi_007",
+          "poi_014",
+          "poi_026"
+        ],
+        "disliked_poi_ids": [
+          "poi_023"
+        ],
+        "skipped_categories": [],
+        "common_adjust_actions": [
+          "more_food",
+          "replace_poi",
+          "more_landmarks"
+        ]
+      },
+      "current_trip": {
+        "group_type": "family",
+        "children_ages": [
+          6,
+          9
+        ],
+        "start_location": {
+          "name": "上海虹桥站地铁站",
+          "lat": 31.1947,
+          "lng": 121.3188
+        },
+        "time_window": {
+          "start": "10:00",
+          "end": "19:30"
+        },
+        "budget_total": 254,
+        "constraints": {
+          "indoor_only": false,
+          "no_queue": false,
+          "max_walking_min": 25,
+          "special_needs": [
+            "baby_friendly"
+          ]
+        },
+        "soft_preferences": {
+          "prefer_tags": [
+            "亲子",
+            "室内",
+            "互动体验",
+            "儿童友好"
+          ],
+          "avoid_tags": [
+            "夜游",
+            "楼梯多",
+            "嘈杂"
+          ]
+        },
+        "intent_confidence": 0.65,
+        "missing_params": []
+      }
+    },
+    {
+      "user_id": "user_003",
+      "name": "陈野",
+      "basic_profile": {
+        "home_city": "苏州",
+        "age_group": "18-24",
+        "mobility": "normal",
+        "dietary_restrictions": [
+          "vegetarian"
+        ],
+        "default_start_location": {
+          "name": "徐家汇",
+          "lat": 31.1906,
+          "lng": 121.4369
+        }
+      },
+      "preference_profile": {
+        "budget_sensitivity": 0.86,
+        "walking_tolerance": 0.64,
+        "crowd_tolerance": 0.41,
+        "schedule_tightness": 0.85,
+        "novelty_preference": 0.34,
+        "comfort_preference": 0.52
+      },
+      "category_preferences": {
+        "museum": 0.5,
+        "restaurant": 0.65,
+        "shopping": 0.3,
+        "landmark": 0.5,
+        "cafe": 0.54,
+        "night_view": 0.56
+      },
+      "history_behavior": {
+        "liked_poi_ids": [
+          "poi_010",
+          "poi_017",
+          "poi_029"
+        ],
+        "disliked_poi_ids": [
+          "poi_034"
+        ],
+        "skipped_categories": [],
+        "common_adjust_actions": [
+          "less_walking",
+          "lower_cost",
+          "avoid_crowd"
+        ]
+      },
+      "current_trip": {
+        "group_type": "friends",
+        "children_ages": [],
+        "start_location": {
+          "name": "徐家汇地铁站",
+          "lat": 31.1906,
+          "lng": 121.4369
+        },
+        "time_window": {
+          "start": "11:00",
+          "end": "21:30"
+        },
+        "budget_total": 291,
+        "constraints": {
+          "indoor_only": false,
+          "no_queue": true,
+          "max_walking_min": 30,
+          "special_needs": [
+            "no_stairs"
+          ]
+        },
+        "soft_preferences": {
+          "prefer_tags": [
+            "高性价比",
+            "咖啡",
+            "安静",
+            "自然"
+          ],
+          "avoid_tags": [
+            "高价",
+            "预约困难"
+          ]
+        },
+        "intent_confidence": 0.68,
+        "missing_params": []
+      }
+    },
+    {
+      "user_id": "user_004",
+      "name": "顾南",
+      "basic_profile": {
+        "home_city": "南京",
+        "age_group": "25-34",
+        "mobility": "normal",
+        "dietary_restrictions": [
+          "halal"
+        ],
+        "default_start_location": {
+          "name": "陆家嘴",
+          "lat": 31.2381,
+          "lng": 121.4998
+        }
+      },
+      "preference_profile": {
+        "budget_sensitivity": 0.48,
+        "walking_tolerance": 0.77,
+        "crowd_tolerance": 0.48,
+        "schedule_tightness": 0.44,
+        "novelty_preference": 0.57,
+        "comfort_preference": 0.81
+      },
+      "category_preferences": {
+        "museum": 0.55,
+        "restaurant": 0.74,
+        "shopping": 0.34,
+        "landmark": 0.56,
+        "cafe": 0.62,
+        "night_view": 0.68
+      },
+      "history_behavior": {
+        "liked_poi_ids": [
+          "poi_013",
+          "poi_020",
+          "poi_032"
+        ],
+        "disliked_poi_ids": [
+          "poi_045"
+        ],
+        "skipped_categories": [],
+        "common_adjust_actions": [
+          "replace_poi",
+          "more_landmarks",
+          "more_relaxed"
+        ]
+      },
+      "current_trip": {
+        "group_type": "solo",
+        "children_ages": [],
+        "start_location": {
+          "name": "陆家嘴地铁站",
+          "lat": 31.2381,
+          "lng": 121.4998
+        },
+        "time_window": {
+          "start": "12:00",
+          "end": "19:30"
+        },
+        "budget_total": 328,
+        "constraints": {
+          "indoor_only": false,
+          "no_queue": false,
+          "max_walking_min": 35,
+          "special_needs": [
+            "wheelchair"
+          ]
+        },
+        "soft_preferences": {
+          "prefer_tags": [
+            "历史",
+            "经典",
+            "本帮菜",
+            "现代"
+          ],
+          "avoid_tags": [
+            "人流密集",
+            "步行多"
+          ]
+        },
+        "intent_confidence": 0.72,
+        "missing_params": []
+      }
+    },
+    {
+      "user_id": "user_005",
+      "name": "许知夏",
+      "basic_profile": {
+        "home_city": "北京",
+        "age_group": "45-54",
+        "mobility": "limited",
+        "dietary_restrictions": [
+          "no_spicy",
+          "light_meal"
+        ],
+        "default_start_location": {
+          "name": "静安寺",
+          "lat": 31.2231,
+          "lng": 121.4453
+        }
+      },
+      "preference_profile": {
+        "budget_sensitivity": 0.65,
+        "walking_tolerance": 0.25,
+        "crowd_tolerance": 0.55,
+        "schedule_tightness": 0.63,
+        "novelty_preference": 0.8,
+        "comfort_preference": 0.45
+      },
+      "category_preferences": {
+        "museum": 0.6,
+        "restaurant": 0.83,
+        "shopping": 0.38,
+        "landmark": 0.62,
+        "cafe": 0.7,
+        "night_view": 0.8
+      },
+      "history_behavior": {
+        "liked_poi_ids": [
+          "poi_016",
+          "poi_023",
+          "poi_035"
+        ],
+        "disliked_poi_ids": [
+          "poi_056"
+        ],
+        "skipped_categories": [
+          "shopping"
+        ],
+        "common_adjust_actions": [
+          "lower_cost",
+          "avoid_crowd",
+          "more_food"
+        ]
+      },
+      "current_trip": {
+        "group_type": "couple",
+        "children_ages": [],
+        "start_location": {
+          "name": "静安寺地铁站",
+          "lat": 31.2231,
+          "lng": 121.4453
+        },
+        "time_window": {
+          "start": "13:00",
+          "end": "21:30"
+        },
+        "budget_total": 365,
+        "constraints": {
+          "indoor_only": false,
+          "no_queue": false,
+          "max_walking_min": 40,
+          "special_needs": [
+            "pet_friendly"
+          ]
+        },
+        "soft_preferences": {
+          "prefer_tags": [
+            "展览",
+            "艺术",
+            "雨天",
+            "轻食"
+          ],
+          "avoid_tags": [
+            "雨天不便",
+            "停车难"
+          ]
+        },
+        "intent_confidence": 0.75,
+        "missing_params": []
+      }
+    },
+    {
+      "user_id": "user_006",
+      "name": "王予安",
+      "basic_profile": {
+        "home_city": "广州",
+        "age_group": "35-44",
+        "mobility": "normal",
+        "dietary_restrictions": [
+          "vegetarian",
+          "no_loud_noise"
+        ],
+        "default_start_location": {
+          "name": "南京东路",
+          "lat": 31.2358,
+          "lng": 121.4816
+        }
+      },
+      "preference_profile": {
+        "budget_sensitivity": 0.82,
+        "walking_tolerance": 0.38,
+        "crowd_tolerance": 0.62,
+        "schedule_tightness": 0.82,
+        "novelty_preference": 0.38,
+        "comfort_preference": 0.74
+      },
+      "category_preferences": {
+        "museum": 0.65,
+        "restaurant": 0.92,
+        "shopping": 0.42,
+        "landmark": 0.68,
+        "cafe": 0.78,
+        "night_view": 0.27
+      },
+      "history_behavior": {
+        "liked_poi_ids": [
+          "poi_019",
+          "poi_026",
+          "poi_038"
+        ],
+        "disliked_poi_ids": [
+          "poi_067"
+        ],
+        "skipped_categories": [],
+        "common_adjust_actions": [
+          "more_landmarks",
+          "more_relaxed",
+          "less_walking"
+        ]
+      },
+      "current_trip": {
+        "group_type": "family",
+        "children_ages": [
+          10,
+          7
+        ],
+        "start_location": {
+          "name": "南京东路地铁站",
+          "lat": 31.2358,
+          "lng": 121.4816
+        },
+        "time_window": {
+          "start": "08:00",
+          "end": "17:30"
+        },
+        "budget_total": 402,
+        "constraints": {
+          "indoor_only": true,
+          "no_queue": true,
+          "max_walking_min": 45,
+          "special_needs": [
+            "no_loud_noise"
+          ]
+        },
+        "soft_preferences": {
+          "prefer_tags": [
+            "免费",
+            "亲水",
+            "老字号",
+            "开阔"
+          ],
+          "avoid_tags": [
+            "排队",
+            "商业化"
+          ]
+        },
+        "intent_confidence": 0.6,
+        "missing_params": []
+      }
+    },
+    {
+      "user_id": "user_007",
+      "name": "沈星河",
+      "basic_profile": {
+        "home_city": "深圳",
+        "age_group": "25-34",
+        "mobility": "normal",
+        "dietary_restrictions": [],
+        "default_start_location": {
+          "name": "上海南站",
+          "lat": 31.1547,
+          "lng": 121.4294
+        }
+      },
+      "preference_profile": {
+        "budget_sensitivity": 0.44,
+        "walking_tolerance": 0.51,
+        "crowd_tolerance": 0.69,
+        "schedule_tightness": 0.41,
+        "novelty_preference": 0.61,
+        "comfort_preference": 0.38
+      },
+      "category_preferences": {
+        "museum": 0.7,
+        "restaurant": 0.46,
+        "shopping": 0.46,
+        "landmark": 0.74,
+        "cafe": 0.86,
+        "night_view": 0.39
+      },
+      "history_behavior": {
+        "liked_poi_ids": [
+          "poi_022",
+          "poi_029",
+          "poi_041"
+        ],
+        "disliked_poi_ids": [
+          "poi_078"
+        ],
+        "skipped_categories": [
+          "night_view"
+        ],
+        "common_adjust_actions": [
+          "avoid_crowd",
+          "more_food",
+          "replace_poi"
+        ]
+      },
+      "current_trip": {
+        "group_type": "friends",
+        "children_ages": [],
+        "start_location": {
+          "name": "上海南站地铁站",
+          "lat": 31.1547,
+          "lng": 121.4294
+        },
+        "time_window": {
+          "start": "09:00",
+          "end": "19:30"
+        },
+        "budget_total": 439,
+        "constraints": {
+          "indoor_only": false,
+          "no_queue": false,
+          "max_walking_min": 50,
+          "special_needs": []
+        },
+        "soft_preferences": {
+          "prefer_tags": [
+            "拍照",
+            "小众",
+            "文艺",
+            "夜景"
+          ],
+          "avoid_tags": [
+            "夜游",
+            "楼梯多",
+            "嘈杂"
+          ]
+        },
+        "intent_confidence": 0.64,
+        "missing_params": []
+      }
+    },
+    {
+      "user_id": "user_008",
+      "name": "赵晨",
+      "basic_profile": {
+        "home_city": "成都",
+        "age_group": "18-24",
+        "mobility": "normal",
+        "dietary_restrictions": [
+          "no_spicy"
+        ],
+        "default_start_location": {
+          "name": "中山公园",
+          "lat": 31.2202,
+          "lng": 121.4159
+        }
+      },
+      "preference_profile": {
+        "budget_sensitivity": 0.61,
+        "walking_tolerance": 0.64,
+        "crowd_tolerance": 0.76,
+        "schedule_tightness": 0.6,
+        "novelty_preference": 0.84,
+        "comfort_preference": 0.67
+      },
+      "category_preferences": {
+        "museum": 0.75,
+        "restaurant": 0.55,
+        "shopping": 0.5,
+        "landmark": 0.8,
+        "cafe": 0.34,
+        "night_view": 0.51
+      },
+      "history_behavior": {
+        "liked_poi_ids": [
+          "poi_025",
+          "poi_032",
+          "poi_044"
+        ],
+        "disliked_poi_ids": [
+          "poi_009"
+        ],
+        "skipped_categories": [],
+        "common_adjust_actions": [
+          "more_relaxed",
+          "less_walking",
+          "lower_cost"
+        ]
+      },
+      "current_trip": {
+        "group_type": "solo",
+        "children_ages": [],
+        "start_location": {
+          "name": "中山公园地铁站",
+          "lat": 31.2202,
+          "lng": 121.4159
+        },
+        "time_window": {
+          "start": "10:00",
+          "end": "17:30"
+        },
+        "budget_total": 476,
+        "constraints": {
+          "indoor_only": false,
+          "no_queue": false,
+          "max_walking_min": 55,
+          "special_needs": [
+            "baby_friendly"
+          ]
+        },
+        "soft_preferences": {
+          "prefer_tags": [
+            "亲子",
+            "室内",
+            "互动体验",
+            "儿童友好"
+          ],
+          "avoid_tags": [
+            "高价",
+            "预约困难"
+          ]
+        },
+        "intent_confidence": 0.67,
+        "missing_params": []
+      }
+    },
+    {
+      "user_id": "user_009",
+      "name": "李思源",
+      "basic_profile": {
+        "home_city": "上海",
+        "age_group": "25-34",
+        "mobility": "normal",
+        "dietary_restrictions": [
+          "vegetarian"
+        ],
+        "default_start_location": {
+          "name": "人民广场",
+          "lat": 31.2304,
+          "lng": 121.4737
+        }
+      },
+      "preference_profile": {
+        "budget_sensitivity": 0.78,
+        "walking_tolerance": 0.77,
+        "crowd_tolerance": 0.83,
+        "schedule_tightness": 0.79,
+        "novelty_preference": 0.42,
+        "comfort_preference": 0.31
+      },
+      "category_preferences": {
+        "museum": 0.8,
+        "restaurant": 0.64,
+        "shopping": 0.54,
+        "landmark": 0.86,
+        "cafe": 0.42,
+        "night_view": 0.63
+      },
+      "history_behavior": {
+        "liked_poi_ids": [
+          "poi_028",
+          "poi_035",
+          "poi_047"
+        ],
+        "disliked_poi_ids": [
+          "poi_020"
+        ],
+        "skipped_categories": [],
+        "common_adjust_actions": [
+          "more_food",
+          "replace_poi",
+          "more_landmarks"
+        ]
+      },
+      "current_trip": {
+        "group_type": "couple",
+        "children_ages": [],
+        "start_location": {
+          "name": "人民广场地铁站",
+          "lat": 31.2304,
+          "lng": 121.4737
+        },
+        "time_window": {
+          "start": "11:00",
+          "end": "19:30"
+        },
+        "budget_total": 513,
+        "constraints": {
+          "indoor_only": false,
+          "no_queue": true,
+          "max_walking_min": 15,
+          "special_needs": [
+            "no_stairs"
+          ]
+        },
+        "soft_preferences": {
+          "prefer_tags": [
+            "高性价比",
+            "咖啡",
+            "安静",
+            "自然"
+          ],
+          "avoid_tags": [
+            "人流密集",
+            "步行多"
+          ]
+        },
+        "intent_confidence": 0.71,
+        "missing_params": [
+          "dinner_preference"
+        ]
+      }
+    },
+    {
+      "user_id": "user_010",
+      "name": "何安宁",
+      "basic_profile": {
+        "home_city": "杭州",
+        "age_group": "35-44",
+        "mobility": "elderly_friendly",
+        "dietary_restrictions": [
+          "halal"
+        ],
+        "default_start_location": {
+          "name": "上海虹桥站",
+          "lat": 31.1947,
+          "lng": 121.3188
+        }
+      },
+      "preference_profile": {
+        "budget_sensitivity": 0.4,
+        "walking_tolerance": 0.25,
+        "crowd_tolerance": 0.25,
+        "schedule_tightness": 0.38,
+        "novelty_preference": 0.65,
+        "comfort_preference": 0.6
+      },
+      "category_preferences": {
+        "museum": 0.85,
+        "restaurant": 0.73,
+        "shopping": 0.58,
+        "landmark": 0.34,
+        "cafe": 0.5,
+        "night_view": 0.75
+      },
+      "history_behavior": {
+        "liked_poi_ids": [
+          "poi_031",
+          "poi_038",
+          "poi_050"
+        ],
+        "disliked_poi_ids": [
+          "poi_031"
+        ],
+        "skipped_categories": [
+          "shopping"
+        ],
+        "common_adjust_actions": [
+          "less_walking",
+          "lower_cost",
+          "avoid_crowd"
+        ]
+      },
+      "current_trip": {
+        "group_type": "family",
+        "children_ages": [
+          6,
+          11
+        ],
+        "start_location": {
+          "name": "上海虹桥站地铁站",
+          "lat": 31.1947,
+          "lng": 121.3188
+        },
+        "time_window": {
+          "start": "12:00",
+          "end": "21:30"
+        },
+        "budget_total": 550,
+        "constraints": {
+          "indoor_only": false,
+          "no_queue": false,
+          "max_walking_min": 20,
+          "special_needs": [
+            "wheelchair"
+          ]
+        },
+        "soft_preferences": {
+          "prefer_tags": [
+            "历史",
+            "经典",
+            "本帮菜",
+            "现代"
+          ],
+          "avoid_tags": [
+            "雨天不便",
+            "停车难"
+          ]
+        },
+        "intent_confidence": 0.7,
+        "missing_params": []
+      }
+    },
+    {
+      "user_id": "user_011",
+      "name": "唐小满",
+      "basic_profile": {
+        "home_city": "苏州",
+        "age_group": "18-24",
+        "mobility": "normal",
+        "dietary_restrictions": [
+          "no_spicy",
+          "light_meal"
+        ],
+        "default_start_location": {
+          "name": "徐家汇",
+          "lat": 31.1906,
+          "lng": 121.4369
+        }
+      },
+      "preference_profile": {
+        "budget_sensitivity": 0.57,
+        "walking_tolerance": 0.38,
+        "crowd_tolerance": 0.32,
+        "schedule_tightness": 0.57,
+        "novelty_preference": 0.88,
+        "comfort_preference": 0.89
+      },
+      "category_preferences": {
+        "museum": 0.35,
+        "restaurant": 0.82,
+        "shopping": 0.62,
+        "landmark": 0.4,
+        "cafe": 0.58,
+        "night_view": 0.22
+      },
+      "history_behavior": {
+        "liked_poi_ids": [
+          "poi_034",
+          "poi_041",
+          "poi_053"
+        ],
+        "disliked_poi_ids": [
+          "poi_042"
+        ],
+        "skipped_categories": [],
+        "common_adjust_actions": [
+          "replace_poi",
+          "more_landmarks",
+          "more_relaxed"
+        ]
+      },
+      "current_trip": {
+        "group_type": "friends",
+        "children_ages": [],
+        "start_location": {
+          "name": "徐家汇地铁站",
+          "lat": 31.1906,
+          "lng": 121.4369
+        },
+        "time_window": {
+          "start": "13:00",
+          "end": "23:30"
+        },
+        "budget_total": 587,
+        "constraints": {
+          "indoor_only": false,
+          "no_queue": false,
+          "max_walking_min": 25,
+          "special_needs": [
+            "pet_friendly"
+          ]
+        },
+        "soft_preferences": {
+          "prefer_tags": [
+            "展览",
+            "艺术",
+            "雨天",
+            "轻食"
+          ],
+          "avoid_tags": [
+            "排队",
+            "商业化"
+          ]
+        },
+        "intent_confidence": 0.73,
+        "missing_params": []
+      }
+    },
+    {
+      "user_id": "user_012",
+      "name": "宋亦然",
+      "basic_profile": {
+        "home_city": "南京",
+        "age_group": "25-34",
+        "mobility": "normal",
+        "dietary_restrictions": [
+          "vegetarian",
+          "no_loud_noise"
+        ],
+        "default_start_location": {
+          "name": "陆家嘴",
+          "lat": 31.2381,
+          "lng": 121.4998
+        }
+      },
+      "preference_profile": {
+        "budget_sensitivity": 0.74,
+        "walking_tolerance": 0.51,
+        "crowd_tolerance": 0.39,
+        "schedule_tightness": 0.76,
+        "novelty_preference": 0.46,
+        "comfort_preference": 0.53
+      },
+      "category_preferences": {
+        "museum": 0.4,
+        "restaurant": 0.91,
+        "shopping": 0.66,
+        "landmark": 0.46,
+        "cafe": 0.66,
+        "night_view": 0.34
+      },
+      "history_behavior": {
+        "liked_poi_ids": [
+          "poi_037",
+          "poi_044",
+          "poi_056"
+        ],
+        "disliked_poi_ids": [
+          "poi_053"
+        ],
+        "skipped_categories": [],
+        "common_adjust_actions": [
+          "lower_cost",
+          "avoid_crowd",
+          "more_food"
+        ]
+      },
+      "current_trip": {
+        "group_type": "solo",
+        "children_ages": [],
+        "start_location": {
+          "name": "陆家嘴地铁站",
+          "lat": 31.2381,
+          "lng": 121.4998
+        },
+        "time_window": {
+          "start": "08:00",
+          "end": "15:30"
+        },
+        "budget_total": 624,
+        "constraints": {
+          "indoor_only": true,
+          "no_queue": true,
+          "max_walking_min": 30,
+          "special_needs": [
+            "no_loud_noise"
+          ]
+        },
+        "soft_preferences": {
+          "prefer_tags": [
+            "免费",
+            "亲水",
+            "老字号",
+            "开阔"
+          ],
+          "avoid_tags": [
+            "夜游",
+            "楼梯多",
+            "嘈杂"
+          ]
+        },
+        "intent_confidence": 0.59,
+        "missing_params": []
+      }
+    },
+    {
+      "user_id": "user_013",
+      "name": "蒋禾",
+      "basic_profile": {
+        "home_city": "北京",
+        "age_group": "45-54",
+        "mobility": "limited",
+        "dietary_restrictions": [],
+        "default_start_location": {
+          "name": "静安寺",
+          "lat": 31.2231,
+          "lng": 121.4453
+        }
+      },
+      "preference_profile": {
+        "budget_sensitivity": 0.36,
+        "walking_tolerance": 0.64,
+        "crowd_tolerance": 0.46,
+        "schedule_tightness": 0.35,
+        "novelty_preference": 0.69,
+        "comfort_preference": 0.82
+      },
+      "category_preferences": {
+        "museum": 0.45,
+        "restaurant": 0.45,
+        "shopping": 0.7,
+        "landmark": 0.52,
+        "cafe": 0.74,
+        "night_view": 0.46
+      },
+      "history_behavior": {
+        "liked_poi_ids": [
+          "poi_040",
+          "poi_047",
+          "poi_059"
+        ],
+        "disliked_poi_ids": [
+          "poi_064"
+        ],
+        "skipped_categories": [],
+        "common_adjust_actions": [
+          "more_landmarks",
+          "more_relaxed",
+          "less_walking"
+        ]
+      },
+      "current_trip": {
+        "group_type": "couple",
+        "children_ages": [],
+        "start_location": {
+          "name": "静安寺地铁站",
+          "lat": 31.2231,
+          "lng": 121.4453
+        },
+        "time_window": {
+          "start": "09:00",
+          "end": "17:30"
+        },
+        "budget_total": 661,
+        "constraints": {
+          "indoor_only": false,
+          "no_queue": false,
+          "max_walking_min": 35,
+          "special_needs": []
+        },
+        "soft_preferences": {
+          "prefer_tags": [
+            "拍照",
+            "小众",
+            "文艺",
+            "夜景"
+          ],
+          "avoid_tags": [
+            "高价",
+            "预约困难"
+          ]
+        },
+        "intent_confidence": 0.62,
+        "missing_params": [
+          "start_location"
+        ]
+      }
+    },
+    {
+      "user_id": "user_014",
+      "name": "韩清",
+      "basic_profile": {
+        "home_city": "广州",
+        "age_group": "35-44",
+        "mobility": "normal",
+        "dietary_restrictions": [
+          "no_spicy"
+        ],
+        "default_start_location": {
+          "name": "南京东路",
+          "lat": 31.2358,
+          "lng": 121.4816
+        }
+      },
+      "preference_profile": {
+        "budget_sensitivity": 0.53,
+        "walking_tolerance": 0.77,
+        "crowd_tolerance": 0.53,
+        "schedule_tightness": 0.54,
+        "novelty_preference": 0.92,
+        "comfort_preference": 0.46
+      },
+      "category_preferences": {
+        "museum": 0.5,
+        "restaurant": 0.54,
+        "shopping": 0.19,
+        "landmark": 0.58,
+        "cafe": 0.82,
+        "night_view": 0.58
+      },
+      "history_behavior": {
+        "liked_poi_ids": [
+          "poi_043",
+          "poi_050",
+          "poi_062"
+        ],
+        "disliked_poi_ids": [
+          "poi_075"
+        ],
+        "skipped_categories": [
+          "night_view"
+        ],
+        "common_adjust_actions": [
+          "avoid_crowd",
+          "more_food",
+          "replace_poi"
+        ]
+      },
+      "current_trip": {
+        "group_type": "family",
+        "children_ages": [
+          10,
+          9
+        ],
+        "start_location": {
+          "name": "南京东路地铁站",
+          "lat": 31.2358,
+          "lng": 121.4816
+        },
+        "time_window": {
+          "start": "10:00",
+          "end": "19:30"
+        },
+        "budget_total": 698,
+        "constraints": {
+          "indoor_only": false,
+          "no_queue": false,
+          "max_walking_min": 40,
+          "special_needs": [
+            "baby_friendly"
+          ]
+        },
+        "soft_preferences": {
+          "prefer_tags": [
+            "亲子",
+            "室内",
+            "互动体验",
+            "儿童友好"
+          ],
+          "avoid_tags": [
+            "人流密集",
+            "步行多"
+          ]
+        },
+        "intent_confidence": 0.66,
+        "missing_params": []
+      }
+    },
+    {
+      "user_id": "user_015",
+      "name": "陆遥",
+      "basic_profile": {
+        "home_city": "深圳",
+        "age_group": "25-34",
+        "mobility": "normal",
+        "dietary_restrictions": [
+          "vegetarian"
+        ],
+        "default_start_location": {
+          "name": "上海南站",
+          "lat": 31.1547,
+          "lng": 121.4294
+        }
+      },
+      "preference_profile": {
+        "budget_sensitivity": 0.7,
+        "walking_tolerance": 0.25,
+        "crowd_tolerance": 0.6,
+        "schedule_tightness": 0.73,
+        "novelty_preference": 0.5,
+        "comfort_preference": 0.75
+      },
+      "category_preferences": {
+        "museum": 0.55,
+        "restaurant": 0.63,
+        "shopping": 0.23,
+        "landmark": 0.64,
+        "cafe": 0.3,
+        "night_view": 0.7
+      },
+      "history_behavior": {
+        "liked_poi_ids": [
+          "poi_046",
+          "poi_053",
+          "poi_065"
+        ],
+        "disliked_poi_ids": [
+          "poi_006"
+        ],
+        "skipped_categories": [
+          "shopping"
+        ],
+        "common_adjust_actions": [
+          "more_relaxed",
+          "less_walking",
+          "lower_cost"
+        ]
+      },
+      "current_trip": {
+        "group_type": "friends",
+        "children_ages": [],
+        "start_location": {
+          "name": "上海南站地铁站",
+          "lat": 31.1547,
+          "lng": 121.4294
+        },
+        "time_window": {
+          "start": "11:00",
+          "end": "21:30"
+        },
+        "budget_total": 735,
+        "constraints": {
+          "indoor_only": false,
+          "no_queue": true,
+          "max_walking_min": 45,
+          "special_needs": [
+            "no_stairs"
+          ]
+        },
+        "soft_preferences": {
+          "prefer_tags": [
+            "高性价比",
+            "咖啡",
+            "安静",
+            "自然"
+          ],
+          "avoid_tags": [
+            "雨天不便",
+            "停车难"
+          ]
+        },
+        "intent_confidence": 0.69,
+        "missing_params": []
+      }
+    },
+    {
+      "user_id": "user_016",
+      "name": "苏念",
+      "basic_profile": {
+        "home_city": "成都",
+        "age_group": "18-24",
+        "mobility": "normal",
+        "dietary_restrictions": [
+          "halal"
+        ],
+        "default_start_location": {
+          "name": "中山公园",
+          "lat": 31.2202,
+          "lng": 121.4159
+        }
+      },
+      "preference_profile": {
+        "budget_sensitivity": 0.87,
+        "walking_tolerance": 0.38,
+        "crowd_tolerance": 0.67,
+        "schedule_tightness": 0.32,
+        "novelty_preference": 0.73,
+        "comfort_preference": 0.39
+      },
+      "category_preferences": {
+        "museum": 0.6,
+        "restaurant": 0.72,
+        "shopping": 0.27,
+        "landmark": 0.7,
+        "cafe": 0.38,
+        "night_view": 0.82
+      },
+      "history_behavior": {
+        "liked_poi_ids": [
+          "poi_049",
+          "poi_056",
+          "poi_068"
+        ],
+        "disliked_poi_ids": [
+          "poi_017"
+        ],
+        "skipped_categories": [],
+        "common_adjust_actions": [
+          "more_food",
+          "replace_poi",
+          "more_landmarks"
+        ]
+      },
+      "current_trip": {
+        "group_type": "solo",
+        "children_ages": [],
+        "start_location": {
+          "name": "中山公园地铁站",
+          "lat": 31.2202,
+          "lng": 121.4159
+        },
+        "time_window": {
+          "start": "12:00",
+          "end": "19:30"
+        },
+        "budget_total": 772,
+        "constraints": {
+          "indoor_only": false,
+          "no_queue": false,
+          "max_walking_min": 50,
+          "special_needs": [
+            "wheelchair"
+          ]
+        },
+        "soft_preferences": {
+          "prefer_tags": [
+            "历史",
+            "经典",
+            "本帮菜",
+            "现代"
+          ],
+          "avoid_tags": [
+            "排队",
+            "商业化"
+          ]
+        },
+        "intent_confidence": 0.72,
+        "missing_params": []
+      }
+    },
+    {
+      "user_id": "user_017",
+      "name": "姜一诺",
+      "basic_profile": {
+        "home_city": "上海",
+        "age_group": "25-34",
+        "mobility": "normal",
+        "dietary_restrictions": [
+          "no_spicy",
+          "light_meal"
+        ],
+        "default_start_location": {
+          "name": "人民广场",
+          "lat": 31.2304,
+          "lng": 121.4737
+        }
+      },
+      "preference_profile": {
+        "budget_sensitivity": 0.49,
+        "walking_tolerance": 0.51,
+        "crowd_tolerance": 0.74,
+        "schedule_tightness": 0.51,
+        "novelty_preference": 0.31,
+        "comfort_preference": 0.68
+      },
+      "category_preferences": {
+        "museum": 0.65,
+        "restaurant": 0.81,
+        "shopping": 0.31,
+        "landmark": 0.76,
+        "cafe": 0.46,
+        "night_view": 0.29
+      },
+      "history_behavior": {
+        "liked_poi_ids": [
+          "poi_052",
+          "poi_059",
+          "poi_071"
+        ],
+        "disliked_poi_ids": [
+          "poi_028"
+        ],
+        "skipped_categories": [],
+        "common_adjust_actions": [
+          "less_walking",
+          "lower_cost",
+          "avoid_crowd"
+        ]
+      },
+      "current_trip": {
+        "group_type": "couple",
+        "children_ages": [],
+        "start_location": {
+          "name": "人民广场地铁站",
+          "lat": 31.2304,
+          "lng": 121.4737
+        },
+        "time_window": {
+          "start": "13:00",
+          "end": "21:30"
+        },
+        "budget_total": 809,
+        "constraints": {
+          "indoor_only": false,
+          "no_queue": false,
+          "max_walking_min": 55,
+          "special_needs": [
+            "pet_friendly"
+          ]
+        },
+        "soft_preferences": {
+          "prefer_tags": [
+            "展览",
+            "艺术",
+            "雨天",
+            "轻食"
+          ],
+          "avoid_tags": [
+            "夜游",
+            "楼梯多",
+            "嘈杂"
+          ]
+        },
+        "intent_confidence": 0.76,
+        "missing_params": []
+      }
+    },
+    {
+      "user_id": "user_018",
+      "name": "马书航",
+      "basic_profile": {
+        "home_city": "杭州",
+        "age_group": "35-44",
+        "mobility": "elderly_friendly",
+        "dietary_restrictions": [
+          "vegetarian",
+          "no_loud_noise"
+        ],
+        "default_start_location": {
+          "name": "上海虹桥站",
+          "lat": 31.1947,
+          "lng": 121.3188
+        }
+      },
+      "preference_profile": {
+        "budget_sensitivity": 0.66,
+        "walking_tolerance": 0.64,
+        "crowd_tolerance": 0.81,
+        "schedule_tightness": 0.7,
+        "novelty_preference": 0.54,
+        "comfort_preference": 0.32
+      },
+      "category_preferences": {
+        "museum": 0.7,
+        "restaurant": 0.9,
+        "shopping": 0.35,
+        "landmark": 0.82,
+        "cafe": 0.54,
+        "night_view": 0.41
+      },
+      "history_behavior": {
+        "liked_poi_ids": [
+          "poi_055",
+          "poi_062",
+          "poi_074"
+        ],
+        "disliked_poi_ids": [
+          "poi_039"
+        ],
+        "skipped_categories": [],
+        "common_adjust_actions": [
+          "replace_poi",
+          "more_landmarks",
+          "more_relaxed"
+        ]
+      },
+      "current_trip": {
+        "group_type": "family",
+        "children_ages": [
+          6,
+          7
+        ],
+        "start_location": {
+          "name": "上海虹桥站地铁站",
+          "lat": 31.1947,
+          "lng": 121.3188
+        },
+        "time_window": {
+          "start": "08:00",
+          "end": "17:30"
+        },
+        "budget_total": 846,
+        "constraints": {
+          "indoor_only": true,
+          "no_queue": true,
+          "max_walking_min": 15,
+          "special_needs": [
+            "no_loud_noise"
+          ]
+        },
+        "soft_preferences": {
+          "prefer_tags": [
+            "免费",
+            "亲水",
+            "老字号",
+            "开阔"
+          ],
+          "avoid_tags": [
+            "高价",
+            "预约困难"
+          ]
+        },
+        "intent_confidence": 0.61,
+        "missing_params": [
+          "dinner_preference"
+        ]
+      }
+    },
+    {
+      "user_id": "user_019",
+      "name": "高晴",
+      "basic_profile": {
+        "home_city": "苏州",
+        "age_group": "18-24",
+        "mobility": "normal",
+        "dietary_restrictions": [],
+        "default_start_location": {
+          "name": "徐家汇",
+          "lat": 31.1906,
+          "lng": 121.4369
+        }
+      },
+      "preference_profile": {
+        "budget_sensitivity": 0.83,
+        "walking_tolerance": 0.77,
+        "crowd_tolerance": 0.23,
+        "schedule_tightness": 0.29,
+        "novelty_preference": 0.77,
+        "comfort_preference": 0.61
+      },
+      "category_preferences": {
+        "museum": 0.75,
+        "restaurant": 0.44,
+        "shopping": 0.39,
+        "landmark": 0.88,
+        "cafe": 0.62,
+        "night_view": 0.53
+      },
+      "history_behavior": {
+        "liked_poi_ids": [
+          "poi_058",
+          "poi_065",
+          "poi_077"
+        ],
+        "disliked_poi_ids": [
+          "poi_050"
+        ],
+        "skipped_categories": [],
+        "common_adjust_actions": [
+          "lower_cost",
+          "avoid_crowd",
+          "more_food"
+        ]
+      },
+      "current_trip": {
+        "group_type": "friends",
+        "children_ages": [],
+        "start_location": {
+          "name": "徐家汇地铁站",
+          "lat": 31.1906,
+          "lng": 121.4369
+        },
+        "time_window": {
+          "start": "09:00",
+          "end": "19:30"
+        },
+        "budget_total": 883,
+        "constraints": {
+          "indoor_only": false,
+          "no_queue": false,
+          "max_walking_min": 20,
+          "special_needs": []
+        },
+        "soft_preferences": {
+          "prefer_tags": [
+            "拍照",
+            "小众",
+            "文艺",
+            "夜景"
+          ],
+          "avoid_tags": [
+            "人流密集",
+            "步行多"
+          ]
+        },
+        "intent_confidence": 0.65,
+        "missing_params": []
+      }
+    },
+    {
+      "user_id": "user_020",
+      "name": "程予白",
+      "basic_profile": {
+        "home_city": "南京",
+        "age_group": "25-34",
+        "mobility": "normal",
+        "dietary_restrictions": [
+          "no_spicy"
+        ],
+        "default_start_location": {
+          "name": "陆家嘴",
+          "lat": 31.2381,
+          "lng": 121.4998
+        }
+      },
+      "preference_profile": {
+        "budget_sensitivity": 0.45,
+        "walking_tolerance": 0.25,
+        "crowd_tolerance": 0.3,
+        "schedule_tightness": 0.48,
+        "novelty_preference": 0.35,
+        "comfort_preference": 0.9
+      },
+      "category_preferences": {
+        "museum": 0.8,
+        "restaurant": 0.53,
+        "shopping": 0.43,
+        "landmark": 0.36,
+        "cafe": 0.7,
+        "night_view": 0.65
+      },
+      "history_behavior": {
+        "liked_poi_ids": [
+          "poi_061",
+          "poi_068",
+          "poi_080"
+        ],
+        "disliked_poi_ids": [
+          "poi_061"
+        ],
+        "skipped_categories": [
+          "shopping"
+        ],
+        "common_adjust_actions": [
+          "more_landmarks",
+          "more_relaxed",
+          "less_walking"
+        ]
+      },
+      "current_trip": {
+        "group_type": "solo",
+        "children_ages": [],
+        "start_location": {
+          "name": "陆家嘴地铁站",
+          "lat": 31.2381,
+          "lng": 121.4998
+        },
+        "time_window": {
+          "start": "10:00",
+          "end": "17:30"
+        },
+        "budget_total": 920,
+        "constraints": {
+          "indoor_only": false,
+          "no_queue": false,
+          "max_walking_min": 25,
+          "special_needs": [
+            "baby_friendly"
+          ]
+        },
+        "soft_preferences": {
+          "prefer_tags": [
+            "亲子",
+            "室内",
+            "互动体验",
+            "儿童友好"
+          ],
+          "avoid_tags": [
+            "雨天不便",
+            "停车难"
+          ]
+        },
+        "intent_confidence": 0.64,
+        "missing_params": []
+      }
+    },
+    {
+      "user_id": "user_021",
+      "name": "叶澄",
+      "basic_profile": {
+        "home_city": "北京",
+        "age_group": "45-54",
+        "mobility": "limited",
+        "dietary_restrictions": [
+          "vegetarian"
+        ],
+        "default_start_location": {
+          "name": "静安寺",
+          "lat": 31.2231,
+          "lng": 121.4453
+        }
+      },
+      "preference_profile": {
+        "budget_sensitivity": 0.62,
+        "walking_tolerance": 0.38,
+        "crowd_tolerance": 0.37,
+        "schedule_tightness": 0.67,
+        "novelty_preference": 0.58,
+        "comfort_preference": 0.54
+      },
+      "category_preferences": {
+        "museum": 0.85,
+        "restaurant": 0.62,
+        "shopping": 0.47,
+        "landmark": 0.42,
+        "cafe": 0.78,
+        "night_view": 0.77
+      },
+      "history_behavior": {
+        "liked_poi_ids": [
+          "poi_064",
+          "poi_071",
+          "poi_003"
+        ],
+        "disliked_poi_ids": [
+          "poi_072"
+        ],
+        "skipped_categories": [
+          "night_view"
+        ],
+        "common_adjust_actions": [
+          "avoid_crowd",
+          "more_food",
+          "replace_poi"
+        ]
+      },
+      "current_trip": {
+        "group_type": "couple",
+        "children_ages": [],
+        "start_location": {
+          "name": "静安寺地铁站",
+          "lat": 31.2231,
+          "lng": 121.4453
+        },
+        "time_window": {
+          "start": "11:00",
+          "end": "19:30"
+        },
+        "budget_total": 957,
+        "constraints": {
+          "indoor_only": false,
+          "no_queue": true,
+          "max_walking_min": 30,
+          "special_needs": [
+            "no_stairs"
+          ]
+        },
+        "soft_preferences": {
+          "prefer_tags": [
+            "高性价比",
+            "咖啡",
+            "安静",
+            "自然"
+          ],
+          "avoid_tags": [
+            "排队",
+            "商业化"
+          ]
+        },
+        "intent_confidence": 0.67,
+        "missing_params": []
+      }
+    },
+    {
+      "user_id": "user_022",
+      "name": "罗可",
+      "basic_profile": {
+        "home_city": "广州",
+        "age_group": "35-44",
+        "mobility": "normal",
+        "dietary_restrictions": [
+          "halal"
+        ],
+        "default_start_location": {
+          "name": "南京东路",
+          "lat": 31.2358,
+          "lng": 121.4816
+        }
+      },
+      "preference_profile": {
+        "budget_sensitivity": 0.79,
+        "walking_tolerance": 0.51,
+        "crowd_tolerance": 0.44,
+        "schedule_tightness": 0.86,
+        "novelty_preference": 0.81,
+        "comfort_preference": 0.83
+      },
+      "category_preferences": {
+        "museum": 0.35,
+        "restaurant": 0.71,
+        "shopping": 0.51,
+        "landmark": 0.48,
+        "cafe": 0.86,
+        "night_view": 0.24
+      },
+      "history_behavior": {
+        "liked_poi_ids": [
+          "poi_067",
+          "poi_074",
+          "poi_006"
+        ],
+        "disliked_poi_ids": [
+          "poi_003"
+        ],
+        "skipped_categories": [],
+        "common_adjust_actions": [
+          "more_relaxed",
+          "less_walking",
+          "lower_cost"
+        ]
+      },
+      "current_trip": {
+        "group_type": "family",
+        "children_ages": [
+          10,
+          11
+        ],
+        "start_location": {
+          "name": "南京东路地铁站",
+          "lat": 31.2358,
+          "lng": 121.4816
+        },
+        "time_window": {
+          "start": "12:00",
+          "end": "21:30"
+        },
+        "budget_total": 994,
+        "constraints": {
+          "indoor_only": false,
+          "no_queue": false,
+          "max_walking_min": 35,
+          "special_needs": [
+            "wheelchair"
+          ]
+        },
+        "soft_preferences": {
+          "prefer_tags": [
+            "历史",
+            "经典",
+            "本帮菜",
+            "现代"
+          ],
+          "avoid_tags": [
+            "夜游",
+            "楼梯多",
+            "嘈杂"
+          ]
+        },
+        "intent_confidence": 0.71,
+        "missing_params": []
+      }
+    },
+    {
+      "user_id": "user_023",
+      "name": "秦越",
+      "basic_profile": {
+        "home_city": "深圳",
+        "age_group": "25-34",
+        "mobility": "normal",
+        "dietary_restrictions": [
+          "no_spicy",
+          "light_meal"
+        ],
+        "default_start_location": {
+          "name": "上海南站",
+          "lat": 31.1547,
+          "lng": 121.4294
+        }
+      },
+      "preference_profile": {
+        "budget_sensitivity": 0.41,
+        "walking_tolerance": 0.64,
+        "crowd_tolerance": 0.51,
+        "schedule_tightness": 0.45,
+        "novelty_preference": 0.39,
+        "comfort_preference": 0.47
+      },
+      "category_preferences": {
+        "museum": 0.4,
+        "restaurant": 0.8,
+        "shopping": 0.55,
+        "landmark": 0.54,
+        "cafe": 0.34,
+        "night_view": 0.36
+      },
+      "history_behavior": {
+        "liked_poi_ids": [
+          "poi_070",
+          "poi_077",
+          "poi_009"
+        ],
+        "disliked_poi_ids": [
+          "poi_014"
+        ],
+        "skipped_categories": [],
+        "common_adjust_actions": [
+          "more_food",
+          "replace_poi",
+          "more_landmarks"
+        ]
+      },
+      "current_trip": {
+        "group_type": "friends",
+        "children_ages": [],
+        "start_location": {
+          "name": "上海南站地铁站",
+          "lat": 31.1547,
+          "lng": 121.4294
+        },
+        "time_window": {
+          "start": "13:00",
+          "end": "23:30"
+        },
+        "budget_total": 211,
+        "constraints": {
+          "indoor_only": false,
+          "no_queue": false,
+          "max_walking_min": 40,
+          "special_needs": [
+            "pet_friendly"
+          ]
+        },
+        "soft_preferences": {
+          "prefer_tags": [
+            "展览",
+            "艺术",
+            "雨天",
+            "轻食"
+          ],
+          "avoid_tags": [
+            "高价",
+            "预约困难"
+          ]
+        },
+        "intent_confidence": 0.74,
+        "missing_params": []
+      }
+    },
+    {
+      "user_id": "user_024",
+      "name": "梁知行",
+      "basic_profile": {
+        "home_city": "成都",
+        "age_group": "18-24",
+        "mobility": "normal",
+        "dietary_restrictions": [
+          "vegetarian",
+          "no_loud_noise"
+        ],
+        "default_start_location": {
+          "name": "中山公园",
+          "lat": 31.2202,
+          "lng": 121.4159
+        }
+      },
+      "preference_profile": {
+        "budget_sensitivity": 0.58,
+        "walking_tolerance": 0.77,
+        "crowd_tolerance": 0.58,
+        "schedule_tightness": 0.64,
+        "novelty_preference": 0.62,
+        "comfort_preference": 0.76
+      },
+      "category_preferences": {
+        "museum": 0.45,
+        "restaurant": 0.89,
+        "shopping": 0.59,
+        "landmark": 0.6,
+        "cafe": 0.42,
+        "night_view": 0.48
+      },
+      "history_behavior": {
+        "liked_poi_ids": [
+          "poi_073",
+          "poi_080",
+          "poi_012"
+        ],
+        "disliked_poi_ids": [
+          "poi_025"
+        ],
+        "skipped_categories": [],
+        "common_adjust_actions": [
+          "less_walking",
+          "lower_cost",
+          "avoid_crowd"
+        ]
+      },
+      "current_trip": {
+        "group_type": "solo",
+        "children_ages": [],
+        "start_location": {
+          "name": "中山公园地铁站",
+          "lat": 31.2202,
+          "lng": 121.4159
+        },
+        "time_window": {
+          "start": "08:00",
+          "end": "15:30"
+        },
+        "budget_total": 248,
+        "constraints": {
+          "indoor_only": true,
+          "no_queue": true,
+          "max_walking_min": 45,
+          "special_needs": [
+            "no_loud_noise"
+          ]
+        },
+        "soft_preferences": {
+          "prefer_tags": [
+            "免费",
+            "亲水",
+            "老字号",
+            "开阔"
+          ],
+          "avoid_tags": [
+            "人流密集",
+            "步行多"
+          ]
+        },
+        "intent_confidence": 0.6,
+        "missing_params": []
+      }
+    },
+    {
+      "user_id": "user_025",
+      "name": "谢晚晴",
+      "basic_profile": {
+        "home_city": "上海",
+        "age_group": "25-34",
+        "mobility": "normal",
+        "dietary_restrictions": [],
+        "default_start_location": {
+          "name": "人民广场",
+          "lat": 31.2304,
+          "lng": 121.4737
+        }
+      },
+      "preference_profile": {
+        "budget_sensitivity": 0.75,
+        "walking_tolerance": 0.25,
+        "crowd_tolerance": 0.65,
+        "schedule_tightness": 0.83,
+        "novelty_preference": 0.85,
+        "comfort_preference": 0.4
+      },
+      "category_preferences": {
+        "museum": 0.5,
+        "restaurant": 0.43,
+        "shopping": 0.63,
+        "landmark": 0.66,
+        "cafe": 0.5,
+        "night_view": 0.6
+      },
+      "history_behavior": {
+        "liked_poi_ids": [
+          "poi_076",
+          "poi_003",
+          "poi_015"
+        ],
+        "disliked_poi_ids": [
+          "poi_036"
+        ],
+        "skipped_categories": [
+          "shopping"
+        ],
+        "common_adjust_actions": [
+          "replace_poi",
+          "more_landmarks",
+          "more_relaxed"
+        ]
+      },
+      "current_trip": {
+        "group_type": "couple",
+        "children_ages": [],
+        "start_location": {
+          "name": "人民广场地铁站",
+          "lat": 31.2304,
+          "lng": 121.4737
+        },
+        "time_window": {
+          "start": "09:00",
+          "end": "17:30"
+        },
+        "budget_total": 285,
+        "constraints": {
+          "indoor_only": false,
+          "no_queue": false,
+          "max_walking_min": 50,
+          "special_needs": []
+        },
+        "soft_preferences": {
+          "prefer_tags": [
+            "拍照",
+            "小众",
+            "文艺",
+            "夜景"
+          ],
+          "avoid_tags": [
+            "雨天不便",
+            "停车难"
+          ]
+        },
+        "intent_confidence": 0.63,
+        "missing_params": []
+      }
+    },
+    {
+      "user_id": "user_026",
+      "name": "曹沐",
+      "basic_profile": {
+        "home_city": "杭州",
+        "age_group": "35-44",
+        "mobility": "elderly_friendly",
+        "dietary_restrictions": [
+          "no_spicy"
+        ],
+        "default_start_location": {
+          "name": "上海虹桥站",
+          "lat": 31.1947,
+          "lng": 121.3188
+        }
+      },
+      "preference_profile": {
+        "budget_sensitivity": 0.37,
+        "walking_tolerance": 0.38,
+        "crowd_tolerance": 0.72,
+        "schedule_tightness": 0.42,
+        "novelty_preference": 0.43,
+        "comfort_preference": 0.69
+      },
+      "category_preferences": {
+        "museum": 0.55,
+        "restaurant": 0.52,
+        "shopping": 0.67,
+        "landmark": 0.72,
+        "cafe": 0.58,
+        "night_view": 0.72
+      },
+      "history_behavior": {
+        "liked_poi_ids": [
+          "poi_079",
+          "poi_006",
+          "poi_018"
+        ],
+        "disliked_poi_ids": [
+          "poi_047"
+        ],
+        "skipped_categories": [],
+        "common_adjust_actions": [
+          "lower_cost",
+          "avoid_crowd",
+          "more_food"
+        ]
+      },
+      "current_trip": {
+        "group_type": "family",
+        "children_ages": [
+          6,
+          9
+        ],
+        "start_location": {
+          "name": "上海虹桥站地铁站",
+          "lat": 31.1947,
+          "lng": 121.3188
+        },
+        "time_window": {
+          "start": "10:00",
+          "end": "19:30"
+        },
+        "budget_total": 322,
+        "constraints": {
+          "indoor_only": false,
+          "no_queue": false,
+          "max_walking_min": 55,
+          "special_needs": [
+            "baby_friendly"
+          ]
+        },
+        "soft_preferences": {
+          "prefer_tags": [
+            "亲子",
+            "室内",
+            "互动体验",
+            "儿童友好"
+          ],
+          "avoid_tags": [
+            "排队",
+            "商业化"
+          ]
+        },
+        "intent_confidence": 0.66,
+        "missing_params": [
+          "start_location"
+        ]
+      }
+    },
+    {
+      "user_id": "user_027",
+      "name": "邱禾",
+      "basic_profile": {
+        "home_city": "苏州",
+        "age_group": "18-24",
+        "mobility": "normal",
+        "dietary_restrictions": [
+          "vegetarian"
+        ],
+        "default_start_location": {
+          "name": "徐家汇",
+          "lat": 31.1906,
+          "lng": 121.4369
+        }
+      },
+      "preference_profile": {
+        "budget_sensitivity": 0.54,
+        "walking_tolerance": 0.51,
+        "crowd_tolerance": 0.79,
+        "schedule_tightness": 0.61,
+        "novelty_preference": 0.66,
+        "comfort_preference": 0.33
+      },
+      "category_preferences": {
+        "museum": 0.6,
+        "restaurant": 0.61,
+        "shopping": 0.71,
+        "landmark": 0.78,
+        "cafe": 0.66,
+        "night_view": 0.84
+      },
+      "history_behavior": {
+        "liked_poi_ids": [
+          "poi_002",
+          "poi_009",
+          "poi_021"
+        ],
+        "disliked_poi_ids": [
+          "poi_058"
+        ],
+        "skipped_categories": [],
+        "common_adjust_actions": [
+          "more_landmarks",
+          "more_relaxed",
+          "less_walking"
+        ]
+      },
+      "current_trip": {
+        "group_type": "friends",
+        "children_ages": [],
+        "start_location": {
+          "name": "徐家汇地铁站",
+          "lat": 31.1906,
+          "lng": 121.4369
+        },
+        "time_window": {
+          "start": "11:00",
+          "end": "21:30"
+        },
+        "budget_total": 359,
+        "constraints": {
+          "indoor_only": false,
+          "no_queue": true,
+          "max_walking_min": 15,
+          "special_needs": [
+            "no_stairs"
+          ]
+        },
+        "soft_preferences": {
+          "prefer_tags": [
+            "高性价比",
+            "咖啡",
+            "安静",
+            "自然"
+          ],
+          "avoid_tags": [
+            "夜游",
+            "楼梯多",
+            "嘈杂"
+          ]
+        },
+        "intent_confidence": 0.7,
+        "missing_params": [
+          "dinner_preference"
+        ]
+      }
+    },
+    {
+      "user_id": "user_028",
+      "name": "丁一舟",
+      "basic_profile": {
+        "home_city": "南京",
+        "age_group": "25-34",
+        "mobility": "normal",
+        "dietary_restrictions": [
+          "halal"
+        ],
+        "default_start_location": {
+          "name": "陆家嘴",
+          "lat": 31.2381,
+          "lng": 121.4998
+        }
+      },
+      "preference_profile": {
+        "budget_sensitivity": 0.71,
+        "walking_tolerance": 0.64,
+        "crowd_tolerance": 0.21,
+        "schedule_tightness": 0.8,
+        "novelty_preference": 0.89,
+        "comfort_preference": 0.62
+      },
+      "category_preferences": {
+        "museum": 0.65,
+        "restaurant": 0.7,
+        "shopping": 0.2,
+        "landmark": 0.84,
+        "cafe": 0.74,
+        "night_view": 0.31
+      },
+      "history_behavior": {
+        "liked_poi_ids": [
+          "poi_005",
+          "poi_012",
+          "poi_024"
+        ],
+        "disliked_poi_ids": [
+          "poi_069"
+        ],
+        "skipped_categories": [
+          "night_view"
+        ],
+        "common_adjust_actions": [
+          "avoid_crowd",
+          "more_food",
+          "replace_poi"
+        ]
+      },
+      "current_trip": {
+        "group_type": "solo",
+        "children_ages": [],
+        "start_location": {
+          "name": "陆家嘴地铁站",
+          "lat": 31.2381,
+          "lng": 121.4998
+        },
+        "time_window": {
+          "start": "12:00",
+          "end": "19:30"
+        },
+        "budget_total": 396,
+        "constraints": {
+          "indoor_only": false,
+          "no_queue": false,
+          "max_walking_min": 20,
+          "special_needs": [
+            "wheelchair"
+          ]
+        },
+        "soft_preferences": {
+          "prefer_tags": [
+            "历史",
+            "经典",
+            "本帮菜",
+            "现代"
+          ],
+          "avoid_tags": [
+            "高价",
+            "预约困难"
+          ]
+        },
+        "intent_confidence": 0.73,
+        "missing_params": []
+      }
+    },
+    {
+      "user_id": "user_029",
+      "name": "孟然",
+      "basic_profile": {
+        "home_city": "北京",
+        "age_group": "45-54",
+        "mobility": "limited",
+        "dietary_restrictions": [
+          "no_spicy",
+          "light_meal"
+        ],
+        "default_start_location": {
+          "name": "静安寺",
+          "lat": 31.2231,
+          "lng": 121.4453
+        }
+      },
+      "preference_profile": {
+        "budget_sensitivity": 0.88,
+        "walking_tolerance": 0.77,
+        "crowd_tolerance": 0.28,
+        "schedule_tightness": 0.39,
+        "novelty_preference": 0.47,
+        "comfort_preference": 0.91
+      },
+      "category_preferences": {
+        "museum": 0.7,
+        "restaurant": 0.79,
+        "shopping": 0.24,
+        "landmark": 0.32,
+        "cafe": 0.82,
+        "night_view": 0.43
+      },
+      "history_behavior": {
+        "liked_poi_ids": [
+          "poi_008",
+          "poi_015",
+          "poi_027"
+        ],
+        "disliked_poi_ids": [
+          "poi_080"
+        ],
+        "skipped_categories": [],
+        "common_adjust_actions": [
+          "more_relaxed",
+          "less_walking",
+          "lower_cost"
+        ]
+      },
+      "current_trip": {
+        "group_type": "couple",
+        "children_ages": [],
+        "start_location": {
+          "name": "静安寺地铁站",
+          "lat": 31.2231,
+          "lng": 121.4453
+        },
+        "time_window": {
+          "start": "13:00",
+          "end": "21:30"
+        },
+        "budget_total": 433,
+        "constraints": {
+          "indoor_only": false,
+          "no_queue": false,
+          "max_walking_min": 25,
+          "special_needs": [
+            "pet_friendly"
+          ]
+        },
+        "soft_preferences": {
+          "prefer_tags": [
+            "展览",
+            "艺术",
+            "雨天",
+            "轻食"
+          ],
+          "avoid_tags": [
+            "人流密集",
+            "步行多"
+          ]
+        },
+        "intent_confidence": 0.77,
+        "missing_params": []
+      }
+    },
+    {
+      "user_id": "user_030",
+      "name": "潘月",
+      "basic_profile": {
+        "home_city": "广州",
+        "age_group": "35-44",
+        "mobility": "normal",
+        "dietary_restrictions": [
+          "vegetarian",
+          "no_loud_noise"
+        ],
+        "default_start_location": {
+          "name": "南京东路",
+          "lat": 31.2358,
+          "lng": 121.4816
+        }
+      },
+      "preference_profile": {
+        "budget_sensitivity": 0.5,
+        "walking_tolerance": 0.25,
+        "crowd_tolerance": 0.35,
+        "schedule_tightness": 0.58,
+        "novelty_preference": 0.7,
+        "comfort_preference": 0.55
+      },
+      "category_preferences": {
+        "museum": 0.75,
+        "restaurant": 0.88,
+        "shopping": 0.28,
+        "landmark": 0.38,
+        "cafe": 0.3,
+        "night_view": 0.55
+      },
+      "history_behavior": {
+        "liked_poi_ids": [
+          "poi_011",
+          "poi_018",
+          "poi_030"
+        ],
+        "disliked_poi_ids": [
+          "poi_011"
+        ],
+        "skipped_categories": [
+          "shopping"
+        ],
+        "common_adjust_actions": [
+          "more_food",
+          "replace_poi",
+          "more_landmarks"
+        ]
+      },
+      "current_trip": {
+        "group_type": "family",
+        "children_ages": [
+          10,
+          7
+        ],
+        "start_location": {
+          "name": "南京东路地铁站",
+          "lat": 31.2358,
+          "lng": 121.4816
+        },
+        "time_window": {
+          "start": "08:00",
+          "end": "17:30"
+        },
+        "budget_total": 470,
+        "constraints": {
+          "indoor_only": true,
+          "no_queue": true,
+          "max_walking_min": 30,
+          "special_needs": [
+            "no_loud_noise"
+          ]
+        },
+        "soft_preferences": {
+          "prefer_tags": [
+            "免费",
+            "亲水",
+            "老字号",
+            "开阔"
+          ],
+          "avoid_tags": [
+            "雨天不便",
+            "停车难"
+          ]
+        },
+        "intent_confidence": 0.58,
+        "missing_params": []
+      }
+    },
+    {
+      "user_id": "user_031",
+      "name": "傅宁",
+      "basic_profile": {
+        "home_city": "深圳",
+        "age_group": "25-34",
+        "mobility": "normal",
+        "dietary_restrictions": [],
+        "default_start_location": {
+          "name": "上海南站",
+          "lat": 31.1547,
+          "lng": 121.4294
+        }
+      },
+      "preference_profile": {
+        "budget_sensitivity": 0.67,
+        "walking_tolerance": 0.38,
+        "crowd_tolerance": 0.42,
+        "schedule_tightness": 0.77,
+        "novelty_preference": 0.93,
+        "comfort_preference": 0.84
+      },
+      "category_preferences": {
+        "museum": 0.8,
+        "restaurant": 0.42,
+        "shopping": 0.32,
+        "landmark": 0.44,
+        "cafe": 0.38,
+        "night_view": 0.67
+      },
+      "history_behavior": {
+        "liked_poi_ids": [
+          "poi_014",
+          "poi_021",
+          "poi_033"
+        ],
+        "disliked_poi_ids": [
+          "poi_022"
+        ],
+        "skipped_categories": [],
+        "common_adjust_actions": [
+          "less_walking",
+          "lower_cost",
+          "avoid_crowd"
+        ]
+      },
+      "current_trip": {
+        "group_type": "friends",
+        "children_ages": [],
+        "start_location": {
+          "name": "上海南站地铁站",
+          "lat": 31.1547,
+          "lng": 121.4294
+        },
+        "time_window": {
+          "start": "09:00",
+          "end": "19:30"
+        },
+        "budget_total": 507,
+        "constraints": {
+          "indoor_only": false,
+          "no_queue": false,
+          "max_walking_min": 35,
+          "special_needs": []
+        },
+        "soft_preferences": {
+          "prefer_tags": [
+            "拍照",
+            "小众",
+            "文艺",
+            "夜景"
+          ],
+          "avoid_tags": [
+            "排队",
+            "商业化"
+          ]
+        },
+        "intent_confidence": 0.61,
+        "missing_params": []
+      }
+    },
+    {
+      "user_id": "user_032",
+      "name": "袁可欣",
+      "basic_profile": {
+        "home_city": "成都",
+        "age_group": "18-24",
+        "mobility": "normal",
+        "dietary_restrictions": [
+          "no_spicy"
+        ],
+        "default_start_location": {
+          "name": "中山公园",
+          "lat": 31.2202,
+          "lng": 121.4159
+        }
+      },
+      "preference_profile": {
+        "budget_sensitivity": 0.84,
+        "walking_tolerance": 0.51,
+        "crowd_tolerance": 0.49,
+        "schedule_tightness": 0.36,
+        "novelty_preference": 0.51,
+        "comfort_preference": 0.48
+      },
+      "category_preferences": {
+        "museum": 0.85,
+        "restaurant": 0.51,
+        "shopping": 0.36,
+        "landmark": 0.5,
+        "cafe": 0.46,
+        "night_view": 0.79
+      },
+      "history_behavior": {
+        "liked_poi_ids": [
+          "poi_017",
+          "poi_024",
+          "poi_036"
+        ],
+        "disliked_poi_ids": [
+          "poi_033"
+        ],
+        "skipped_categories": [],
+        "common_adjust_actions": [
+          "replace_poi",
+          "more_landmarks",
+          "more_relaxed"
+        ]
+      },
+      "current_trip": {
+        "group_type": "solo",
+        "children_ages": [],
+        "start_location": {
+          "name": "中山公园地铁站",
+          "lat": 31.2202,
+          "lng": 121.4159
+        },
+        "time_window": {
+          "start": "10:00",
+          "end": "17:30"
+        },
+        "budget_total": 544,
+        "constraints": {
+          "indoor_only": false,
+          "no_queue": false,
+          "max_walking_min": 40,
+          "special_needs": [
+            "baby_friendly"
+          ]
+        },
+        "soft_preferences": {
+          "prefer_tags": [
+            "亲子",
+            "室内",
+            "互动体验",
+            "儿童友好"
+          ],
+          "avoid_tags": [
+            "夜游",
+            "楼梯多",
+            "嘈杂"
+          ]
+        },
+        "intent_confidence": 0.65,
+        "missing_params": []
+      }
+    },
+    {
+      "user_id": "user_033",
+      "name": "林悦2",
+      "basic_profile": {
+        "home_city": "上海",
+        "age_group": "25-34",
+        "mobility": "normal",
+        "dietary_restrictions": [
+          "vegetarian"
+        ],
+        "default_start_location": {
+          "name": "人民广场",
+          "lat": 31.2304,
+          "lng": 121.4737
+        }
+      },
+      "preference_profile": {
+        "budget_sensitivity": 0.46,
+        "walking_tolerance": 0.64,
+        "crowd_tolerance": 0.56,
+        "schedule_tightness": 0.55,
+        "novelty_preference": 0.74,
+        "comfort_preference": 0.77
+      },
+      "category_preferences": {
+        "museum": 0.35,
+        "restaurant": 0.6,
+        "shopping": 0.4,
+        "landmark": 0.56,
+        "cafe": 0.54,
+        "night_view": 0.26
+      },
+      "history_behavior": {
+        "liked_poi_ids": [
+          "poi_020",
+          "poi_027",
+          "poi_039"
+        ],
+        "disliked_poi_ids": [
+          "poi_044"
+        ],
+        "skipped_categories": [],
+        "common_adjust_actions": [
+          "lower_cost",
+          "avoid_crowd",
+          "more_food"
+        ]
+      },
+      "current_trip": {
+        "group_type": "couple",
+        "children_ages": [],
+        "start_location": {
+          "name": "人民广场地铁站",
+          "lat": 31.2304,
+          "lng": 121.4737
+        },
+        "time_window": {
+          "start": "11:00",
+          "end": "19:30"
+        },
+        "budget_total": 581,
+        "constraints": {
+          "indoor_only": false,
+          "no_queue": true,
+          "max_walking_min": 45,
+          "special_needs": [
+            "no_stairs"
+          ]
+        },
+        "soft_preferences": {
+          "prefer_tags": [
+            "高性价比",
+            "咖啡",
+            "安静",
+            "自然"
+          ],
+          "avoid_tags": [
+            "高价",
+            "预约困难"
+          ]
+        },
+        "intent_confidence": 0.68,
+        "missing_params": []
+      }
+    },
+    {
+      "user_id": "user_034",
+      "name": "周明一家2",
+      "basic_profile": {
+        "home_city": "杭州",
+        "age_group": "35-44",
+        "mobility": "elderly_friendly",
+        "dietary_restrictions": [
+          "halal"
+        ],
+        "default_start_location": {
+          "name": "上海虹桥站",
+          "lat": 31.1947,
+          "lng": 121.3188
+        }
+      },
+      "preference_profile": {
+        "budget_sensitivity": 0.63,
+        "walking_tolerance": 0.77,
+        "crowd_tolerance": 0.63,
+        "schedule_tightness": 0.74,
+        "novelty_preference": 0.32,
+        "comfort_preference": 0.41
+      },
+      "category_preferences": {
+        "museum": 0.4,
+        "restaurant": 0.69,
+        "shopping": 0.44,
+        "landmark": 0.62,
+        "cafe": 0.62,
+        "night_view": 0.38
+      },
+      "history_behavior": {
+        "liked_poi_ids": [
+          "poi_023",
+          "poi_030",
+          "poi_042"
+        ],
+        "disliked_poi_ids": [
+          "poi_055"
+        ],
+        "skipped_categories": [],
+        "common_adjust_actions": [
+          "more_landmarks",
+          "more_relaxed",
+          "less_walking"
+        ]
+      },
+      "current_trip": {
+        "group_type": "family",
+        "children_ages": [
+          6,
+          11
+        ],
+        "start_location": {
+          "name": "上海虹桥站地铁站",
+          "lat": 31.1947,
+          "lng": 121.3188
+        },
+        "time_window": {
+          "start": "12:00",
+          "end": "21:30"
+        },
+        "budget_total": 618,
+        "constraints": {
+          "indoor_only": false,
+          "no_queue": false,
+          "max_walking_min": 50,
+          "special_needs": [
+            "wheelchair"
+          ]
+        },
+        "soft_preferences": {
+          "prefer_tags": [
+            "历史",
+            "经典",
+            "本帮菜",
+            "现代"
+          ],
+          "avoid_tags": [
+            "人流密集",
+            "步行多"
+          ]
+        },
+        "intent_confidence": 0.72,
+        "missing_params": []
+      }
+    },
+    {
+      "user_id": "user_035",
+      "name": "陈野2",
+      "basic_profile": {
+        "home_city": "苏州",
+        "age_group": "18-24",
+        "mobility": "normal",
+        "dietary_restrictions": [
+          "no_spicy",
+          "light_meal"
+        ],
+        "default_start_location": {
+          "name": "徐家汇",
+          "lat": 31.1906,
+          "lng": 121.4369
+        }
+      },
+      "preference_profile": {
+        "budget_sensitivity": 0.8,
+        "walking_tolerance": 0.25,
+        "crowd_tolerance": 0.7,
+        "schedule_tightness": 0.33,
+        "novelty_preference": 0.55,
+        "comfort_preference": 0.7
+      },
+      "category_preferences": {
+        "museum": 0.45,
+        "restaurant": 0.78,
+        "shopping": 0.48,
+        "landmark": 0.68,
+        "cafe": 0.7,
+        "night_view": 0.5
+      },
+      "history_behavior": {
+        "liked_poi_ids": [
+          "poi_026",
+          "poi_033",
+          "poi_045"
+        ],
+        "disliked_poi_ids": [
+          "poi_066"
+        ],
+        "skipped_categories": [
+          "shopping"
+        ],
+        "common_adjust_actions": [
+          "avoid_crowd",
+          "more_food",
+          "replace_poi"
+        ]
+      },
+      "current_trip": {
+        "group_type": "friends",
+        "children_ages": [],
+        "start_location": {
+          "name": "徐家汇地铁站",
+          "lat": 31.1906,
+          "lng": 121.4369
+        },
+        "time_window": {
+          "start": "13:00",
+          "end": "23:30"
+        },
+        "budget_total": 655,
+        "constraints": {
+          "indoor_only": false,
+          "no_queue": false,
+          "max_walking_min": 55,
+          "special_needs": [
+            "pet_friendly"
+          ]
+        },
+        "soft_preferences": {
+          "prefer_tags": [
+            "展览",
+            "艺术",
+            "雨天",
+            "轻食"
+          ],
+          "avoid_tags": [
+            "雨天不便",
+            "停车难"
+          ]
+        },
+        "intent_confidence": 0.75,
+        "missing_params": []
+      }
+    },
+    {
+      "user_id": "user_036",
+      "name": "顾南2",
+      "basic_profile": {
+        "home_city": "南京",
+        "age_group": "25-34",
+        "mobility": "normal",
+        "dietary_restrictions": [
+          "vegetarian",
+          "no_loud_noise"
+        ],
+        "default_start_location": {
+          "name": "陆家嘴",
+          "lat": 31.2381,
+          "lng": 121.4998
+        }
+      },
+      "preference_profile": {
+        "budget_sensitivity": 0.42,
+        "walking_tolerance": 0.38,
+        "crowd_tolerance": 0.77,
+        "schedule_tightness": 0.52,
+        "novelty_preference": 0.78,
+        "comfort_preference": 0.34
+      },
+      "category_preferences": {
+        "museum": 0.5,
+        "restaurant": 0.87,
+        "shopping": 0.52,
+        "landmark": 0.74,
+        "cafe": 0.78,
+        "night_view": 0.62
+      },
+      "history_behavior": {
+        "liked_poi_ids": [
+          "poi_029",
+          "poi_036",
+          "poi_048"
+        ],
+        "disliked_poi_ids": [
+          "poi_077"
+        ],
+        "skipped_categories": [],
+        "common_adjust_actions": [
+          "more_relaxed",
+          "less_walking",
+          "lower_cost"
+        ]
+      },
+      "current_trip": {
+        "group_type": "solo",
+        "children_ages": [],
+        "start_location": {
+          "name": "陆家嘴地铁站",
+          "lat": 31.2381,
+          "lng": 121.4998
+        },
+        "time_window": {
+          "start": "08:00",
+          "end": "15:30"
+        },
+        "budget_total": 692,
+        "constraints": {
+          "indoor_only": true,
+          "no_queue": true,
+          "max_walking_min": 15,
+          "special_needs": [
+            "no_loud_noise"
+          ]
+        },
+        "soft_preferences": {
+          "prefer_tags": [
+            "免费",
+            "亲水",
+            "老字号",
+            "开阔"
+          ],
+          "avoid_tags": [
+            "排队",
+            "商业化"
+          ]
+        },
+        "intent_confidence": 0.6,
+        "missing_params": [
+          "dinner_preference"
+        ]
+      }
+    },
+    {
+      "user_id": "user_037",
+      "name": "许知夏2",
+      "basic_profile": {
+        "home_city": "北京",
+        "age_group": "45-54",
+        "mobility": "limited",
+        "dietary_restrictions": [],
+        "default_start_location": {
+          "name": "静安寺",
+          "lat": 31.2231,
+          "lng": 121.4453
+        }
+      },
+      "preference_profile": {
+        "budget_sensitivity": 0.59,
+        "walking_tolerance": 0.51,
+        "crowd_tolerance": 0.84,
+        "schedule_tightness": 0.71,
+        "novelty_preference": 0.36,
+        "comfort_preference": 0.63
+      },
+      "category_preferences": {
+        "museum": 0.55,
+        "restaurant": 0.41,
+        "shopping": 0.56,
+        "landmark": 0.8,
+        "cafe": 0.86,
+        "night_view": 0.74
+      },
+      "history_behavior": {
+        "liked_poi_ids": [
+          "poi_032",
+          "poi_039",
+          "poi_051"
+        ],
+        "disliked_poi_ids": [
+          "poi_008"
+        ],
+        "skipped_categories": [],
+        "common_adjust_actions": [
+          "more_food",
+          "replace_poi",
+          "more_landmarks"
+        ]
+      },
+      "current_trip": {
+        "group_type": "couple",
+        "children_ages": [],
+        "start_location": {
+          "name": "静安寺地铁站",
+          "lat": 31.2231,
+          "lng": 121.4453
+        },
+        "time_window": {
+          "start": "09:00",
+          "end": "17:30"
+        },
+        "budget_total": 729,
+        "constraints": {
+          "indoor_only": false,
+          "no_queue": false,
+          "max_walking_min": 20,
+          "special_needs": []
+        },
+        "soft_preferences": {
+          "prefer_tags": [
+            "拍照",
+            "小众",
+            "文艺",
+            "夜景"
+          ],
+          "avoid_tags": [
+            "夜游",
+            "楼梯多",
+            "嘈杂"
+          ]
+        },
+        "intent_confidence": 0.64,
+        "missing_params": []
+      }
+    },
+    {
+      "user_id": "user_038",
+      "name": "王予安2",
+      "basic_profile": {
+        "home_city": "广州",
+        "age_group": "35-44",
+        "mobility": "normal",
+        "dietary_restrictions": [
+          "no_spicy"
+        ],
+        "default_start_location": {
+          "name": "南京东路",
+          "lat": 31.2358,
+          "lng": 121.4816
+        }
+      },
+      "preference_profile": {
+        "budget_sensitivity": 0.76,
+        "walking_tolerance": 0.64,
+        "crowd_tolerance": 0.26,
+        "schedule_tightness": 0.3,
+        "novelty_preference": 0.59,
+        "comfort_preference": 0.92
+      },
+      "category_preferences": {
+        "museum": 0.6,
+        "restaurant": 0.5,
+        "shopping": 0.6,
+        "landmark": 0.86,
+        "cafe": 0.34,
+        "night_view": 0.21
+      },
+      "history_behavior": {
+        "liked_poi_ids": [
+          "poi_035",
+          "poi_042",
+          "poi_054"
+        ],
+        "disliked_poi_ids": [
+          "poi_019"
+        ],
+        "skipped_categories": [],
+        "common_adjust_actions": [
+          "less_walking",
+          "lower_cost",
+          "avoid_crowd"
+        ]
+      },
+      "current_trip": {
+        "group_type": "family",
+        "children_ages": [
+          10,
+          9
+        ],
+        "start_location": {
+          "name": "南京东路地铁站",
+          "lat": 31.2358,
+          "lng": 121.4816
+        },
+        "time_window": {
+          "start": "10:00",
+          "end": "19:30"
+        },
+        "budget_total": 766,
+        "constraints": {
+          "indoor_only": false,
+          "no_queue": false,
+          "max_walking_min": 25,
+          "special_needs": [
+            "baby_friendly"
+          ]
+        },
+        "soft_preferences": {
+          "prefer_tags": [
+            "亲子",
+            "室内",
+            "互动体验",
+            "儿童友好"
+          ],
+          "avoid_tags": [
+            "高价",
+            "预约困难"
+          ]
+        },
+        "intent_confidence": 0.67,
+        "missing_params": []
+      }
+    },
+    {
+      "user_id": "user_039",
+      "name": "沈星河2",
+      "basic_profile": {
+        "home_city": "深圳",
+        "age_group": "25-34",
+        "mobility": "normal",
+        "dietary_restrictions": [
+          "vegetarian"
+        ],
+        "default_start_location": {
+          "name": "上海南站",
+          "lat": 31.1547,
+          "lng": 121.4294
+        }
+      },
+      "preference_profile": {
+        "budget_sensitivity": 0.38,
+        "walking_tolerance": 0.77,
+        "crowd_tolerance": 0.33,
+        "schedule_tightness": 0.49,
+        "novelty_preference": 0.82,
+        "comfort_preference": 0.56
+      },
+      "category_preferences": {
+        "museum": 0.65,
+        "restaurant": 0.59,
+        "shopping": 0.64,
+        "landmark": 0.34,
+        "cafe": 0.42,
+        "night_view": 0.33
+      },
+      "history_behavior": {
+        "liked_poi_ids": [
+          "poi_038",
+          "poi_045",
+          "poi_057"
+        ],
+        "disliked_poi_ids": [
+          "poi_030"
+        ],
+        "skipped_categories": [],
+        "common_adjust_actions": [
+          "replace_poi",
+          "more_landmarks",
+          "more_relaxed"
+        ]
+      },
+      "current_trip": {
+        "group_type": "friends",
+        "children_ages": [],
+        "start_location": {
+          "name": "上海南站地铁站",
+          "lat": 31.1547,
+          "lng": 121.4294
+        },
+        "time_window": {
+          "start": "11:00",
+          "end": "21:30"
+        },
+        "budget_total": 803,
+        "constraints": {
+          "indoor_only": false,
+          "no_queue": true,
+          "max_walking_min": 30,
+          "special_needs": [
+            "no_stairs"
+          ]
+        },
+        "soft_preferences": {
+          "prefer_tags": [
+            "高性价比",
+            "咖啡",
+            "安静",
+            "自然"
+          ],
+          "avoid_tags": [
+            "人流密集",
+            "步行多"
+          ]
+        },
+        "intent_confidence": 0.71,
+        "missing_params": [
+          "start_location"
+        ]
+      }
+    },
+    {
+      "user_id": "user_040",
+      "name": "赵晨2",
+      "basic_profile": {
+        "home_city": "成都",
+        "age_group": "18-24",
+        "mobility": "normal",
+        "dietary_restrictions": [
+          "halal"
+        ],
+        "default_start_location": {
+          "name": "中山公园",
+          "lat": 31.2202,
+          "lng": 121.4159
+        }
+      },
+      "preference_profile": {
+        "budget_sensitivity": 0.55,
+        "walking_tolerance": 0.25,
+        "crowd_tolerance": 0.4,
+        "schedule_tightness": 0.68,
+        "novelty_preference": 0.4,
+        "comfort_preference": 0.85
+      },
+      "category_preferences": {
+        "museum": 0.7,
+        "restaurant": 0.68,
+        "shopping": 0.68,
+        "landmark": 0.4,
+        "cafe": 0.5,
+        "night_view": 0.45
+      },
+      "history_behavior": {
+        "liked_poi_ids": [
+          "poi_041",
+          "poi_048",
+          "poi_060"
+        ],
+        "disliked_poi_ids": [
+          "poi_041"
+        ],
+        "skipped_categories": [
+          "shopping"
+        ],
+        "common_adjust_actions": [
+          "lower_cost",
+          "avoid_crowd",
+          "more_food"
+        ]
+      },
+      "current_trip": {
+        "group_type": "solo",
+        "children_ages": [],
+        "start_location": {
+          "name": "中山公园地铁站",
+          "lat": 31.2202,
+          "lng": 121.4159
+        },
+        "time_window": {
+          "start": "12:00",
+          "end": "19:30"
+        },
+        "budget_total": 840,
+        "constraints": {
+          "indoor_only": false,
+          "no_queue": false,
+          "max_walking_min": 35,
+          "special_needs": [
+            "wheelchair"
+          ]
+        },
+        "soft_preferences": {
+          "prefer_tags": [
+            "历史",
+            "经典",
+            "本帮菜",
+            "现代"
+          ],
+          "avoid_tags": [
+            "雨天不便",
+            "停车难"
+          ]
+        },
+        "intent_confidence": 0.7,
+        "missing_params": []
+      }
+    },
+    {
+      "user_id": "user_041",
+      "name": "李思源2",
+      "basic_profile": {
+        "home_city": "上海",
+        "age_group": "25-34",
+        "mobility": "normal",
+        "dietary_restrictions": [
+          "no_spicy",
+          "light_meal"
+        ],
+        "default_start_location": {
+          "name": "人民广场",
+          "lat": 31.2304,
+          "lng": 121.4737
+        }
+      },
+      "preference_profile": {
+        "budget_sensitivity": 0.72,
+        "walking_tolerance": 0.38,
+        "crowd_tolerance": 0.47,
+        "schedule_tightness": 0.87,
+        "novelty_preference": 0.63,
+        "comfort_preference": 0.49
+      },
+      "category_preferences": {
+        "museum": 0.75,
+        "restaurant": 0.77,
+        "shopping": 0.72,
+        "landmark": 0.46,
+        "cafe": 0.58,
+        "night_view": 0.57
+      },
+      "history_behavior": {
+        "liked_poi_ids": [
+          "poi_044",
+          "poi_051",
+          "poi_063"
+        ],
+        "disliked_poi_ids": [
+          "poi_052"
+        ],
+        "skipped_categories": [],
+        "common_adjust_actions": [
+          "more_landmarks",
+          "more_relaxed",
+          "less_walking"
+        ]
+      },
+      "current_trip": {
+        "group_type": "couple",
+        "children_ages": [],
+        "start_location": {
+          "name": "人民广场地铁站",
+          "lat": 31.2304,
+          "lng": 121.4737
+        },
+        "time_window": {
+          "start": "13:00",
+          "end": "21:30"
+        },
+        "budget_total": 877,
+        "constraints": {
+          "indoor_only": false,
+          "no_queue": false,
+          "max_walking_min": 40,
+          "special_needs": [
+            "pet_friendly"
+          ]
+        },
+        "soft_preferences": {
+          "prefer_tags": [
+            "展览",
+            "艺术",
+            "雨天",
+            "轻食"
+          ],
+          "avoid_tags": [
+            "排队",
+            "商业化"
+          ]
+        },
+        "intent_confidence": 0.73,
+        "missing_params": []
+      }
+    },
+    {
+      "user_id": "user_042",
+      "name": "何安宁2",
+      "basic_profile": {
+        "home_city": "杭州",
+        "age_group": "35-44",
+        "mobility": "elderly_friendly",
+        "dietary_restrictions": [
+          "vegetarian",
+          "no_loud_noise"
+        ],
+        "default_start_location": {
+          "name": "上海虹桥站",
+          "lat": 31.1947,
+          "lng": 121.3188
+        }
+      },
+      "preference_profile": {
+        "budget_sensitivity": 0.89,
+        "walking_tolerance": 0.51,
+        "crowd_tolerance": 0.54,
+        "schedule_tightness": 0.46,
+        "novelty_preference": 0.86,
+        "comfort_preference": 0.78
+      },
+      "category_preferences": {
+        "museum": 0.8,
+        "restaurant": 0.86,
+        "shopping": 0.21,
+        "landmark": 0.52,
+        "cafe": 0.66,
+        "night_view": 0.69
+      },
+      "history_behavior": {
+        "liked_poi_ids": [
+          "poi_047",
+          "poi_054",
+          "poi_066"
+        ],
+        "disliked_poi_ids": [
+          "poi_063"
+        ],
+        "skipped_categories": [
+          "night_view"
+        ],
+        "common_adjust_actions": [
+          "avoid_crowd",
+          "more_food",
+          "replace_poi"
+        ]
+      },
+      "current_trip": {
+        "group_type": "family",
+        "children_ages": [
+          6,
+          7
+        ],
+        "start_location": {
+          "name": "上海虹桥站地铁站",
+          "lat": 31.1947,
+          "lng": 121.3188
+        },
+        "time_window": {
+          "start": "08:00",
+          "end": "17:30"
+        },
+        "budget_total": 914,
+        "constraints": {
+          "indoor_only": true,
+          "no_queue": true,
+          "max_walking_min": 45,
+          "special_needs": [
+            "no_loud_noise"
+          ]
+        },
+        "soft_preferences": {
+          "prefer_tags": [
+            "免费",
+            "亲水",
+            "老字号",
+            "开阔"
+          ],
+          "avoid_tags": [
+            "夜游",
+            "楼梯多",
+            "嘈杂"
+          ]
+        },
+        "intent_confidence": 0.59,
+        "missing_params": []
+      }
+    },
+    {
+      "user_id": "user_043",
+      "name": "唐小满2",
+      "basic_profile": {
+        "home_city": "苏州",
+        "age_group": "18-24",
+        "mobility": "normal",
+        "dietary_restrictions": [],
+        "default_start_location": {
+          "name": "徐家汇",
+          "lat": 31.1906,
+          "lng": 121.4369
+        }
+      },
+      "preference_profile": {
+        "budget_sensitivity": 0.51,
+        "walking_tolerance": 0.64,
+        "crowd_tolerance": 0.61,
+        "schedule_tightness": 0.65,
+        "novelty_preference": 0.44,
+        "comfort_preference": 0.42
+      },
+      "category_preferences": {
+        "museum": 0.85,
+        "restaurant": 0.4,
+        "shopping": 0.25,
+        "landmark": 0.58,
+        "cafe": 0.74,
+        "night_view": 0.81
+      },
+      "history_behavior": {
+        "liked_poi_ids": [
+          "poi_050",
+          "poi_057",
+          "poi_069"
+        ],
+        "disliked_poi_ids": [
+          "poi_074"
+        ],
+        "skipped_categories": [],
+        "common_adjust_actions": [
+          "more_relaxed",
+          "less_walking",
+          "lower_cost"
+        ]
+      },
+      "current_trip": {
+        "group_type": "friends",
+        "children_ages": [],
+        "start_location": {
+          "name": "徐家汇地铁站",
+          "lat": 31.1906,
+          "lng": 121.4369
+        },
+        "time_window": {
+          "start": "09:00",
+          "end": "19:30"
+        },
+        "budget_total": 951,
+        "constraints": {
+          "indoor_only": false,
+          "no_queue": false,
+          "max_walking_min": 50,
+          "special_needs": []
+        },
+        "soft_preferences": {
+          "prefer_tags": [
+            "拍照",
+            "小众",
+            "文艺",
+            "夜景"
+          ],
+          "avoid_tags": [
+            "高价",
+            "预约困难"
+          ]
+        },
+        "intent_confidence": 0.62,
+        "missing_params": []
+      }
+    },
+    {
+      "user_id": "user_044",
+      "name": "宋亦然2",
+      "basic_profile": {
+        "home_city": "南京",
+        "age_group": "25-34",
+        "mobility": "normal",
+        "dietary_restrictions": [
+          "no_spicy"
+        ],
+        "default_start_location": {
+          "name": "陆家嘴",
+          "lat": 31.2381,
+          "lng": 121.4998
+        }
+      },
+      "preference_profile": {
+        "budget_sensitivity": 0.68,
+        "walking_tolerance": 0.77,
+        "crowd_tolerance": 0.68,
+        "schedule_tightness": 0.84,
+        "novelty_preference": 0.67,
+        "comfort_preference": 0.71
+      },
+      "category_preferences": {
+        "museum": 0.35,
+        "restaurant": 0.49,
+        "shopping": 0.29,
+        "landmark": 0.64,
+        "cafe": 0.82,
+        "night_view": 0.28
+      },
+      "history_behavior": {
+        "liked_poi_ids": [
+          "poi_053",
+          "poi_060",
+          "poi_072"
+        ],
+        "disliked_poi_ids": [
+          "poi_005"
+        ],
+        "skipped_categories": [],
+        "common_adjust_actions": [
+          "more_food",
+          "replace_poi",
+          "more_landmarks"
+        ]
+      },
+      "current_trip": {
+        "group_type": "solo",
+        "children_ages": [],
+        "start_location": {
+          "name": "陆家嘴地铁站",
+          "lat": 31.2381,
+          "lng": 121.4998
+        },
+        "time_window": {
+          "start": "10:00",
+          "end": "17:30"
+        },
+        "budget_total": 988,
+        "constraints": {
+          "indoor_only": false,
+          "no_queue": false,
+          "max_walking_min": 55,
+          "special_needs": [
+            "baby_friendly"
+          ]
+        },
+        "soft_preferences": {
+          "prefer_tags": [
+            "亲子",
+            "室内",
+            "互动体验",
+            "儿童友好"
+          ],
+          "avoid_tags": [
+            "人流密集",
+            "步行多"
+          ]
+        },
+        "intent_confidence": 0.66,
+        "missing_params": []
+      }
+    },
+    {
+      "user_id": "user_045",
+      "name": "蒋禾2",
+      "basic_profile": {
+        "home_city": "北京",
+        "age_group": "45-54",
+        "mobility": "limited",
+        "dietary_restrictions": [
+          "vegetarian"
+        ],
+        "default_start_location": {
+          "name": "静安寺",
+          "lat": 31.2231,
+          "lng": 121.4453
+        }
+      },
+      "preference_profile": {
+        "budget_sensitivity": 0.85,
+        "walking_tolerance": 0.25,
+        "crowd_tolerance": 0.75,
+        "schedule_tightness": 0.43,
+        "novelty_preference": 0.9,
+        "comfort_preference": 0.35
+      },
+      "category_preferences": {
+        "museum": 0.4,
+        "restaurant": 0.58,
+        "shopping": 0.33,
+        "landmark": 0.7,
+        "cafe": 0.3,
+        "night_view": 0.4
+      },
+      "history_behavior": {
+        "liked_poi_ids": [
+          "poi_056",
+          "poi_063",
+          "poi_075"
+        ],
+        "disliked_poi_ids": [
+          "poi_016"
+        ],
+        "skipped_categories": [
+          "shopping"
+        ],
+        "common_adjust_actions": [
+          "less_walking",
+          "lower_cost",
+          "avoid_crowd"
+        ]
+      },
+      "current_trip": {
+        "group_type": "couple",
+        "children_ages": [],
+        "start_location": {
+          "name": "静安寺地铁站",
+          "lat": 31.2231,
+          "lng": 121.4453
+        },
+        "time_window": {
+          "start": "11:00",
+          "end": "19:30"
+        },
+        "budget_total": 205,
+        "constraints": {
+          "indoor_only": false,
+          "no_queue": true,
+          "max_walking_min": 15,
+          "special_needs": [
+            "no_stairs"
+          ]
+        },
+        "soft_preferences": {
+          "prefer_tags": [
+            "高性价比",
+            "咖啡",
+            "安静",
+            "自然"
+          ],
+          "avoid_tags": [
+            "雨天不便",
+            "停车难"
+          ]
+        },
+        "intent_confidence": 0.69,
+        "missing_params": [
+          "dinner_preference"
+        ]
+      }
+    },
+    {
+      "user_id": "user_046",
+      "name": "韩清2",
+      "basic_profile": {
+        "home_city": "广州",
+        "age_group": "35-44",
+        "mobility": "normal",
+        "dietary_restrictions": [
+          "halal"
+        ],
+        "default_start_location": {
+          "name": "南京东路",
+          "lat": 31.2358,
+          "lng": 121.4816
+        }
+      },
+      "preference_profile": {
+        "budget_sensitivity": 0.47,
+        "walking_tolerance": 0.38,
+        "crowd_tolerance": 0.82,
+        "schedule_tightness": 0.62,
+        "novelty_preference": 0.48,
+        "comfort_preference": 0.64
+      },
+      "category_preferences": {
+        "museum": 0.45,
+        "restaurant": 0.67,
+        "shopping": 0.37,
+        "landmark": 0.76,
+        "cafe": 0.38,
+        "night_view": 0.52
+      },
+      "history_behavior": {
+        "liked_poi_ids": [
+          "poi_059",
+          "poi_066",
+          "poi_078"
+        ],
+        "disliked_poi_ids": [
+          "poi_027"
+        ],
+        "skipped_categories": [],
+        "common_adjust_actions": [
+          "replace_poi",
+          "more_landmarks",
+          "more_relaxed"
+        ]
+      },
+      "current_trip": {
+        "group_type": "family",
+        "children_ages": [
+          10,
+          11
+        ],
+        "start_location": {
+          "name": "南京东路地铁站",
+          "lat": 31.2358,
+          "lng": 121.4816
+        },
+        "time_window": {
+          "start": "12:00",
+          "end": "21:30"
+        },
+        "budget_total": 242,
+        "constraints": {
+          "indoor_only": false,
+          "no_queue": false,
+          "max_walking_min": 20,
+          "special_needs": [
+            "wheelchair"
+          ]
+        },
+        "soft_preferences": {
+          "prefer_tags": [
+            "历史",
+            "经典",
+            "本帮菜",
+            "现代"
+          ],
+          "avoid_tags": [
+            "排队",
+            "商业化"
+          ]
+        },
+        "intent_confidence": 0.72,
+        "missing_params": []
+      }
+    },
+    {
+      "user_id": "user_047",
+      "name": "陆遥2",
+      "basic_profile": {
+        "home_city": "深圳",
+        "age_group": "25-34",
+        "mobility": "normal",
+        "dietary_restrictions": [
+          "no_spicy",
+          "light_meal"
+        ],
+        "default_start_location": {
+          "name": "上海南站",
+          "lat": 31.1547,
+          "lng": 121.4294
+        }
+      },
+      "preference_profile": {
+        "budget_sensitivity": 0.64,
+        "walking_tolerance": 0.51,
+        "crowd_tolerance": 0.24,
+        "schedule_tightness": 0.81,
+        "novelty_preference": 0.71,
+        "comfort_preference": 0.93
+      },
+      "category_preferences": {
+        "museum": 0.5,
+        "restaurant": 0.76,
+        "shopping": 0.41,
+        "landmark": 0.82,
+        "cafe": 0.46,
+        "night_view": 0.64
+      },
+      "history_behavior": {
+        "liked_poi_ids": [
+          "poi_062",
+          "poi_069",
+          "poi_001"
+        ],
+        "disliked_poi_ids": [
+          "poi_038"
+        ],
+        "skipped_categories": [],
+        "common_adjust_actions": [
+          "lower_cost",
+          "avoid_crowd",
+          "more_food"
+        ]
+      },
+      "current_trip": {
+        "group_type": "friends",
+        "children_ages": [],
+        "start_location": {
+          "name": "上海南站地铁站",
+          "lat": 31.1547,
+          "lng": 121.4294
+        },
+        "time_window": {
+          "start": "13:00",
+          "end": "23:30"
+        },
+        "budget_total": 279,
+        "constraints": {
+          "indoor_only": false,
+          "no_queue": false,
+          "max_walking_min": 25,
+          "special_needs": [
+            "pet_friendly"
+          ]
+        },
+        "soft_preferences": {
+          "prefer_tags": [
+            "展览",
+            "艺术",
+            "雨天",
+            "轻食"
+          ],
+          "avoid_tags": [
+            "夜游",
+            "楼梯多",
+            "嘈杂"
+          ]
+        },
+        "intent_confidence": 0.76,
+        "missing_params": []
+      }
+    },
+    {
+      "user_id": "user_048",
+      "name": "苏念2",
+      "basic_profile": {
+        "home_city": "成都",
+        "age_group": "18-24",
+        "mobility": "normal",
+        "dietary_restrictions": [
+          "vegetarian",
+          "no_loud_noise"
+        ],
+        "default_start_location": {
+          "name": "中山公园",
+          "lat": 31.2202,
+          "lng": 121.4159
+        }
+      },
+      "preference_profile": {
+        "budget_sensitivity": 0.81,
+        "walking_tolerance": 0.64,
+        "crowd_tolerance": 0.31,
+        "schedule_tightness": 0.4,
+        "novelty_preference": 0.94,
+        "comfort_preference": 0.57
+      },
+      "category_preferences": {
+        "museum": 0.55,
+        "restaurant": 0.85,
+        "shopping": 0.45,
+        "landmark": 0.88,
+        "cafe": 0.54,
+        "night_view": 0.76
+      },
+      "history_behavior": {
+        "liked_poi_ids": [
+          "poi_065",
+          "poi_072",
+          "poi_004"
+        ],
+        "disliked_poi_ids": [
+          "poi_049"
+        ],
+        "skipped_categories": [],
+        "common_adjust_actions": [
+          "more_landmarks",
+          "more_relaxed",
+          "less_walking"
+        ]
+      },
+      "current_trip": {
+        "group_type": "solo",
+        "children_ages": [],
+        "start_location": {
+          "name": "中山公园地铁站",
+          "lat": 31.2202,
+          "lng": 121.4159
+        },
+        "time_window": {
+          "start": "08:00",
+          "end": "15:30"
+        },
+        "budget_total": 316,
+        "constraints": {
+          "indoor_only": true,
+          "no_queue": true,
+          "max_walking_min": 30,
+          "special_needs": [
+            "no_loud_noise"
+          ]
+        },
+        "soft_preferences": {
+          "prefer_tags": [
+            "免费",
+            "亲水",
+            "老字号",
+            "开阔"
+          ],
+          "avoid_tags": [
+            "高价",
+            "预约困难"
+          ]
+        },
+        "intent_confidence": 0.61,
+        "missing_params": []
+      }
+    },
+    {
+      "user_id": "user_049",
+      "name": "姜一诺2",
+      "basic_profile": {
+        "home_city": "上海",
+        "age_group": "25-34",
+        "mobility": "normal",
+        "dietary_restrictions": [],
+        "default_start_location": {
+          "name": "人民广场",
+          "lat": 31.2304,
+          "lng": 121.4737
+        }
+      },
+      "preference_profile": {
+        "budget_sensitivity": 0.43,
+        "walking_tolerance": 0.77,
+        "crowd_tolerance": 0.38,
+        "schedule_tightness": 0.59,
+        "novelty_preference": 0.52,
+        "comfort_preference": 0.86
+      },
+      "category_preferences": {
+        "museum": 0.6,
+        "restaurant": 0.39,
+        "shopping": 0.49,
+        "landmark": 0.36,
+        "cafe": 0.62,
+        "night_view": 0.23
+      },
+      "history_behavior": {
+        "liked_poi_ids": [
+          "poi_068",
+          "poi_075",
+          "poi_007"
+        ],
+        "disliked_poi_ids": [
+          "poi_060"
+        ],
+        "skipped_categories": [
+          "night_view"
+        ],
+        "common_adjust_actions": [
+          "avoid_crowd",
+          "more_food",
+          "replace_poi"
+        ]
+      },
+      "current_trip": {
+        "group_type": "couple",
+        "children_ages": [],
+        "start_location": {
+          "name": "人民广场地铁站",
+          "lat": 31.2304,
+          "lng": 121.4737
+        },
+        "time_window": {
+          "start": "09:00",
+          "end": "17:30"
+        },
+        "budget_total": 353,
+        "constraints": {
+          "indoor_only": false,
+          "no_queue": false,
+          "max_walking_min": 35,
+          "special_needs": []
+        },
+        "soft_preferences": {
+          "prefer_tags": [
+            "拍照",
+            "小众",
+            "文艺",
+            "夜景"
+          ],
+          "avoid_tags": [
+            "人流密集",
+            "步行多"
+          ]
+        },
+        "intent_confidence": 0.65,
+        "missing_params": []
+      }
+    },
+    {
+      "user_id": "user_050",
+      "name": "马书航2",
+      "basic_profile": {
+        "home_city": "杭州",
+        "age_group": "35-44",
+        "mobility": "elderly_friendly",
+        "dietary_restrictions": [
+          "no_spicy"
+        ],
+        "default_start_location": {
+          "name": "上海虹桥站",
+          "lat": 31.1947,
+          "lng": 121.3188
+        }
+      },
+      "preference_profile": {
+        "budget_sensitivity": 0.6,
+        "walking_tolerance": 0.25,
+        "crowd_tolerance": 0.45,
+        "schedule_tightness": 0.78,
+        "novelty_preference": 0.75,
+        "comfort_preference": 0.5
+      },
+      "category_preferences": {
+        "museum": 0.65,
+        "restaurant": 0.48,
+        "shopping": 0.53,
+        "landmark": 0.42,
+        "cafe": 0.7,
+        "night_view": 0.35
+      },
+      "history_behavior": {
+        "liked_poi_ids": [
+          "poi_071",
+          "poi_078",
+          "poi_010"
+        ],
+        "disliked_poi_ids": [
+          "poi_071"
+        ],
+        "skipped_categories": [
+          "shopping"
+        ],
+        "common_adjust_actions": [
+          "more_relaxed",
+          "less_walking",
+          "lower_cost"
+        ]
+      },
+      "current_trip": {
+        "group_type": "family",
+        "children_ages": [
+          6,
+          9
+        ],
+        "start_location": {
+          "name": "上海虹桥站地铁站",
+          "lat": 31.1947,
+          "lng": 121.3188
+        },
+        "time_window": {
+          "start": "10:00",
+          "end": "19:30"
+        },
+        "budget_total": 390,
+        "constraints": {
+          "indoor_only": false,
+          "no_queue": false,
+          "max_walking_min": 40,
+          "special_needs": [
+            "baby_friendly"
+          ]
+        },
+        "soft_preferences": {
+          "prefer_tags": [
+            "亲子",
+            "室内",
+            "互动体验",
+            "儿童友好"
+          ],
+          "avoid_tags": [
+            "雨天不便",
+            "停车难"
+          ]
+        },
+        "intent_confidence": 0.64,
+        "missing_params": []
+      }
+    },
+    {
+      "user_id": "user_051",
+      "name": "高晴2",
+      "basic_profile": {
+        "home_city": "苏州",
+        "age_group": "18-24",
+        "mobility": "normal",
+        "dietary_restrictions": [
+          "vegetarian"
+        ],
+        "default_start_location": {
+          "name": "徐家汇",
+          "lat": 31.1906,
+          "lng": 121.4369
+        }
+      },
+      "preference_profile": {
+        "budget_sensitivity": 0.77,
+        "walking_tolerance": 0.38,
+        "crowd_tolerance": 0.52,
+        "schedule_tightness": 0.37,
+        "novelty_preference": 0.33,
+        "comfort_preference": 0.79
+      },
+      "category_preferences": {
+        "museum": 0.7,
+        "restaurant": 0.57,
+        "shopping": 0.57,
+        "landmark": 0.48,
+        "cafe": 0.78,
+        "night_view": 0.47
+      },
+      "history_behavior": {
+        "liked_poi_ids": [
+          "poi_074",
+          "poi_001",
+          "poi_013"
+        ],
+        "disliked_poi_ids": [
+          "poi_002"
+        ],
+        "skipped_categories": [],
+        "common_adjust_actions": [
+          "more_food",
+          "replace_poi",
+          "more_landmarks"
+        ]
+      },
+      "current_trip": {
+        "group_type": "friends",
+        "children_ages": [],
+        "start_location": {
+          "name": "徐家汇地铁站",
+          "lat": 31.1906,
+          "lng": 121.4369
+        },
+        "time_window": {
+          "start": "11:00",
+          "end": "21:30"
+        },
+        "budget_total": 427,
+        "constraints": {
+          "indoor_only": false,
+          "no_queue": true,
+          "max_walking_min": 45,
+          "special_needs": [
+            "no_stairs"
+          ]
+        },
+        "soft_preferences": {
+          "prefer_tags": [
+            "高性价比",
+            "咖啡",
+            "安静",
+            "自然"
+          ],
+          "avoid_tags": [
+            "排队",
+            "商业化"
+          ]
+        },
+        "intent_confidence": 0.67,
+        "missing_params": []
+      }
+    },
+    {
+      "user_id": "user_052",
+      "name": "程予白2",
+      "basic_profile": {
+        "home_city": "南京",
+        "age_group": "25-34",
+        "mobility": "normal",
+        "dietary_restrictions": [
+          "halal"
+        ],
+        "default_start_location": {
+          "name": "陆家嘴",
+          "lat": 31.2381,
+          "lng": 121.4998
+        }
+      },
+      "preference_profile": {
+        "budget_sensitivity": 0.39,
+        "walking_tolerance": 0.51,
+        "crowd_tolerance": 0.59,
+        "schedule_tightness": 0.56,
+        "novelty_preference": 0.56,
+        "comfort_preference": 0.43
+      },
+      "category_preferences": {
+        "museum": 0.75,
+        "restaurant": 0.66,
+        "shopping": 0.61,
+        "landmark": 0.54,
+        "cafe": 0.86,
+        "night_view": 0.59
+      },
+      "history_behavior": {
+        "liked_poi_ids": [
+          "poi_077",
+          "poi_004",
+          "poi_016"
+        ],
+        "disliked_poi_ids": [
+          "poi_013"
+        ],
+        "skipped_categories": [],
+        "common_adjust_actions": [
+          "less_walking",
+          "lower_cost",
+          "avoid_crowd"
+        ]
+      },
+      "current_trip": {
+        "group_type": "solo",
+        "children_ages": [],
+        "start_location": {
+          "name": "陆家嘴地铁站",
+          "lat": 31.2381,
+          "lng": 121.4998
+        },
+        "time_window": {
+          "start": "12:00",
+          "end": "19:30"
+        },
+        "budget_total": 464,
+        "constraints": {
+          "indoor_only": false,
+          "no_queue": false,
+          "max_walking_min": 50,
+          "special_needs": [
+            "wheelchair"
+          ]
+        },
+        "soft_preferences": {
+          "prefer_tags": [
+            "历史",
+            "经典",
+            "本帮菜",
+            "现代"
+          ],
+          "avoid_tags": [
+            "夜游",
+            "楼梯多",
+            "嘈杂"
+          ]
+        },
+        "intent_confidence": 0.71,
+        "missing_params": [
+          "start_location"
+        ]
+      }
+    },
+    {
+      "user_id": "user_053",
+      "name": "叶澄2",
+      "basic_profile": {
+        "home_city": "北京",
+        "age_group": "45-54",
+        "mobility": "limited",
+        "dietary_restrictions": [
+          "no_spicy",
+          "light_meal"
+        ],
+        "default_start_location": {
+          "name": "静安寺",
+          "lat": 31.2231,
+          "lng": 121.4453
+        }
+      },
+      "preference_profile": {
+        "budget_sensitivity": 0.56,
+        "walking_tolerance": 0.64,
+        "crowd_tolerance": 0.66,
+        "schedule_tightness": 0.75,
+        "novelty_preference": 0.79,
+        "comfort_preference": 0.72
+      },
+      "category_preferences": {
+        "museum": 0.8,
+        "restaurant": 0.75,
+        "shopping": 0.65,
+        "landmark": 0.6,
+        "cafe": 0.34,
+        "night_view": 0.71
+      },
+      "history_behavior": {
+        "liked_poi_ids": [
+          "poi_080",
+          "poi_007",
+          "poi_019"
+        ],
+        "disliked_poi_ids": [
+          "poi_024"
+        ],
+        "skipped_categories": [],
+        "common_adjust_actions": [
+          "replace_poi",
+          "more_landmarks",
+          "more_relaxed"
+        ]
+      },
+      "current_trip": {
+        "group_type": "couple",
+        "children_ages": [],
+        "start_location": {
+          "name": "静安寺地铁站",
+          "lat": 31.2231,
+          "lng": 121.4453
+        },
+        "time_window": {
+          "start": "13:00",
+          "end": "21:30"
+        },
+        "budget_total": 501,
+        "constraints": {
+          "indoor_only": false,
+          "no_queue": false,
+          "max_walking_min": 55,
+          "special_needs": [
+            "pet_friendly"
+          ]
+        },
+        "soft_preferences": {
+          "prefer_tags": [
+            "展览",
+            "艺术",
+            "雨天",
+            "轻食"
+          ],
+          "avoid_tags": [
+            "高价",
+            "预约困难"
+          ]
+        },
+        "intent_confidence": 0.74,
+        "missing_params": []
+      }
+    },
+    {
+      "user_id": "user_054",
+      "name": "罗可2",
+      "basic_profile": {
+        "home_city": "广州",
+        "age_group": "35-44",
+        "mobility": "normal",
+        "dietary_restrictions": [
+          "vegetarian",
+          "no_loud_noise"
+        ],
+        "default_start_location": {
+          "name": "南京东路",
+          "lat": 31.2358,
+          "lng": 121.4816
+        }
+      },
+      "preference_profile": {
+        "budget_sensitivity": 0.73,
+        "walking_tolerance": 0.77,
+        "crowd_tolerance": 0.73,
+        "schedule_tightness": 0.34,
+        "novelty_preference": 0.37,
+        "comfort_preference": 0.36
+      },
+      "category_preferences": {
+        "museum": 0.85,
+        "restaurant": 0.84,
+        "shopping": 0.69,
+        "landmark": 0.66,
+        "cafe": 0.42,
+        "night_view": 0.83
+      },
+      "history_behavior": {
+        "liked_poi_ids": [
+          "poi_003",
+          "poi_010",
+          "poi_022"
+        ],
+        "disliked_poi_ids": [
+          "poi_035"
+        ],
+        "skipped_categories": [],
+        "common_adjust_actions": [
+          "lower_cost",
+          "avoid_crowd",
+          "more_food"
+        ]
+      },
+      "current_trip": {
+        "group_type": "family",
+        "children_ages": [
+          10,
+          7
+        ],
+        "start_location": {
+          "name": "南京东路地铁站",
+          "lat": 31.2358,
+          "lng": 121.4816
+        },
+        "time_window": {
+          "start": "08:00",
+          "end": "17:30"
+        },
+        "budget_total": 538,
+        "constraints": {
+          "indoor_only": true,
+          "no_queue": true,
+          "max_walking_min": 15,
+          "special_needs": [
+            "no_loud_noise"
+          ]
+        },
+        "soft_preferences": {
+          "prefer_tags": [
+            "免费",
+            "亲水",
+            "老字号",
+            "开阔"
+          ],
+          "avoid_tags": [
+            "人流密集",
+            "步行多"
+          ]
+        },
+        "intent_confidence": 0.6,
+        "missing_params": [
+          "dinner_preference"
+        ]
+      }
+    },
+    {
+      "user_id": "user_055",
+      "name": "秦越2",
+      "basic_profile": {
+        "home_city": "深圳",
+        "age_group": "25-34",
+        "mobility": "normal",
+        "dietary_restrictions": [],
+        "default_start_location": {
+          "name": "上海南站",
+          "lat": 31.1547,
+          "lng": 121.4294
+        }
+      },
+      "preference_profile": {
+        "budget_sensitivity": 0.35,
+        "walking_tolerance": 0.25,
+        "crowd_tolerance": 0.8,
+        "schedule_tightness": 0.53,
+        "novelty_preference": 0.6,
+        "comfort_preference": 0.65
+      },
+      "category_preferences": {
+        "museum": 0.35,
+        "restaurant": 0.38,
+        "shopping": 0.18,
+        "landmark": 0.72,
+        "cafe": 0.5,
+        "night_view": 0.3
+      },
+      "history_behavior": {
+        "liked_poi_ids": [
+          "poi_006",
+          "poi_013",
+          "poi_025"
+        ],
+        "disliked_poi_ids": [
+          "poi_046"
+        ],
+        "skipped_categories": [
+          "shopping"
+        ],
+        "common_adjust_actions": [
+          "more_landmarks",
+          "more_relaxed",
+          "less_walking"
+        ]
+      },
+      "current_trip": {
+        "group_type": "friends",
+        "children_ages": [],
+        "start_location": {
+          "name": "上海南站地铁站",
+          "lat": 31.1547,
+          "lng": 121.4294
+        },
+        "time_window": {
+          "start": "09:00",
+          "end": "19:30"
+        },
+        "budget_total": 575,
+        "constraints": {
+          "indoor_only": false,
+          "no_queue": false,
+          "max_walking_min": 20,
+          "special_needs": []
+        },
+        "soft_preferences": {
+          "prefer_tags": [
+            "拍照",
+            "小众",
+            "文艺",
+            "夜景"
+          ],
+          "avoid_tags": [
+            "雨天不便",
+            "停车难"
+          ]
+        },
+        "intent_confidence": 0.63,
+        "missing_params": []
+      }
+    },
+    {
+      "user_id": "user_056",
+      "name": "梁知行2",
+      "basic_profile": {
+        "home_city": "成都",
+        "age_group": "18-24",
+        "mobility": "normal",
+        "dietary_restrictions": [
+          "no_spicy"
+        ],
+        "default_start_location": {
+          "name": "中山公园",
+          "lat": 31.2202,
+          "lng": 121.4159
+        }
+      },
+      "preference_profile": {
+        "budget_sensitivity": 0.52,
+        "walking_tolerance": 0.38,
+        "crowd_tolerance": 0.22,
+        "schedule_tightness": 0.72,
+        "novelty_preference": 0.83,
+        "comfort_preference": 0.94
+      },
+      "category_preferences": {
+        "museum": 0.4,
+        "restaurant": 0.47,
+        "shopping": 0.22,
+        "landmark": 0.78,
+        "cafe": 0.58,
+        "night_view": 0.42
+      },
+      "history_behavior": {
+        "liked_poi_ids": [
+          "poi_009",
+          "poi_016",
+          "poi_028"
+        ],
+        "disliked_poi_ids": [
+          "poi_057"
+        ],
+        "skipped_categories": [
+          "night_view"
+        ],
+        "common_adjust_actions": [
+          "avoid_crowd",
+          "more_food",
+          "replace_poi"
+        ]
+      },
+      "current_trip": {
+        "group_type": "solo",
+        "children_ages": [],
+        "start_location": {
+          "name": "中山公园地铁站",
+          "lat": 31.2202,
+          "lng": 121.4159
+        },
+        "time_window": {
+          "start": "10:00",
+          "end": "17:30"
+        },
+        "budget_total": 612,
+        "constraints": {
+          "indoor_only": false,
+          "no_queue": false,
+          "max_walking_min": 25,
+          "special_needs": [
+            "baby_friendly"
+          ]
+        },
+        "soft_preferences": {
+          "prefer_tags": [
+            "亲子",
+            "室内",
+            "互动体验",
+            "儿童友好"
+          ],
+          "avoid_tags": [
+            "排队",
+            "商业化"
+          ]
+        },
+        "intent_confidence": 0.66,
+        "missing_params": []
+      }
+    },
+    {
+      "user_id": "user_057",
+      "name": "谢晚晴2",
+      "basic_profile": {
+        "home_city": "上海",
+        "age_group": "25-34",
+        "mobility": "normal",
+        "dietary_restrictions": [
+          "vegetarian"
+        ],
+        "default_start_location": {
+          "name": "人民广场",
+          "lat": 31.2304,
+          "lng": 121.4737
+        }
+      },
+      "preference_profile": {
+        "budget_sensitivity": 0.69,
+        "walking_tolerance": 0.51,
+        "crowd_tolerance": 0.29,
+        "schedule_tightness": 0.31,
+        "novelty_preference": 0.41,
+        "comfort_preference": 0.58
+      },
+      "category_preferences": {
+        "museum": 0.45,
+        "restaurant": 0.56,
+        "shopping": 0.26,
+        "landmark": 0.84,
+        "cafe": 0.66,
+        "night_view": 0.54
+      },
+      "history_behavior": {
+        "liked_poi_ids": [
+          "poi_012",
+          "poi_019",
+          "poi_031"
+        ],
+        "disliked_poi_ids": [
+          "poi_068"
+        ],
+        "skipped_categories": [],
+        "common_adjust_actions": [
+          "more_relaxed",
+          "less_walking",
+          "lower_cost"
+        ]
+      },
+      "current_trip": {
+        "group_type": "couple",
+        "children_ages": [],
+        "start_location": {
+          "name": "人民广场地铁站",
+          "lat": 31.2304,
+          "lng": 121.4737
+        },
+        "time_window": {
+          "start": "11:00",
+          "end": "19:30"
+        },
+        "budget_total": 649,
+        "constraints": {
+          "indoor_only": false,
+          "no_queue": true,
+          "max_walking_min": 30,
+          "special_needs": [
+            "no_stairs"
+          ]
+        },
+        "soft_preferences": {
+          "prefer_tags": [
+            "高性价比",
+            "咖啡",
+            "安静",
+            "自然"
+          ],
+          "avoid_tags": [
+            "夜游",
+            "楼梯多",
+            "嘈杂"
+          ]
+        },
+        "intent_confidence": 0.7,
+        "missing_params": []
+      }
+    },
+    {
+      "user_id": "user_058",
+      "name": "曹沐2",
+      "basic_profile": {
+        "home_city": "杭州",
+        "age_group": "35-44",
+        "mobility": "elderly_friendly",
+        "dietary_restrictions": [
+          "halal"
+        ],
+        "default_start_location": {
+          "name": "上海虹桥站",
+          "lat": 31.1947,
+          "lng": 121.3188
+        }
+      },
+      "preference_profile": {
+        "budget_sensitivity": 0.86,
+        "walking_tolerance": 0.64,
+        "crowd_tolerance": 0.36,
+        "schedule_tightness": 0.5,
+        "novelty_preference": 0.64,
+        "comfort_preference": 0.87
+      },
+      "category_preferences": {
+        "museum": 0.5,
+        "restaurant": 0.65,
+        "shopping": 0.3,
+        "landmark": 0.32,
+        "cafe": 0.74,
+        "night_view": 0.66
+      },
+      "history_behavior": {
+        "liked_poi_ids": [
+          "poi_015",
+          "poi_022",
+          "poi_034"
+        ],
+        "disliked_poi_ids": [
+          "poi_079"
+        ],
+        "skipped_categories": [],
+        "common_adjust_actions": [
+          "more_food",
+          "replace_poi",
+          "more_landmarks"
+        ]
+      },
+      "current_trip": {
+        "group_type": "family",
+        "children_ages": [
+          6,
+          11
+        ],
+        "start_location": {
+          "name": "上海虹桥站地铁站",
+          "lat": 31.1947,
+          "lng": 121.3188
+        },
+        "time_window": {
+          "start": "12:00",
+          "end": "21:30"
+        },
+        "budget_total": 686,
+        "constraints": {
+          "indoor_only": false,
+          "no_queue": false,
+          "max_walking_min": 35,
+          "special_needs": [
+            "wheelchair"
+          ]
+        },
+        "soft_preferences": {
+          "prefer_tags": [
+            "历史",
+            "经典",
+            "本帮菜",
+            "现代"
+          ],
+          "avoid_tags": [
+            "高价",
+            "预约困难"
+          ]
+        },
+        "intent_confidence": 0.73,
+        "missing_params": []
+      }
+    },
+    {
+      "user_id": "user_059",
+      "name": "邱禾2",
+      "basic_profile": {
+        "home_city": "苏州",
+        "age_group": "18-24",
+        "mobility": "normal",
+        "dietary_restrictions": [
+          "no_spicy",
+          "light_meal"
+        ],
+        "default_start_location": {
+          "name": "徐家汇",
+          "lat": 31.1906,
+          "lng": 121.4369
+        }
+      },
+      "preference_profile": {
+        "budget_sensitivity": 0.48,
+        "walking_tolerance": 0.77,
+        "crowd_tolerance": 0.43,
+        "schedule_tightness": 0.69,
+        "novelty_preference": 0.87,
+        "comfort_preference": 0.51
+      },
+      "category_preferences": {
+        "museum": 0.55,
+        "restaurant": 0.74,
+        "shopping": 0.34,
+        "landmark": 0.38,
+        "cafe": 0.82,
+        "night_view": 0.78
+      },
+      "history_behavior": {
+        "liked_poi_ids": [
+          "poi_018",
+          "poi_025",
+          "poi_037"
+        ],
+        "disliked_poi_ids": [
+          "poi_010"
+        ],
+        "skipped_categories": [],
+        "common_adjust_actions": [
+          "less_walking",
+          "lower_cost",
+          "avoid_crowd"
+        ]
+      },
+      "current_trip": {
+        "group_type": "friends",
+        "children_ages": [],
+        "start_location": {
+          "name": "徐家汇地铁站",
+          "lat": 31.1906,
+          "lng": 121.4369
+        },
+        "time_window": {
+          "start": "13:00",
+          "end": "23:30"
+        },
+        "budget_total": 723,
+        "constraints": {
+          "indoor_only": false,
+          "no_queue": false,
+          "max_walking_min": 40,
+          "special_needs": [
+            "pet_friendly"
+          ]
+        },
+        "soft_preferences": {
+          "prefer_tags": [
+            "展览",
+            "艺术",
+            "雨天",
+            "轻食"
+          ],
+          "avoid_tags": [
+            "人流密集",
+            "步行多"
+          ]
+        },
+        "intent_confidence": 0.77,
+        "missing_params": []
+      }
+    },
+    {
+      "user_id": "user_060",
+      "name": "丁一舟2",
+      "basic_profile": {
+        "home_city": "南京",
+        "age_group": "25-34",
+        "mobility": "normal",
+        "dietary_restrictions": [
+          "vegetarian",
+          "no_loud_noise"
+        ],
+        "default_start_location": {
+          "name": "陆家嘴",
+          "lat": 31.2381,
+          "lng": 121.4998
+        }
+      },
+      "preference_profile": {
+        "budget_sensitivity": 0.65,
+        "walking_tolerance": 0.25,
+        "crowd_tolerance": 0.5,
+        "schedule_tightness": 0.28,
+        "novelty_preference": 0.45,
+        "comfort_preference": 0.8
+      },
+      "category_preferences": {
+        "museum": 0.6,
+        "restaurant": 0.83,
+        "shopping": 0.38,
+        "landmark": 0.44,
+        "cafe": 0.3,
+        "night_view": 0.25
+      },
+      "history_behavior": {
+        "liked_poi_ids": [
+          "poi_021",
+          "poi_028",
+          "poi_040"
+        ],
+        "disliked_poi_ids": [
+          "poi_021"
+        ],
+        "skipped_categories": [
+          "shopping"
+        ],
+        "common_adjust_actions": [
+          "replace_poi",
+          "more_landmarks",
+          "more_relaxed"
+        ]
+      },
+      "current_trip": {
+        "group_type": "solo",
+        "children_ages": [],
+        "start_location": {
+          "name": "陆家嘴地铁站",
+          "lat": 31.2381,
+          "lng": 121.4998
+        },
+        "time_window": {
+          "start": "08:00",
+          "end": "15:30"
+        },
+        "budget_total": 760,
+        "constraints": {
+          "indoor_only": true,
+          "no_queue": true,
+          "max_walking_min": 45,
+          "special_needs": [
+            "no_loud_noise"
+          ]
+        },
+        "soft_preferences": {
+          "prefer_tags": [
+            "免费",
+            "亲水",
+            "老字号",
+            "开阔"
+          ],
+          "avoid_tags": [
+            "雨天不便",
+            "停车难"
+          ]
+        },
+        "intent_confidence": 0.58,
+        "missing_params": []
+      }
+    },
+    {
+      "user_id": "user_061",
+      "name": "孟然2",
+      "basic_profile": {
+        "home_city": "北京",
+        "age_group": "45-54",
+        "mobility": "limited",
+        "dietary_restrictions": [],
+        "default_start_location": {
+          "name": "静安寺",
+          "lat": 31.2231,
+          "lng": 121.4453
+        }
+      },
+      "preference_profile": {
+        "budget_sensitivity": 0.82,
+        "walking_tolerance": 0.38,
+        "crowd_tolerance": 0.57,
+        "schedule_tightness": 0.47,
+        "novelty_preference": 0.68,
+        "comfort_preference": 0.44
+      },
+      "category_preferences": {
+        "museum": 0.65,
+        "restaurant": 0.92,
+        "shopping": 0.42,
+        "landmark": 0.5,
+        "cafe": 0.38,
+        "night_view": 0.37
+      },
+      "history_behavior": {
+        "liked_poi_ids": [
+          "poi_024",
+          "poi_031",
+          "poi_043"
+        ],
+        "disliked_poi_ids": [
+          "poi_032"
+        ],
+        "skipped_categories": [],
+        "common_adjust_actions": [
+          "lower_cost",
+          "avoid_crowd",
+          "more_food"
+        ]
+      },
+      "current_trip": {
+        "group_type": "couple",
+        "children_ages": [],
+        "start_location": {
+          "name": "静安寺地铁站",
+          "lat": 31.2231,
+          "lng": 121.4453
+        },
+        "time_window": {
+          "start": "09:00",
+          "end": "17:30"
+        },
+        "budget_total": 797,
+        "constraints": {
+          "indoor_only": false,
+          "no_queue": false,
+          "max_walking_min": 50,
+          "special_needs": []
+        },
+        "soft_preferences": {
+          "prefer_tags": [
+            "拍照",
+            "小众",
+            "文艺",
+            "夜景"
+          ],
+          "avoid_tags": [
+            "排队",
+            "商业化"
+          ]
+        },
+        "intent_confidence": 0.61,
+        "missing_params": []
+      }
+    },
+    {
+      "user_id": "user_062",
+      "name": "潘月2",
+      "basic_profile": {
+        "home_city": "广州",
+        "age_group": "35-44",
+        "mobility": "normal",
+        "dietary_restrictions": [
+          "no_spicy"
+        ],
+        "default_start_location": {
+          "name": "南京东路",
+          "lat": 31.2358,
+          "lng": 121.4816
+        }
+      },
+      "preference_profile": {
+        "budget_sensitivity": 0.44,
+        "walking_tolerance": 0.51,
+        "crowd_tolerance": 0.64,
+        "schedule_tightness": 0.66,
+        "novelty_preference": 0.91,
+        "comfort_preference": 0.73
+      },
+      "category_preferences": {
+        "museum": 0.7,
+        "restaurant": 0.46,
+        "shopping": 0.46,
+        "landmark": 0.56,
+        "cafe": 0.46,
+        "night_view": 0.49
+      },
+      "history_behavior": {
+        "liked_poi_ids": [
+          "poi_027",
+          "poi_034",
+          "poi_046"
+        ],
+        "disliked_poi_ids": [
+          "poi_043"
+        ],
+        "skipped_categories": [],
+        "common_adjust_actions": [
+          "more_landmarks",
+          "more_relaxed",
+          "less_walking"
+        ]
+      },
+      "current_trip": {
+        "group_type": "family",
+        "children_ages": [
+          10,
+          9
+        ],
+        "start_location": {
+          "name": "南京东路地铁站",
+          "lat": 31.2358,
+          "lng": 121.4816
+        },
+        "time_window": {
+          "start": "10:00",
+          "end": "19:30"
+        },
+        "budget_total": 834,
+        "constraints": {
+          "indoor_only": false,
+          "no_queue": false,
+          "max_walking_min": 55,
+          "special_needs": [
+            "baby_friendly"
+          ]
+        },
+        "soft_preferences": {
+          "prefer_tags": [
+            "亲子",
+            "室内",
+            "互动体验",
+            "儿童友好"
+          ],
+          "avoid_tags": [
+            "夜游",
+            "楼梯多",
+            "嘈杂"
+          ]
+        },
+        "intent_confidence": 0.65,
+        "missing_params": []
+      }
+    },
+    {
+      "user_id": "user_063",
+      "name": "傅宁2",
+      "basic_profile": {
+        "home_city": "深圳",
+        "age_group": "25-34",
+        "mobility": "normal",
+        "dietary_restrictions": [
+          "vegetarian"
+        ],
+        "default_start_location": {
+          "name": "上海南站",
+          "lat": 31.1547,
+          "lng": 121.4294
+        }
+      },
+      "preference_profile": {
+        "budget_sensitivity": 0.61,
+        "walking_tolerance": 0.64,
+        "crowd_tolerance": 0.71,
+        "schedule_tightness": 0.85,
+        "novelty_preference": 0.49,
+        "comfort_preference": 0.37
+      },
+      "category_preferences": {
+        "museum": 0.75,
+        "restaurant": 0.55,
+        "shopping": 0.5,
+        "landmark": 0.62,
+        "cafe": 0.54,
+        "night_view": 0.61
+      },
+      "history_behavior": {
+        "liked_poi_ids": [
+          "poi_030",
+          "poi_037",
+          "poi_049"
+        ],
+        "disliked_poi_ids": [
+          "poi_054"
+        ],
+        "skipped_categories": [
+          "night_view"
+        ],
+        "common_adjust_actions": [
+          "avoid_crowd",
+          "more_food",
+          "replace_poi"
+        ]
+      },
+      "current_trip": {
+        "group_type": "friends",
+        "children_ages": [],
+        "start_location": {
+          "name": "上海南站地铁站",
+          "lat": 31.1547,
+          "lng": 121.4294
+        },
+        "time_window": {
+          "start": "11:00",
+          "end": "21:30"
+        },
+        "budget_total": 871,
+        "constraints": {
+          "indoor_only": false,
+          "no_queue": true,
+          "max_walking_min": 15,
+          "special_needs": [
+            "no_stairs"
+          ]
+        },
+        "soft_preferences": {
+          "prefer_tags": [
+            "高性价比",
+            "咖啡",
+            "安静",
+            "自然"
+          ],
+          "avoid_tags": [
+            "高价",
+            "预约困难"
+          ]
+        },
+        "intent_confidence": 0.68,
+        "missing_params": [
+          "dinner_preference"
+        ]
+      }
+    },
+    {
+      "user_id": "user_064",
+      "name": "袁可欣2",
+      "basic_profile": {
+        "home_city": "成都",
+        "age_group": "18-24",
+        "mobility": "normal",
+        "dietary_restrictions": [
+          "halal"
+        ],
+        "default_start_location": {
+          "name": "中山公园",
+          "lat": 31.2202,
+          "lng": 121.4159
+        }
+      },
+      "preference_profile": {
+        "budget_sensitivity": 0.78,
+        "walking_tolerance": 0.77,
+        "crowd_tolerance": 0.78,
+        "schedule_tightness": 0.44,
+        "novelty_preference": 0.72,
+        "comfort_preference": 0.66
+      },
+      "category_preferences": {
+        "museum": 0.8,
+        "restaurant": 0.64,
+        "shopping": 0.54,
+        "landmark": 0.68,
+        "cafe": 0.62,
+        "night_view": 0.73
+      },
+      "history_behavior": {
+        "liked_poi_ids": [
+          "poi_033",
+          "poi_040",
+          "poi_052"
+        ],
+        "disliked_poi_ids": [
+          "poi_065"
+        ],
+        "skipped_categories": [],
+        "common_adjust_actions": [
+          "more_relaxed",
+          "less_walking",
+          "lower_cost"
+        ]
+      },
+      "current_trip": {
+        "group_type": "solo",
+        "children_ages": [],
+        "start_location": {
+          "name": "中山公园地铁站",
+          "lat": 31.2202,
+          "lng": 121.4159
+        },
+        "time_window": {
+          "start": "12:00",
+          "end": "19:30"
+        },
+        "budget_total": 908,
+        "constraints": {
+          "indoor_only": false,
+          "no_queue": false,
+          "max_walking_min": 20,
+          "special_needs": [
+            "wheelchair"
+          ]
+        },
+        "soft_preferences": {
+          "prefer_tags": [
+            "历史",
+            "经典",
+            "本帮菜",
+            "现代"
+          ],
+          "avoid_tags": [
+            "人流密集",
+            "步行多"
+          ]
+        },
+        "intent_confidence": 0.72,
+        "missing_params": []
+      }
+    },
+    {
+      "user_id": "user_065",
+      "name": "林悦3",
+      "basic_profile": {
+        "home_city": "上海",
+        "age_group": "25-34",
+        "mobility": "normal",
+        "dietary_restrictions": [
+          "no_spicy",
+          "light_meal"
+        ],
+        "default_start_location": {
+          "name": "人民广场",
+          "lat": 31.2304,
+          "lng": 121.4737
+        }
+      },
+      "preference_profile": {
+        "budget_sensitivity": 0.4,
+        "walking_tolerance": 0.25,
+        "crowd_tolerance": 0.2,
+        "schedule_tightness": 0.63,
+        "novelty_preference": 0.3,
+        "comfort_preference": 0.3
+      },
+      "category_preferences": {
+        "museum": 0.85,
+        "restaurant": 0.73,
+        "shopping": 0.58,
+        "landmark": 0.74,
+        "cafe": 0.7,
+        "night_view": 0.2
+      },
+      "history_behavior": {
+        "liked_poi_ids": [
+          "poi_036",
+          "poi_043",
+          "poi_055"
+        ],
+        "disliked_poi_ids": [
+          "poi_076"
+        ],
+        "skipped_categories": [
+          "shopping"
+        ],
+        "common_adjust_actions": [
+          "more_food",
+          "replace_poi",
+          "more_landmarks"
+        ]
+      },
+      "current_trip": {
+        "group_type": "couple",
+        "children_ages": [],
+        "start_location": {
+          "name": "人民广场地铁站",
+          "lat": 31.2304,
+          "lng": 121.4737
+        },
+        "time_window": {
+          "start": "13:00",
+          "end": "21:30"
+        },
+        "budget_total": 945,
+        "constraints": {
+          "indoor_only": false,
+          "no_queue": false,
+          "max_walking_min": 25,
+          "special_needs": [
+            "pet_friendly"
+          ]
+        },
+        "soft_preferences": {
+          "prefer_tags": [
+            "展览",
+            "艺术",
+            "雨天",
+            "轻食"
+          ],
+          "avoid_tags": [
+            "雨天不便",
+            "停车难"
+          ]
+        },
+        "intent_confidence": 0.75,
+        "missing_params": [
+          "start_location"
+        ]
+      }
+    },
+    {
+      "user_id": "user_066",
+      "name": "周明一家3",
+      "basic_profile": {
+        "home_city": "杭州",
+        "age_group": "35-44",
+        "mobility": "elderly_friendly",
+        "dietary_restrictions": [
+          "vegetarian",
+          "no_loud_noise"
+        ],
+        "default_start_location": {
+          "name": "上海虹桥站",
+          "lat": 31.1947,
+          "lng": 121.3188
+        }
+      },
+      "preference_profile": {
+        "budget_sensitivity": 0.57,
+        "walking_tolerance": 0.38,
+        "crowd_tolerance": 0.27,
+        "schedule_tightness": 0.82,
+        "novelty_preference": 0.53,
+        "comfort_preference": 0.59
+      },
+      "category_preferences": {
+        "museum": 0.35,
+        "restaurant": 0.82,
+        "shopping": 0.62,
+        "landmark": 0.8,
+        "cafe": 0.78,
+        "night_view": 0.32
+      },
+      "history_behavior": {
+        "liked_poi_ids": [
+          "poi_039",
+          "poi_046",
+          "poi_058"
+        ],
+        "disliked_poi_ids": [
+          "poi_007"
+        ],
+        "skipped_categories": [],
+        "common_adjust_actions": [
+          "less_walking",
+          "lower_cost",
+          "avoid_crowd"
+        ]
+      },
+      "current_trip": {
+        "group_type": "family",
+        "children_ages": [
+          6,
+          7
+        ],
+        "start_location": {
+          "name": "上海虹桥站地铁站",
+          "lat": 31.1947,
+          "lng": 121.3188
+        },
+        "time_window": {
+          "start": "08:00",
+          "end": "17:30"
+        },
+        "budget_total": 982,
+        "constraints": {
+          "indoor_only": true,
+          "no_queue": true,
+          "max_walking_min": 30,
+          "special_needs": [
+            "no_loud_noise"
+          ]
+        },
+        "soft_preferences": {
+          "prefer_tags": [
+            "免费",
+            "亲水",
+            "老字号",
+            "开阔"
+          ],
+          "avoid_tags": [
+            "排队",
+            "商业化"
+          ]
+        },
+        "intent_confidence": 0.6,
+        "missing_params": []
+      }
+    },
+    {
+      "user_id": "user_067",
+      "name": "陈野3",
+      "basic_profile": {
+        "home_city": "苏州",
+        "age_group": "18-24",
+        "mobility": "normal",
+        "dietary_restrictions": [],
+        "default_start_location": {
+          "name": "徐家汇",
+          "lat": 31.1906,
+          "lng": 121.4369
+        }
+      },
+      "preference_profile": {
+        "budget_sensitivity": 0.74,
+        "walking_tolerance": 0.51,
+        "crowd_tolerance": 0.34,
+        "schedule_tightness": 0.41,
+        "novelty_preference": 0.76,
+        "comfort_preference": 0.88
+      },
+      "category_preferences": {
+        "museum": 0.4,
+        "restaurant": 0.91,
+        "shopping": 0.66,
+        "landmark": 0.86,
+        "cafe": 0.86,
+        "night_view": 0.44
+      },
+      "history_behavior": {
+        "liked_poi_ids": [
+          "poi_042",
+          "poi_049",
+          "poi_061"
+        ],
+        "disliked_poi_ids": [
+          "poi_018"
+        ],
+        "skipped_categories": [],
+        "common_adjust_actions": [
+          "replace_poi",
+          "more_landmarks",
+          "more_relaxed"
+        ]
+      },
+      "current_trip": {
+        "group_type": "friends",
+        "children_ages": [],
+        "start_location": {
+          "name": "徐家汇地铁站",
+          "lat": 31.1906,
+          "lng": 121.4369
+        },
+        "time_window": {
+          "start": "09:00",
+          "end": "19:30"
+        },
+        "budget_total": 199,
+        "constraints": {
+          "indoor_only": false,
+          "no_queue": false,
+          "max_walking_min": 35,
+          "special_needs": []
+        },
+        "soft_preferences": {
+          "prefer_tags": [
+            "拍照",
+            "小众",
+            "文艺",
+            "夜景"
+          ],
+          "avoid_tags": [
+            "夜游",
+            "楼梯多",
+            "嘈杂"
+          ]
+        },
+        "intent_confidence": 0.64,
+        "missing_params": []
+      }
+    },
+    {
+      "user_id": "user_068",
+      "name": "顾南3",
+      "basic_profile": {
+        "home_city": "南京",
+        "age_group": "25-34",
+        "mobility": "normal",
+        "dietary_restrictions": [
+          "no_spicy"
+        ],
+        "default_start_location": {
+          "name": "陆家嘴",
+          "lat": 31.2381,
+          "lng": 121.4998
+        }
+      },
+      "preference_profile": {
+        "budget_sensitivity": 0.36,
+        "walking_tolerance": 0.64,
+        "crowd_tolerance": 0.41,
+        "schedule_tightness": 0.6,
+        "novelty_preference": 0.34,
+        "comfort_preference": 0.52
+      },
+      "category_preferences": {
+        "museum": 0.45,
+        "restaurant": 0.45,
+        "shopping": 0.7,
+        "landmark": 0.34,
+        "cafe": 0.34,
+        "night_view": 0.56
+      },
+      "history_behavior": {
+        "liked_poi_ids": [
+          "poi_045",
+          "poi_052",
+          "poi_064"
+        ],
+        "disliked_poi_ids": [
+          "poi_029"
+        ],
+        "skipped_categories": [],
+        "common_adjust_actions": [
+          "lower_cost",
+          "avoid_crowd",
+          "more_food"
+        ]
+      },
+      "current_trip": {
+        "group_type": "solo",
+        "children_ages": [],
+        "start_location": {
+          "name": "陆家嘴地铁站",
+          "lat": 31.2381,
+          "lng": 121.4998
+        },
+        "time_window": {
+          "start": "10:00",
+          "end": "17:30"
+        },
+        "budget_total": 236,
+        "constraints": {
+          "indoor_only": false,
+          "no_queue": false,
+          "max_walking_min": 40,
+          "special_needs": [
+            "baby_friendly"
+          ]
+        },
+        "soft_preferences": {
+          "prefer_tags": [
+            "亲子",
+            "室内",
+            "互动体验",
+            "儿童友好"
+          ],
+          "avoid_tags": [
+            "高价",
+            "预约困难"
+          ]
+        },
+        "intent_confidence": 0.67,
+        "missing_params": []
+      }
+    },
+    {
+      "user_id": "user_069",
+      "name": "许知夏3",
+      "basic_profile": {
+        "home_city": "北京",
+        "age_group": "45-54",
+        "mobility": "limited",
+        "dietary_restrictions": [
+          "vegetarian"
+        ],
+        "default_start_location": {
+          "name": "静安寺",
+          "lat": 31.2231,
+          "lng": 121.4453
+        }
+      },
+      "preference_profile": {
+        "budget_sensitivity": 0.53,
+        "walking_tolerance": 0.77,
+        "crowd_tolerance": 0.48,
+        "schedule_tightness": 0.79,
+        "novelty_preference": 0.57,
+        "comfort_preference": 0.81
+      },
+      "category_preferences": {
+        "museum": 0.5,
+        "restaurant": 0.54,
+        "shopping": 0.19,
+        "landmark": 0.4,
+        "cafe": 0.42,
+        "night_view": 0.68
+      },
+      "history_behavior": {
+        "liked_poi_ids": [
+          "poi_048",
+          "poi_055",
+          "poi_067"
+        ],
+        "disliked_poi_ids": [
+          "poi_040"
+        ],
+        "skipped_categories": [],
+        "common_adjust_actions": [
+          "more_landmarks",
+          "more_relaxed",
+          "less_walking"
+        ]
+      },
+      "current_trip": {
+        "group_type": "couple",
+        "children_ages": [],
+        "start_location": {
+          "name": "静安寺地铁站",
+          "lat": 31.2231,
+          "lng": 121.4453
+        },
+        "time_window": {
+          "start": "11:00",
+          "end": "19:30"
+        },
+        "budget_total": 273,
+        "constraints": {
+          "indoor_only": false,
+          "no_queue": true,
+          "max_walking_min": 45,
+          "special_needs": [
+            "no_stairs"
+          ]
+        },
+        "soft_preferences": {
+          "prefer_tags": [
+            "高性价比",
+            "咖啡",
+            "安静",
+            "自然"
+          ],
+          "avoid_tags": [
+            "人流密集",
+            "步行多"
+          ]
+        },
+        "intent_confidence": 0.71,
+        "missing_params": []
+      }
+    },
+    {
+      "user_id": "user_070",
+      "name": "王予安3",
+      "basic_profile": {
+        "home_city": "广州",
+        "age_group": "35-44",
+        "mobility": "normal",
+        "dietary_restrictions": [
+          "halal"
+        ],
+        "default_start_location": {
+          "name": "南京东路",
+          "lat": 31.2358,
+          "lng": 121.4816
+        }
+      },
+      "preference_profile": {
+        "budget_sensitivity": 0.7,
+        "walking_tolerance": 0.25,
+        "crowd_tolerance": 0.55,
+        "schedule_tightness": 0.38,
+        "novelty_preference": 0.8,
+        "comfort_preference": 0.45
+      },
+      "category_preferences": {
+        "museum": 0.55,
+        "restaurant": 0.63,
+        "shopping": 0.23,
+        "landmark": 0.46,
+        "cafe": 0.5,
+        "night_view": 0.8
+      },
+      "history_behavior": {
+        "liked_poi_ids": [
+          "poi_051",
+          "poi_058",
+          "poi_070"
+        ],
+        "disliked_poi_ids": [
+          "poi_051"
+        ],
+        "skipped_categories": [
+          "shopping"
+        ],
+        "common_adjust_actions": [
+          "avoid_crowd",
+          "more_food",
+          "replace_poi"
+        ]
+      },
+      "current_trip": {
+        "group_type": "family",
+        "children_ages": [
+          10,
+          11
+        ],
+        "start_location": {
+          "name": "南京东路地铁站",
+          "lat": 31.2358,
+          "lng": 121.4816
+        },
+        "time_window": {
+          "start": "12:00",
+          "end": "21:30"
+        },
+        "budget_total": 310,
+        "constraints": {
+          "indoor_only": false,
+          "no_queue": false,
+          "max_walking_min": 50,
+          "special_needs": [
+            "wheelchair"
+          ]
+        },
+        "soft_preferences": {
+          "prefer_tags": [
+            "历史",
+            "经典",
+            "本帮菜",
+            "现代"
+          ],
+          "avoid_tags": [
+            "雨天不便",
+            "停车难"
+          ]
+        },
+        "intent_confidence": 0.7,
+        "missing_params": []
+      }
+    },
+    {
+      "user_id": "user_071",
+      "name": "沈星河3",
+      "basic_profile": {
+        "home_city": "深圳",
+        "age_group": "25-34",
+        "mobility": "normal",
+        "dietary_restrictions": [
+          "no_spicy",
+          "light_meal"
+        ],
+        "default_start_location": {
+          "name": "上海南站",
+          "lat": 31.1547,
+          "lng": 121.4294
+        }
+      },
+      "preference_profile": {
+        "budget_sensitivity": 0.87,
+        "walking_tolerance": 0.38,
+        "crowd_tolerance": 0.62,
+        "schedule_tightness": 0.57,
+        "novelty_preference": 0.38,
+        "comfort_preference": 0.74
+      },
+      "category_preferences": {
+        "museum": 0.6,
+        "restaurant": 0.72,
+        "shopping": 0.27,
+        "landmark": 0.52,
+        "cafe": 0.58,
+        "night_view": 0.27
+      },
+      "history_behavior": {
+        "liked_poi_ids": [
+          "poi_054",
+          "poi_061",
+          "poi_073"
+        ],
+        "disliked_poi_ids": [
+          "poi_062"
+        ],
+        "skipped_categories": [],
+        "common_adjust_actions": [
+          "more_relaxed",
+          "less_walking",
+          "lower_cost"
+        ]
+      },
+      "current_trip": {
+        "group_type": "friends",
+        "children_ages": [],
+        "start_location": {
+          "name": "上海南站地铁站",
+          "lat": 31.1547,
+          "lng": 121.4294
+        },
+        "time_window": {
+          "start": "13:00",
+          "end": "23:30"
+        },
+        "budget_total": 347,
+        "constraints": {
+          "indoor_only": false,
+          "no_queue": false,
+          "max_walking_min": 55,
+          "special_needs": [
+            "pet_friendly"
+          ]
+        },
+        "soft_preferences": {
+          "prefer_tags": [
+            "展览",
+            "艺术",
+            "雨天",
+            "轻食"
+          ],
+          "avoid_tags": [
+            "排队",
+            "商业化"
+          ]
+        },
+        "intent_confidence": 0.73,
+        "missing_params": []
+      }
+    },
+    {
+      "user_id": "user_072",
+      "name": "赵晨3",
+      "basic_profile": {
+        "home_city": "成都",
+        "age_group": "18-24",
+        "mobility": "normal",
+        "dietary_restrictions": [
+          "vegetarian",
+          "no_loud_noise"
+        ],
+        "default_start_location": {
+          "name": "中山公园",
+          "lat": 31.2202,
+          "lng": 121.4159
+        }
+      },
+      "preference_profile": {
+        "budget_sensitivity": 0.49,
+        "walking_tolerance": 0.51,
+        "crowd_tolerance": 0.69,
+        "schedule_tightness": 0.76,
+        "novelty_preference": 0.61,
+        "comfort_preference": 0.38
+      },
+      "category_preferences": {
+        "museum": 0.65,
+        "restaurant": 0.81,
+        "shopping": 0.31,
+        "landmark": 0.58,
+        "cafe": 0.66,
+        "night_view": 0.39
+      },
+      "history_behavior": {
+        "liked_poi_ids": [
+          "poi_057",
+          "poi_064",
+          "poi_076"
+        ],
+        "disliked_poi_ids": [
+          "poi_073"
+        ],
+        "skipped_categories": [],
+        "common_adjust_actions": [
+          "more_food",
+          "replace_poi",
+          "more_landmarks"
+        ]
+      },
+      "current_trip": {
+        "group_type": "solo",
+        "children_ages": [],
+        "start_location": {
+          "name": "中山公园地铁站",
+          "lat": 31.2202,
+          "lng": 121.4159
+        },
+        "time_window": {
+          "start": "08:00",
+          "end": "15:30"
+        },
+        "budget_total": 384,
+        "constraints": {
+          "indoor_only": true,
+          "no_queue": true,
+          "max_walking_min": 15,
+          "special_needs": [
+            "no_loud_noise"
+          ]
+        },
+        "soft_preferences": {
+          "prefer_tags": [
+            "免费",
+            "亲水",
+            "老字号",
+            "开阔"
+          ],
+          "avoid_tags": [
+            "夜游",
+            "楼梯多",
+            "嘈杂"
+          ]
+        },
+        "intent_confidence": 0.59,
+        "missing_params": [
+          "dinner_preference"
+        ]
+      }
+    },
+    {
+      "user_id": "user_073",
+      "name": "李思源3",
+      "basic_profile": {
+        "home_city": "上海",
+        "age_group": "25-34",
+        "mobility": "normal",
+        "dietary_restrictions": [],
+        "default_start_location": {
+          "name": "人民广场",
+          "lat": 31.2304,
+          "lng": 121.4737
+        }
+      },
+      "preference_profile": {
+        "budget_sensitivity": 0.66,
+        "walking_tolerance": 0.64,
+        "crowd_tolerance": 0.76,
+        "schedule_tightness": 0.35,
+        "novelty_preference": 0.84,
+        "comfort_preference": 0.67
+      },
+      "category_preferences": {
+        "museum": 0.7,
+        "restaurant": 0.9,
+        "shopping": 0.35,
+        "landmark": 0.64,
+        "cafe": 0.74,
+        "night_view": 0.51
+      },
+      "history_behavior": {
+        "liked_poi_ids": [
+          "poi_060",
+          "poi_067",
+          "poi_079"
+        ],
+        "disliked_poi_ids": [
+          "poi_004"
+        ],
+        "skipped_categories": [],
+        "common_adjust_actions": [
+          "less_walking",
+          "lower_cost",
+          "avoid_crowd"
+        ]
+      },
+      "current_trip": {
+        "group_type": "couple",
+        "children_ages": [],
+        "start_location": {
+          "name": "人民广场地铁站",
+          "lat": 31.2304,
+          "lng": 121.4737
+        },
+        "time_window": {
+          "start": "09:00",
+          "end": "17:30"
+        },
+        "budget_total": 421,
+        "constraints": {
+          "indoor_only": false,
+          "no_queue": false,
+          "max_walking_min": 20,
+          "special_needs": []
+        },
+        "soft_preferences": {
+          "prefer_tags": [
+            "拍照",
+            "小众",
+            "文艺",
+            "夜景"
+          ],
+          "avoid_tags": [
+            "高价",
+            "预约困难"
+          ]
+        },
+        "intent_confidence": 0.62,
+        "missing_params": []
+      }
+    },
+    {
+      "user_id": "user_074",
+      "name": "何安宁3",
+      "basic_profile": {
+        "home_city": "杭州",
+        "age_group": "35-44",
+        "mobility": "elderly_friendly",
+        "dietary_restrictions": [
+          "no_spicy"
+        ],
+        "default_start_location": {
+          "name": "上海虹桥站",
+          "lat": 31.1947,
+          "lng": 121.3188
+        }
+      },
+      "preference_profile": {
+        "budget_sensitivity": 0.83,
+        "walking_tolerance": 0.77,
+        "crowd_tolerance": 0.83,
+        "schedule_tightness": 0.54,
+        "novelty_preference": 0.42,
+        "comfort_preference": 0.31
+      },
+      "category_preferences": {
+        "museum": 0.75,
+        "restaurant": 0.44,
+        "shopping": 0.39,
+        "landmark": 0.7,
+        "cafe": 0.82,
+        "night_view": 0.63
+      },
+      "history_behavior": {
+        "liked_poi_ids": [
+          "poi_063",
+          "poi_070",
+          "poi_002"
+        ],
+        "disliked_poi_ids": [
+          "poi_015"
+        ],
+        "skipped_categories": [],
+        "common_adjust_actions": [
+          "replace_poi",
+          "more_landmarks",
+          "more_relaxed"
+        ]
+      },
+      "current_trip": {
+        "group_type": "family",
+        "children_ages": [
+          6,
+          9
+        ],
+        "start_location": {
+          "name": "上海虹桥站地铁站",
+          "lat": 31.1947,
+          "lng": 121.3188
+        },
+        "time_window": {
+          "start": "10:00",
+          "end": "19:30"
+        },
+        "budget_total": 458,
+        "constraints": {
+          "indoor_only": false,
+          "no_queue": false,
+          "max_walking_min": 25,
+          "special_needs": [
+            "baby_friendly"
+          ]
+        },
+        "soft_preferences": {
+          "prefer_tags": [
+            "亲子",
+            "室内",
+            "互动体验",
+            "儿童友好"
+          ],
+          "avoid_tags": [
+            "人流密集",
+            "步行多"
+          ]
+        },
+        "intent_confidence": 0.66,
+        "missing_params": []
+      }
+    },
+    {
+      "user_id": "user_075",
+      "name": "唐小满3",
+      "basic_profile": {
+        "home_city": "苏州",
+        "age_group": "18-24",
+        "mobility": "normal",
+        "dietary_restrictions": [
+          "vegetarian"
+        ],
+        "default_start_location": {
+          "name": "徐家汇",
+          "lat": 31.1906,
+          "lng": 121.4369
+        }
+      },
+      "preference_profile": {
+        "budget_sensitivity": 0.45,
+        "walking_tolerance": 0.25,
+        "crowd_tolerance": 0.25,
+        "schedule_tightness": 0.73,
+        "novelty_preference": 0.65,
+        "comfort_preference": 0.6
+      },
+      "category_preferences": {
+        "museum": 0.8,
+        "restaurant": 0.53,
+        "shopping": 0.43,
+        "landmark": 0.76,
+        "cafe": 0.3,
+        "night_view": 0.75
+      },
+      "history_behavior": {
+        "liked_poi_ids": [
+          "poi_066",
+          "poi_073",
+          "poi_005"
+        ],
+        "disliked_poi_ids": [
+          "poi_026"
+        ],
+        "skipped_categories": [
+          "shopping"
+        ],
+        "common_adjust_actions": [
+          "lower_cost",
+          "avoid_crowd",
+          "more_food"
+        ]
+      },
+      "current_trip": {
+        "group_type": "friends",
+        "children_ages": [],
+        "start_location": {
+          "name": "徐家汇地铁站",
+          "lat": 31.1906,
+          "lng": 121.4369
+        },
+        "time_window": {
+          "start": "11:00",
+          "end": "21:30"
+        },
+        "budget_total": 495,
+        "constraints": {
+          "indoor_only": false,
+          "no_queue": true,
+          "max_walking_min": 30,
+          "special_needs": [
+            "no_stairs"
+          ]
+        },
+        "soft_preferences": {
+          "prefer_tags": [
+            "高性价比",
+            "咖啡",
+            "安静",
+            "自然"
+          ],
+          "avoid_tags": [
+            "雨天不便",
+            "停车难"
+          ]
+        },
+        "intent_confidence": 0.69,
+        "missing_params": []
+      }
+    },
+    {
+      "user_id": "user_076",
+      "name": "宋亦然3",
+      "basic_profile": {
+        "home_city": "南京",
+        "age_group": "25-34",
+        "mobility": "normal",
+        "dietary_restrictions": [
+          "halal"
+        ],
+        "default_start_location": {
+          "name": "陆家嘴",
+          "lat": 31.2381,
+          "lng": 121.4998
+        }
+      },
+      "preference_profile": {
+        "budget_sensitivity": 0.62,
+        "walking_tolerance": 0.38,
+        "crowd_tolerance": 0.32,
+        "schedule_tightness": 0.32,
+        "novelty_preference": 0.88,
+        "comfort_preference": 0.89
+      },
+      "category_preferences": {
+        "museum": 0.85,
+        "restaurant": 0.62,
+        "shopping": 0.47,
+        "landmark": 0.82,
+        "cafe": 0.38,
+        "night_view": 0.22
+      },
+      "history_behavior": {
+        "liked_poi_ids": [
+          "poi_069",
+          "poi_076",
+          "poi_008"
+        ],
+        "disliked_poi_ids": [
+          "poi_037"
+        ],
+        "skipped_categories": [],
+        "common_adjust_actions": [
+          "more_landmarks",
+          "more_relaxed",
+          "less_walking"
+        ]
+      },
+      "current_trip": {
+        "group_type": "solo",
+        "children_ages": [],
+        "start_location": {
+          "name": "陆家嘴地铁站",
+          "lat": 31.2381,
+          "lng": 121.4998
+        },
+        "time_window": {
+          "start": "12:00",
+          "end": "19:30"
+        },
+        "budget_total": 532,
+        "constraints": {
+          "indoor_only": false,
+          "no_queue": false,
+          "max_walking_min": 35,
+          "special_needs": [
+            "wheelchair"
+          ]
+        },
+        "soft_preferences": {
+          "prefer_tags": [
+            "历史",
+            "经典",
+            "本帮菜",
+            "现代"
+          ],
+          "avoid_tags": [
+            "排队",
+            "商业化"
+          ]
+        },
+        "intent_confidence": 0.72,
+        "missing_params": []
+      }
+    },
+    {
+      "user_id": "user_077",
+      "name": "蒋禾3",
+      "basic_profile": {
+        "home_city": "北京",
+        "age_group": "45-54",
+        "mobility": "limited",
+        "dietary_restrictions": [
+          "no_spicy",
+          "light_meal"
+        ],
+        "default_start_location": {
+          "name": "静安寺",
+          "lat": 31.2231,
+          "lng": 121.4453
+        }
+      },
+      "preference_profile": {
+        "budget_sensitivity": 0.79,
+        "walking_tolerance": 0.51,
+        "crowd_tolerance": 0.39,
+        "schedule_tightness": 0.51,
+        "novelty_preference": 0.46,
+        "comfort_preference": 0.53
+      },
+      "category_preferences": {
+        "museum": 0.35,
+        "restaurant": 0.71,
+        "shopping": 0.51,
+        "landmark": 0.88,
+        "cafe": 0.46,
+        "night_view": 0.34
+      },
+      "history_behavior": {
+        "liked_poi_ids": [
+          "poi_072",
+          "poi_079",
+          "poi_011"
+        ],
+        "disliked_poi_ids": [
+          "poi_048"
+        ],
+        "skipped_categories": [
+          "night_view"
+        ],
+        "common_adjust_actions": [
+          "avoid_crowd",
+          "more_food",
+          "replace_poi"
+        ]
+      },
+      "current_trip": {
+        "group_type": "couple",
+        "children_ages": [],
+        "start_location": {
+          "name": "静安寺地铁站",
+          "lat": 31.2231,
+          "lng": 121.4453
+        },
+        "time_window": {
+          "start": "13:00",
+          "end": "21:30"
+        },
+        "budget_total": 569,
+        "constraints": {
+          "indoor_only": false,
+          "no_queue": false,
+          "max_walking_min": 40,
+          "special_needs": [
+            "pet_friendly"
+          ]
+        },
+        "soft_preferences": {
+          "prefer_tags": [
+            "展览",
+            "艺术",
+            "雨天",
+            "轻食"
+          ],
+          "avoid_tags": [
+            "夜游",
+            "楼梯多",
+            "嘈杂"
+          ]
+        },
+        "intent_confidence": 0.76,
+        "missing_params": []
+      }
+    },
+    {
+      "user_id": "user_078",
+      "name": "韩清3",
+      "basic_profile": {
+        "home_city": "广州",
+        "age_group": "35-44",
+        "mobility": "normal",
+        "dietary_restrictions": [
+          "vegetarian",
+          "no_loud_noise"
+        ],
+        "default_start_location": {
+          "name": "南京东路",
+          "lat": 31.2358,
+          "lng": 121.4816
+        }
+      },
+      "preference_profile": {
+        "budget_sensitivity": 0.41,
+        "walking_tolerance": 0.64,
+        "crowd_tolerance": 0.46,
+        "schedule_tightness": 0.7,
+        "novelty_preference": 0.69,
+        "comfort_preference": 0.82
+      },
+      "category_preferences": {
+        "museum": 0.4,
+        "restaurant": 0.8,
+        "shopping": 0.55,
+        "landmark": 0.36,
+        "cafe": 0.54,
+        "night_view": 0.46
+      },
+      "history_behavior": {
+        "liked_poi_ids": [
+          "poi_075",
+          "poi_002",
+          "poi_014"
+        ],
+        "disliked_poi_ids": [
+          "poi_059"
+        ],
+        "skipped_categories": [],
+        "common_adjust_actions": [
+          "more_relaxed",
+          "less_walking",
+          "lower_cost"
+        ]
+      },
+      "current_trip": {
+        "group_type": "family",
+        "children_ages": [
+          10,
+          7
+        ],
+        "start_location": {
+          "name": "南京东路地铁站",
+          "lat": 31.2358,
+          "lng": 121.4816
+        },
+        "time_window": {
+          "start": "08:00",
+          "end": "17:30"
+        },
+        "budget_total": 606,
+        "constraints": {
+          "indoor_only": true,
+          "no_queue": true,
+          "max_walking_min": 45,
+          "special_needs": [
+            "no_loud_noise"
+          ]
+        },
+        "soft_preferences": {
+          "prefer_tags": [
+            "免费",
+            "亲水",
+            "老字号",
+            "开阔"
+          ],
+          "avoid_tags": [
+            "高价",
+            "预约困难"
+          ]
+        },
+        "intent_confidence": 0.61,
+        "missing_params": [
+          "start_location"
+        ]
+      }
+    },
+    {
+      "user_id": "user_079",
+      "name": "陆遥3",
+      "basic_profile": {
+        "home_city": "深圳",
+        "age_group": "25-34",
+        "mobility": "normal",
+        "dietary_restrictions": [],
+        "default_start_location": {
+          "name": "上海南站",
+          "lat": 31.1547,
+          "lng": 121.4294
+        }
+      },
+      "preference_profile": {
+        "budget_sensitivity": 0.58,
+        "walking_tolerance": 0.77,
+        "crowd_tolerance": 0.53,
+        "schedule_tightness": 0.29,
+        "novelty_preference": 0.92,
+        "comfort_preference": 0.46
+      },
+      "category_preferences": {
+        "museum": 0.45,
+        "restaurant": 0.89,
+        "shopping": 0.59,
+        "landmark": 0.42,
+        "cafe": 0.62,
+        "night_view": 0.58
+      },
+      "history_behavior": {
+        "liked_poi_ids": [
+          "poi_078",
+          "poi_005",
+          "poi_017"
+        ],
+        "disliked_poi_ids": [
+          "poi_070"
+        ],
+        "skipped_categories": [],
+        "common_adjust_actions": [
+          "more_food",
+          "replace_poi",
+          "more_landmarks"
+        ]
+      },
+      "current_trip": {
+        "group_type": "friends",
+        "children_ages": [],
+        "start_location": {
+          "name": "上海南站地铁站",
+          "lat": 31.1547,
+          "lng": 121.4294
+        },
+        "time_window": {
+          "start": "09:00",
+          "end": "19:30"
+        },
+        "budget_total": 643,
+        "constraints": {
+          "indoor_only": false,
+          "no_queue": false,
+          "max_walking_min": 50,
+          "special_needs": []
+        },
+        "soft_preferences": {
+          "prefer_tags": [
+            "拍照",
+            "小众",
+            "文艺",
+            "夜景"
+          ],
+          "avoid_tags": [
+            "人流密集",
+            "步行多"
+          ]
+        },
+        "intent_confidence": 0.65,
+        "missing_params": []
+      }
+    },
+    {
+      "user_id": "user_080",
+      "name": "苏念3",
+      "basic_profile": {
+        "home_city": "成都",
+        "age_group": "18-24",
+        "mobility": "normal",
+        "dietary_restrictions": [
+          "no_spicy"
+        ],
+        "default_start_location": {
+          "name": "中山公园",
+          "lat": 31.2202,
+          "lng": 121.4159
+        }
+      },
+      "preference_profile": {
+        "budget_sensitivity": 0.75,
+        "walking_tolerance": 0.25,
+        "crowd_tolerance": 0.6,
+        "schedule_tightness": 0.48,
+        "novelty_preference": 0.5,
+        "comfort_preference": 0.75
+      },
+      "category_preferences": {
+        "museum": 0.5,
+        "restaurant": 0.43,
+        "shopping": 0.63,
+        "landmark": 0.48,
+        "cafe": 0.7,
+        "night_view": 0.7
+      },
+      "history_behavior": {
+        "liked_poi_ids": [
+          "poi_001",
+          "poi_008",
+          "poi_020"
+        ],
+        "disliked_poi_ids": [
+          "poi_001"
+        ],
+        "skipped_categories": [
+          "shopping"
+        ],
+        "common_adjust_actions": [
+          "less_walking",
+          "lower_cost",
+          "avoid_crowd"
+        ]
+      },
+      "current_trip": {
+        "group_type": "solo",
+        "children_ages": [],
+        "start_location": {
+          "name": "中山公园地铁站",
+          "lat": 31.2202,
+          "lng": 121.4159
+        },
+        "time_window": {
+          "start": "10:00",
+          "end": "17:30"
+        },
+        "budget_total": 680,
+        "constraints": {
+          "indoor_only": false,
+          "no_queue": false,
+          "max_walking_min": 55,
+          "special_needs": [
+            "baby_friendly"
+          ]
+        },
+        "soft_preferences": {
+          "prefer_tags": [
+            "亲子",
+            "室内",
+            "互动体验",
+            "儿童友好"
+          ],
+          "avoid_tags": [
+            "雨天不便",
+            "停车难"
+          ]
+        },
+        "intent_confidence": 0.64,
+        "missing_params": []
+      }
     }
-  }
-]
-
+  ]
+}

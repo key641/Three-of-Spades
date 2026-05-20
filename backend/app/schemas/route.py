@@ -14,6 +14,10 @@ class RouteStop(BaseModel):
     estimated_cost: int
     queue_minutes: int
     tags: list[str]
+    travel_minutes_from_previous: int | None = None
+    distance_km_from_previous: float | None = None
+    transport_mode_from_previous: str | None = None
+    reason: str | None = None
 
 
 class RouteScoreBreakdown(BaseModel):
@@ -32,6 +36,8 @@ class Route(BaseModel):
     total_duration_minutes: int
     total_cost_per_person: int
     total_queue_minutes: int
+    total_travel_minutes: int = 0
+    total_distance_km: float = 0
     score: int
     score_breakdown: RouteScoreBreakdown
     stops: list[RouteStop]
@@ -56,4 +62,3 @@ class ReplanRequest(BaseModel):
     event_label: str
     current_routes: list[Route]
     completed_poi_ids: list[str] = Field(default_factory=list)
-

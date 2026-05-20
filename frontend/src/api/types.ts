@@ -13,6 +13,10 @@ export interface RouteStop {
   estimated_cost: number;
   queue_minutes: number;
   tags: string[];
+  travel_minutes_from_previous?: number | null;
+  distance_km_from_previous?: number | null;
+  transport_mode_from_previous?: string | null;
+  reason?: string | null;
 }
 
 export interface RouteScoreBreakdown {
@@ -31,6 +35,8 @@ export interface Route {
   total_duration_minutes: number;
   total_cost_per_person: number;
   total_queue_minutes: number;
+  total_travel_minutes?: number;
+  total_distance_km?: number;
   score: number;
   score_breakdown: RouteScoreBreakdown;
   stops: RouteStop[];
@@ -55,4 +61,3 @@ export interface ChatResponse {
   routes: Route[];
   agent_trace: AgentTraceStep[];
 }
-

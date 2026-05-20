@@ -1,4 +1,4 @@
-import { Clock, Coins, Timer } from "lucide-react";
+import { Clock, Coins, MapPinned, Timer } from "lucide-react";
 import type { Route } from "../api/types";
 import { ActionBar } from "./ActionBar";
 import { RouteTimeline } from "./RouteTimeline";

@@ -1,71 +1,6781 @@
-[
-  {
-    "id": "poi_001",
-    "name": "武康路街区",
-    "city": "上海",
-    "category": "citywalk",
-    "lat": 31.213,
-    "lng": 121.445,
-    "avg_price": 0,
-    "rating": 4.6,
-    "queue_minutes": 0,
-    "visit_duration_minutes": 80,
-    "open_hours": "00:00-24:00",
-    "tags": ["拍照", "citywalk", "朋友出游"],
-    "negative_tags": ["周末人多"],
-    "family_friendly": 0.6,
-    "indoor": false
-  },
-  {
-    "id": "poi_002",
-    "name": "安静咖啡馆",
-    "city": "上海",
-    "category": "cafe",
-    "lat": 31.216,
-    "lng": 121.449,
-    "avg_price": 45,
-    "rating": 4.5,
-    "queue_minutes": 5,
-    "visit_duration_minutes": 50,
-    "open_hours": "10:00-22:00",
-    "tags": ["安静", "适合聊天", "少排队"],
-    "negative_tags": [],
-    "family_friendly": 0.5,
-    "indoor": true
-  },
-  {
-    "id": "poi_003",
-    "name": "弄堂本帮菜",
-    "city": "上海",
-    "category": "restaurant",
-    "lat": 31.219,
-    "lng": 121.452,
-    "avg_price": 135,
-    "rating": 4.7,
-    "queue_minutes": 20,
-    "visit_duration_minutes": 90,
-    "open_hours": "11:00-21:30",
-    "tags": ["吃好", "朋友聚餐", "本帮菜"],
-    "negative_tags": [],
-    "family_friendly": 0.7,
-    "indoor": true
-  },
-  {
-    "id": "poi_004",
-    "name": "衡山路夜景步道",
-    "city": "上海",
-    "category": "scenic",
-    "lat": 31.207,
-    "lng": 121.446,
-    "avg_price": 0,
-    "rating": 4.4,
-    "queue_minutes": 0,
-    "visit_duration_minutes": 60,
-    "open_hours": "00:00-24:00",
-    "tags": ["夜景", "散步", "拍照"],
-    "negative_tags": [],
-    "family_friendly": 0.6,
-    "indoor": false
-  }
-]
-
+{
+  "schema_version": "1.0.0",
+  "description": "POI mock data aligned with 字段设计.xlsx; optional geohash/currency/source fields are removed for MVP.",
+  "score_convention": "Unless a field is a count, price, time, rating, distance, or coordinate, preference and suitability scores use a 0 to 1 range.",
+  "pois": [
+    {
+      "poi_id": "poi_001",
+      "name": "上海博物馆东馆",
+      "category": "museum",
+      "tags": [
+        "室内",
+        "免费",
+        "文艺",
+        "历史",
+        "亲子",
+        "预约"
+      ],
+      "location": {
+        "city": "上海",
+        "district": "浦东新区",
+        "address": "世纪大道1952号",
+        "lat": 31.2296,
+        "lng": 121.5444
+      },
+      "visit_info": {
+        "avg_visit_duration_min": 120,
+        "price_min": 0,
+        "price_max": 0,
+        "open_time": "10:00",
+        "close_time": "18:00",
+        "last_entry_time": "17:00",
+        "need_booking": true,
+        "suitable_time_slots": [
+          "morning",
+          "afternoon"
+        ]
+      },
+      "quality": {
+        "rating": 4.4,
+        "review_count": 2939,
+        "popularity": 0.49,
+        "crowd_level": 0.35,
+        "queue_time_min": 12,
+        "peak_hours": [
+          "11:30-13:00",
+          "18:00-19:30"
+        ],
+        "live_crowd_level": 0.3,
+        "live_queue_time_min": 7
+      },
+      "suitability": {
+        "family": 0.77,
+        "couple": 0.77,
+        "friends": 0.63,
+        "solo": 0.59,
+        "elderly": 0.77,
+        "rainy_day": 0.75,
+        "budget_friendly": 1.0,
+        "photo_friendly": 0.5,
+        "food_nearby": 0.56,
+        "night_activity": 0.18
+      },
+      "planning_features": {
+        "indoor": true,
+        "walking_intensity": "medium",
+        "recommended_transport": [
+          "metro",
+          "taxi",
+          "drive"
+        ],
+        "nearby_poi_ids": [
+          "poi_002",
+          "poi_009"
+        ],
+        "avoid_reasons": [
+          "booking_required"
+        ],
+        "risk_flags": [
+          "booking_required"
+        ],
+        "meal_type": "",
+        "transit_hub_nearby": true,
+        "parking_available": true
+      },
+      "cover_image_url": "https://example.com/mock/上海博物馆东馆.jpg",
+      "highlight_text": "大体量室内文化馆,雨天和亲子路线都很稳妥",
+      "highlight_text_tags": [
+        "室内",
+        "免费",
+        "文艺"
+      ],
+      "ugc_tip": "如果时间紧,只保留核心区域也能形成完整体验。"
+    },
+    {
+      "poi_id": "poi_002",
+      "name": "外滩观景平台",
+      "category": "landmark",
+      "tags": [
+        "免费",
+        "拍照",
+        "夜景",
+        "经典",
+        "人流密集"
+      ],
+      "location": {
+        "city": "上海",
+        "district": "黄浦区",
+        "address": "中山东一路",
+        "lat": 31.2397,
+        "lng": 121.4907
+      },
+      "visit_info": {
+        "avg_visit_duration_min": 60,
+        "price_min": 0,
+        "price_max": 0,
+        "open_time": "00:00",
+        "close_time": "23:59",
+        "last_entry_time": "",
+        "need_booking": false,
+        "suitable_time_slots": [
+          "evening",
+          "night"
+        ]
+      },
+      "quality": {
+        "rating": 4.7,
+        "review_count": 4678,
+        "popularity": 0.56,
+        "crowd_level": 0.48,
+        "queue_time_min": 2,
+        "peak_hours": [
+          "15:00-17:00"
+        ],
+        "live_crowd_level": 0.46,
+        "live_queue_time_min": 0
+      },
+      "suitability": {
+        "family": 0.48,
+        "couple": 0.82,
+        "friends": 0.7,
+        "solo": 0.7,
+        "elderly": 0.48,
+        "rainy_day": 0.12,
+        "budget_friendly": 1.0,
+        "photo_friendly": 0.88,
+        "food_nearby": 0.6,
+        "night_activity": 0.94
+      },
+      "planning_features": {
+        "indoor": false,
+        "walking_intensity": "medium",
+        "recommended_transport": [
+          "metro",
+          "walk",
+          "taxi"
+        ],
+        "nearby_poi_ids": [
+          "poi_003",
+          "poi_010"
+        ],
+        "avoid_reasons": [],
+        "risk_flags": [],
+        "meal_type": "",
+        "transit_hub_nearby": true,
+        "parking_available": false
+      },
+      "cover_image_url": "https://example.com/mock/外滩观景平台.jpg",
+      "highlight_text": "上海夜景代表点,适合放在行程收尾制造记忆点",
+      "highlight_text_tags": [
+        "免费",
+        "拍照",
+        "夜景"
+      ],
+      "ugc_tip": "适合和附近餐饮节点组合,减少来回折返。"
+    },
+    {
+      "poi_id": "poi_003",
+      "name": "上海科技馆",
+      "category": "museum",
+      "tags": [
+        "室内",
+        "亲子",
+        "互动体验",
+        "科普",
+        "儿童友好"
+      ],
+      "location": {
+        "city": "上海",
+        "district": "浦东新区",
+        "address": "世纪大道2000号",
+        "lat": 31.2243,
+        "lng": 121.5441
+      },
+      "visit_info": {
+        "avg_visit_duration_min": 180,
+        "price_min": 45,
+        "price_max": 60,
+        "open_time": "09:00",
+        "close_time": "17:00",
+        "last_entry_time": "16:00",
+        "need_booking": true,
+        "suitable_time_slots": [
+          "morning",
+          "afternoon"
+        ]
+      },
+      "quality": {
+        "rating": 4.1,
+        "review_count": 6417,
+        "popularity": 0.63,
+        "crowd_level": 0.61,
+        "queue_time_min": 26,
+        "peak_hours": [
+          "19:00-21:30"
+        ],
+        "live_crowd_level": 0.62,
+        "live_queue_time_min": 23
+      },
+      "suitability": {
+        "family": 0.83,
+        "couple": 0.65,
+        "friends": 0.77,
+        "solo": 0.56,
+        "elderly": 0.83,
+        "rainy_day": 0.81,
+        "budget_friendly": 0.88,
+        "photo_friendly": 0.6,
+        "food_nearby": 0.64,
+        "night_activity": 0.3
+      },
+      "planning_features": {
+        "indoor": true,
+        "walking_intensity": "medium",
+        "recommended_transport": [
+          "metro",
+          "taxi",
+          "drive"
+        ],
+        "nearby_poi_ids": [
+          "poi_004",
+          "poi_011"
+        ],
+        "avoid_reasons": [
+          "long_queue",
+          "booking_required"
+        ],
+        "risk_flags": [
+          "long_queue",
+          "booking_required"
+        ],
+        "meal_type": "",
+        "transit_hub_nearby": true,
+        "parking_available": true
+      },
+      "cover_image_url": "https://example.com/mock/上海科技馆.jpg",
+      "highlight_text": "互动展项密集,适合孩子体力充沛的半日亲子安排",
+      "highlight_text_tags": [
+        "室内",
+        "亲子",
+        "互动体验"
+      ],
+      "ugc_tip": "雨天可优先选择室内动线,户外部分作为备选。"
+    },
+    {
+      "poi_id": "poi_004",
+      "name": "武康路历史风貌街区",
+      "category": "landmark",
+      "tags": [
+        "文艺",
+        "历史",
+        "拍照",
+        "街区",
+        "小众"
+      ],
+      "location": {
+        "city": "上海",
+        "district": "徐汇区",
+        "address": "武康路沿线",
+        "lat": 31.2105,
+        "lng": 121.4392
+      },
+      "visit_info": {
+        "avg_visit_duration_min": 90,
+        "price_min": 0,
+        "price_max": 0,
+        "open_time": "00:00",
+        "close_time": "23:59",
+        "last_entry_time": "",
+        "need_booking": false,
+        "suitable_time_slots": [
+          "morning",
+          "afternoon",
+          "evening"
+        ]
+      },
+      "quality": {
+        "rating": 4.4,
+        "review_count": 8156,
+        "popularity": 0.7,
+        "crowd_level": 0.74,
+        "queue_time_min": 33,
+        "peak_hours": [
+          "10:00-12:00",
+          "14:00-16:00"
+        ],
+        "live_crowd_level": 0.78,
+        "live_queue_time_min": 31
+      },
+      "suitability": {
+        "family": 0.54,
+        "couple": 0.92,
+        "friends": 0.84,
+        "solo": 0.67,
+        "elderly": 0.54,
+        "rainy_day": 0.16,
+        "budget_friendly": 1.0,
+        "photo_friendly": 0.78,
+        "food_nearby": 0.68,
+        "night_activity": 0.36
+      },
+      "planning_features": {
+        "indoor": false,
+        "walking_intensity": "high",
+        "recommended_transport": [
+          "metro",
+          "bike",
+          "walk"
+        ],
+        "nearby_poi_ids": [
+          "poi_005",
+          "poi_012"
+        ],
+        "avoid_reasons": [
+          "too_crowded",
+          "long_queue"
+        ],
+        "risk_flags": [
+          "long_queue"
+        ],
+        "meal_type": "",
+        "transit_hub_nearby": true,
+        "parking_available": false
+      },
+      "cover_image_url": "https://example.com/mock/武康路历史风貌街区.jpg",
+      "highlight_text": "适合边走边拍的海派街区,咖啡和小店密度高",
+      "highlight_text_tags": [
+        "文艺",
+        "历史",
+        "拍照"
+      ],
+      "ugc_tip": "拍照点集中在入口和主空间,无需全程深逛。"
+    },
+    {
+      "poi_id": "poi_005",
+      "name": "豫园",
+      "category": "landmark",
+      "tags": [
+        "历史",
+        "园林",
+        "拍照",
+        "经典",
+        "商业化"
+      ],
+      "location": {
+        "city": "上海",
+        "district": "黄浦区",
+        "address": "安仁街218号",
+        "lat": 31.2272,
+        "lng": 121.4921
+      },
+      "visit_info": {
+        "avg_visit_duration_min": 90,
+        "price_min": 30,
+        "price_max": 40,
+        "open_time": "09:00",
+        "close_time": "16:30",
+        "last_entry_time": "16:00",
+        "need_booking": false,
+        "suitable_time_slots": [
+          "morning",
+          "afternoon",
+          "evening"
+        ]
+      },
+      "quality": {
+        "rating": 4.7,
+        "review_count": 9895,
+        "popularity": 0.77,
+        "crowd_level": 0.87,
+        "queue_time_min": 9,
+        "peak_hours": [
+          "11:30-13:00",
+          "18:00-19:30"
+        ],
+        "live_crowd_level": 0.79,
+        "live_queue_time_min": 8
+      },
+      "suitability": {
+        "family": 0.57,
+        "couple": 0.54,
+        "friends": 0.56,
+        "solo": 0.53,
+        "elderly": 0.57,
+        "rainy_day": 0.18,
+        "budget_friendly": 0.92,
+        "photo_friendly": 0.83,
+        "food_nearby": 0.72,
+        "night_activity": 0.14
+      },
+      "planning_features": {
+        "indoor": false,
+        "walking_intensity": "medium",
+        "recommended_transport": [
+          "metro",
+          "walk",
+          "taxi"
+        ],
+        "nearby_poi_ids": [
+          "poi_006",
+          "poi_013"
+        ],
+        "avoid_reasons": [
+          "too_crowded"
+        ],
+        "risk_flags": [
+          "too_crowded"
+        ],
+        "meal_type": "",
+        "transit_hub_nearby": false,
+        "parking_available": false
+      },
+      "cover_image_url": "https://example.com/mock/豫园.jpg",
+      "highlight_text": "古典园林和老城厢小吃组合度高,但需避开正午人潮",
+      "highlight_text_tags": [
+        "历史",
+        "园林",
+        "拍照"
+      ],
+      "ugc_tip": "建议避开周末下午高峰,体验会更从容。"
+    },
+    {
+      "poi_id": "poi_006",
+      "name": "南京路步行街",
+      "category": "shopping",
+      "tags": [
+        "商业化",
+        "经典",
+        "购物",
+        "人流密集",
+        "夜景"
+      ],
+      "location": {
+        "city": "上海",
+        "district": "黄浦区",
+        "address": "南京东路步行街",
+        "lat": 31.2358,
+        "lng": 121.4816
+      },
+      "visit_info": {
+        "avg_visit_duration_min": 75,
+        "price_min": 0,
+        "price_max": 300,
+        "open_time": "10:00",
+        "close_time": "22:00",
+        "last_entry_time": "",
+        "need_booking": false,
+        "suitable_time_slots": [
+          "afternoon",
+          "evening",
+          "night"
+        ]
+      },
+      "quality": {
+        "rating": 4.1,
+        "review_count": 11634,
+        "popularity": 0.84,
+        "crowd_level": 0.32,
+        "queue_time_min": 0,
+        "peak_hours": [
+          "15:00-17:00"
+        ],
+        "live_crowd_level": 0.27,
+        "live_queue_time_min": 0
+      },
+      "suitability": {
+        "family": 0.6,
+        "couple": 0.81,
+        "friends": 0.63,
+        "solo": 0.64,
+        "elderly": 0.6,
+        "rainy_day": 0.2,
+        "budget_friendly": 0.4,
+        "photo_friendly": 0.88,
+        "food_nearby": 0.76,
+        "night_activity": 0.9
+      },
+      "planning_features": {
+        "indoor": false,
+        "walking_intensity": "high",
+        "recommended_transport": [
+          "metro",
+          "walk",
+          "taxi"
+        ],
+        "nearby_poi_ids": [
+          "poi_007",
+          "poi_014"
+        ],
+        "avoid_reasons": [
+          "too_expensive"
+        ],
+        "risk_flags": [],
+        "meal_type": "",
+        "transit_hub_nearby": true,
+        "parking_available": false
+      },
+      "cover_image_url": "https://example.com/mock/南京路步行街.jpg",
+      "highlight_text": "经典商圈动线顺,适合连接外滩但不适合怕挤用户",
+      "highlight_text_tags": [
+        "商业化",
+        "经典",
+        "购物"
+      ],
+      "ugc_tip": "如果时间紧,只保留核心区域也能形成完整体验。"
+    },
+    {
+      "poi_id": "poi_007",
+      "name": "上海自然博物馆",
+      "category": "museum",
+      "tags": [
+        "室内",
+        "亲子",
+        "科普",
+        "雨天",
+        "儿童友好"
+      ],
+      "location": {
+        "city": "上海",
+        "district": "静安区",
+        "address": "北京西路510号",
+        "lat": 31.2362,
+        "lng": 121.4629
+      },
+      "visit_info": {
+        "avg_visit_duration_min": 150,
+        "price_min": 30,
+        "price_max": 30,
+        "open_time": "09:00",
+        "close_time": "17:00",
+        "last_entry_time": "16:00",
+        "need_booking": true,
+        "suitable_time_slots": [
+          "morning",
+          "afternoon"
+        ]
+      },
+      "quality": {
+        "rating": 4.4,
+        "review_count": 13373,
+        "popularity": 0.91,
+        "crowd_level": 0.45,
+        "queue_time_min": 23,
+        "peak_hours": [
+          "19:00-21:30"
+        ],
+        "live_crowd_level": 0.43,
+        "live_queue_time_min": 24
+      },
+      "suitability": {
+        "family": 0.95,
+        "couple": 0.64,
+        "friends": 0.7,
+        "solo": 0.5,
+        "elderly": 0.95,
+        "rainy_day": 0.93,
+        "budget_friendly": 0.94,
+        "photo_friendly": 0.6,
+        "food_nearby": 0.8,
+        "night_activity": 0.26
+      },
+      "planning_features": {
+        "indoor": true,
+        "walking_intensity": "medium",
+        "recommended_transport": [
+          "metro",
+          "walk",
+          "taxi"
+        ],
+        "nearby_poi_ids": [
+          "poi_008",
+          "poi_015"
+        ],
+        "avoid_reasons": [
+          "long_queue",
+          "booking_required"
+        ],
+        "risk_flags": [
+          "long_queue",
+          "booking_required"
+        ],
+        "meal_type": "",
+        "transit_hub_nearby": true,
+        "parking_available": false
+      },
+      "cover_image_url": "https://example.com/mock/上海自然博物馆.jpg",
+      "highlight_text": "亲子科普密度高,雨天替代户外路线很合适",
+      "highlight_text_tags": [
+        "室内",
+        "亲子",
+        "科普"
+      ],
+      "ugc_tip": "适合和附近餐饮节点组合,减少来回折返。"
+    },
+    {
+      "poi_id": "poi_008",
+      "name": "衡山坊咖啡街区",
+      "category": "cafe",
+      "tags": [
+        "咖啡",
+        "文艺",
+        "安静",
+        "小众",
+        "拍照"
+      ],
+      "location": {
+        "city": "上海",
+        "district": "徐汇区",
+        "address": "衡山路890弄",
+        "lat": 31.2025,
+        "lng": 121.4466
+      },
+      "visit_info": {
+        "avg_visit_duration_min": 70,
+        "price_min": 35,
+        "price_max": 90,
+        "open_time": "10:00",
+        "close_time": "22:00",
+        "last_entry_time": "",
+        "need_booking": false,
+        "suitable_time_slots": [
+          "afternoon",
+          "evening"
+        ]
+      },
+      "quality": {
+        "rating": 4.7,
+        "review_count": 15112,
+        "popularity": 0.42,
+        "crowd_level": 0.58,
+        "queue_time_min": 2,
+        "peak_hours": [
+          "10:00-12:00",
+          "14:00-16:00"
+        ],
+        "live_crowd_level": 0.59,
+        "live_queue_time_min": 4
+      },
+      "suitability": {
+        "family": 0.44,
+        "couple": 0.91,
+        "friends": 0.77,
+        "solo": 0.91,
+        "elderly": 0.44,
+        "rainy_day": 0.96,
+        "budget_friendly": 0.82,
+        "photo_friendly": 0.78,
+        "food_nearby": 0.97,
+        "night_activity": 0.32
+      },
+      "planning_features": {
+        "indoor": true,
+        "walking_intensity": "low",
+        "recommended_transport": [
+          "metro",
+          "bike",
+          "walk"
+        ],
+        "nearby_poi_ids": [
+          "poi_009",
+          "poi_016"
+        ],
+        "avoid_reasons": [],
+        "risk_flags": [],
+        "meal_type": "cafe",
+        "transit_hub_nearby": true,
+        "parking_available": true
+      },
+      "cover_image_url": "https://example.com/mock/衡山坊咖啡街区.jpg",
+      "highlight_text": "适合把高步行街区中途放松下来,咖啡和轻食选择多",
+      "highlight_text_tags": [
+        "咖啡",
+        "文艺",
+        "安静"
+      ],
+      "ugc_tip": "雨天可优先选择室内动线,户外部分作为备选。"
+    },
+    {
+      "poi_id": "poi_009",
+      "name": "上海老饭店",
+      "category": "restaurant",
+      "tags": [
+        "本帮菜",
+        "老字号",
+        "室内",
+        "经典",
+        "聚餐"
+      ],
+      "location": {
+        "city": "上海",
+        "district": "黄浦区",
+        "address": "福佑路242号",
+        "lat": 31.2284,
+        "lng": 121.4896
+      },
+      "visit_info": {
+        "avg_visit_duration_min": 75,
+        "price_min": 120,
+        "price_max": 220,
+        "open_time": "11:00",
+        "close_time": "21:00",
+        "last_entry_time": "20:30",
+        "need_booking": true,
+        "suitable_time_slots": [
+          "noon",
+          "evening"
+        ]
+      },
+      "quality": {
+        "rating": 4.1,
+        "review_count": 16851,
+        "popularity": 0.49,
+        "crowd_level": 0.71,
+        "queue_time_min": 6,
+        "peak_hours": [
+          "11:30-13:00",
+          "18:00-19:30"
+        ],
+        "live_crowd_level": 0.75,
+        "live_queue_time_min": 0
+      },
+      "suitability": {
+        "family": 0.47,
+        "couple": 0.53,
+        "friends": 0.84,
+        "solo": 0.72,
+        "elderly": 0.47,
+        "rainy_day": 0.74,
+        "budget_friendly": 0.56,
+        "photo_friendly": 0.5,
+        "food_nearby": 1.0,
+        "night_activity": 0.38
+      },
+      "planning_features": {
+        "indoor": true,
+        "walking_intensity": "low",
+        "recommended_transport": [
+          "metro",
+          "walk",
+          "taxi"
+        ],
+        "nearby_poi_ids": [
+          "poi_010",
+          "poi_017"
+        ],
+        "avoid_reasons": [
+          "booking_required"
+        ],
+        "risk_flags": [
+          "booking_required"
+        ],
+        "meal_type": "local_food",
+        "transit_hub_nearby": true,
+        "parking_available": false
+      },
+      "cover_image_url": "https://example.com/mock/上海老饭店.jpg",
+      "highlight_text": "本帮菜代表餐点,适合豫园和外滩之间承接午晚餐",
+      "highlight_text_tags": [
+        "本帮菜",
+        "老字号",
+        "室内"
+      ],
+      "ugc_tip": "拍照点集中在入口和主空间,无需全程深逛。"
+    },
+    {
+      "poi_id": "poi_010",
+      "name": "世纪公园",
+      "category": "landmark",
+      "tags": [
+        "自然",
+        "亲子",
+        "散步",
+        "拍照",
+        "开阔"
+      ],
+      "location": {
+        "city": "上海",
+        "district": "浦东新区",
+        "address": "锦绣路1001号",
+        "lat": 31.2167,
+        "lng": 121.5515
+      },
+      "visit_info": {
+        "avg_visit_duration_min": 100,
+        "price_min": 0,
+        "price_max": 0,
+        "open_time": "05:00",
+        "close_time": "21:00",
+        "last_entry_time": "20:30",
+        "need_booking": false,
+        "suitable_time_slots": [
+          "morning",
+          "afternoon",
+          "evening"
+        ]
+      },
+      "quality": {
+        "rating": 4.4,
+        "review_count": 18590,
+        "popularity": 0.56,
+        "crowd_level": 0.84,
+        "queue_time_min": 13,
+        "peak_hours": [
+          "15:00-17:00"
+        ],
+        "live_crowd_level": 0.76,
+        "live_queue_time_min": 8
+      },
+      "suitability": {
+        "family": 0.82,
+        "couple": 0.58,
+        "friends": 0.56,
+        "solo": 0.58,
+        "elderly": 0.8,
+        "rainy_day": 0.28,
+        "budget_friendly": 1.0,
+        "photo_friendly": 0.88,
+        "food_nearby": 0.62,
+        "night_activity": 0.16
+      },
+      "planning_features": {
+        "indoor": false,
+        "walking_intensity": "high",
+        "recommended_transport": [
+          "metro",
+          "taxi",
+          "drive"
+        ],
+        "nearby_poi_ids": [
+          "poi_011",
+          "poi_018"
+        ],
+        "avoid_reasons": [
+          "too_crowded"
+        ],
+        "risk_flags": [
+          "too_crowded"
+        ],
+        "meal_type": "",
+        "transit_hub_nearby": false,
+        "parking_available": true
+      },
+      "cover_image_url": "https://example.com/mock/世纪公园.jpg",
+      "highlight_text": "开阔低成本的自然节点,适合亲子放电但雨天不推荐",
+      "highlight_text_tags": [
+        "自然",
+        "亲子",
+        "散步"
+      ],
+      "ugc_tip": "建议避开周末下午高峰,体验会更从容。"
+    },
+    {
+      "poi_id": "poi_011",
+      "name": "静安雕塑公园",
+      "category": "landmark",
+      "tags": [
+        "免费",
+        "自然",
+        "艺术",
+        "安静",
+        "拍照"
+      ],
+      "location": {
+        "city": "上海",
+        "district": "静安区",
+        "address": "石门二路128号",
+        "lat": 31.2352,
+        "lng": 121.4638
+      },
+      "visit_info": {
+        "avg_visit_duration_min": 55,
+        "price_min": 0,
+        "price_max": 0,
+        "open_time": "06:00",
+        "close_time": "21:00",
+        "last_entry_time": "20:30",
+        "need_booking": false,
+        "suitable_time_slots": [
+          "morning",
+          "afternoon",
+          "evening"
+        ]
+      },
+      "quality": {
+        "rating": 4.7,
+        "review_count": 20329,
+        "popularity": 0.63,
+        "crowd_level": 0.29,
+        "queue_time_min": 5,
+        "peak_hours": [
+          "19:00-21:30"
+        ],
+        "live_crowd_level": 0.24,
+        "live_queue_time_min": 1
+      },
+      "suitability": {
+        "family": 0.53,
+        "couple": 0.63,
+        "friends": 0.63,
+        "solo": 0.99,
+        "elderly": 0.53,
+        "rainy_day": 0.3,
+        "budget_friendly": 1.0,
+        "photo_friendly": 0.93,
+        "food_nearby": 0.66,
+        "night_activity": 0.22
+      },
+      "planning_features": {
+        "indoor": false,
+        "walking_intensity": "low",
+        "recommended_transport": [
+          "metro",
+          "walk",
+          "taxi"
+        ],
+        "nearby_poi_ids": [
+          "poi_012",
+          "poi_019"
+        ],
+        "avoid_reasons": [],
+        "risk_flags": [],
+        "meal_type": "",
+        "transit_hub_nearby": true,
+        "parking_available": false
+      },
+      "cover_image_url": "https://example.com/mock/静安雕塑公园.jpg",
+      "highlight_text": "低拥挤的艺术公园,适合自然博物馆前后做短暂停留",
+      "highlight_text_tags": [
+        "免费",
+        "自然",
+        "艺术"
+      ],
+      "ugc_tip": "如果时间紧,只保留核心区域也能形成完整体验。"
+    },
+    {
+      "poi_id": "poi_012",
+      "name": "上生新所",
+      "category": "cafe",
+      "tags": [
+        "文艺",
+        "咖啡",
+        "小众",
+        "拍照",
+        "现代"
+      ],
+      "location": {
+        "city": "上海",
+        "district": "长宁区",
+        "address": "延安西路1262号",
+        "lat": 31.2118,
+        "lng": 121.4315
+      },
+      "visit_info": {
+        "avg_visit_duration_min": 80,
+        "price_min": 35,
+        "price_max": 120,
+        "open_time": "10:00",
+        "close_time": "22:00",
+        "last_entry_time": "",
+        "need_booking": false,
+        "suitable_time_slots": [
+          "afternoon",
+          "evening",
+          "night"
+        ]
+      },
+      "quality": {
+        "rating": 4.1,
+        "review_count": 22068,
+        "popularity": 0.7,
+        "crowd_level": 0.42,
+        "queue_time_min": 0,
+        "peak_hours": [
+          "10:00-12:00",
+          "14:00-16:00"
+        ],
+        "live_crowd_level": 0.4,
+        "live_queue_time_min": 0
+      },
+      "suitability": {
+        "family": 0.56,
+        "couple": 0.9,
+        "friends": 0.7,
+        "solo": 0.85,
+        "elderly": 0.56,
+        "rainy_day": 0.83,
+        "budget_friendly": 0.76,
+        "photo_friendly": 0.78,
+        "food_nearby": 1.0,
+        "night_activity": 0.28
+      },
+      "planning_features": {
+        "indoor": true,
+        "walking_intensity": "medium",
+        "recommended_transport": [
+          "metro",
+          "bike",
+          "taxi"
+        ],
+        "nearby_poi_ids": [
+          "poi_013",
+          "poi_020"
+        ],
+        "avoid_reasons": [],
+        "risk_flags": [],
+        "meal_type": "cafe",
+        "transit_hub_nearby": true,
+        "parking_available": false
+      },
+      "cover_image_url": "https://example.com/mock/上生新所.jpg",
+      "highlight_text": "咖啡、展览和建筑空间混合,适合朋友下午到夜晚过渡",
+      "highlight_text_tags": [
+        "文艺",
+        "咖啡",
+        "小众"
+      ],
+      "ugc_tip": "适合和附近餐饮节点组合,减少来回折返。"
+    },
+    {
+      "poi_id": "poi_013",
+      "name": "浦东美术馆",
+      "category": "shopping",
+      "tags": [
+        "购物",
+        "室内",
+        "现代",
+        "高性价比"
+      ],
+      "location": {
+        "city": "上海",
+        "district": "静安区",
+        "address": "静安区示例路93号",
+        "lat": 31.166,
+        "lng": 121.573
+      },
+      "visit_info": {
+        "avg_visit_duration_min": 58,
+        "price_min": 0,
+        "price_max": 320,
+        "open_time": "09:30",
+        "close_time": "21:00",
+        "last_entry_time": "20:30",
+        "need_booking": false,
+        "suitable_time_slots": [
+          "afternoon",
+          "evening",
+          "night"
+        ]
+      },
+      "quality": {
+        "rating": 4.4,
+        "review_count": 23807,
+        "popularity": 0.77,
+        "crowd_level": 0.55,
+        "queue_time_min": 1,
+        "peak_hours": [
+          "11:30-13:00",
+          "18:00-19:30"
+        ],
+        "live_crowd_level": 0.56,
+        "live_queue_time_min": 0
+      },
+      "suitability": {
+        "family": 0.59,
+        "couple": 0.52,
+        "friends": 0.77,
+        "solo": 0.66,
+        "elderly": 0.59,
+        "rainy_day": 0.86,
+        "budget_friendly": 0.36,
+        "photo_friendly": 0.5,
+        "food_nearby": 0.74,
+        "night_activity": 0.34
+      },
+      "planning_features": {
+        "indoor": true,
+        "walking_intensity": "medium",
+        "recommended_transport": [
+          "metro",
+          "walk",
+          "taxi"
+        ],
+        "nearby_poi_ids": [
+          "poi_014",
+          "poi_021"
+        ],
+        "avoid_reasons": [
+          "too_expensive"
+        ],
+        "risk_flags": [],
+        "meal_type": "",
+        "transit_hub_nearby": true,
+        "parking_available": false
+      },
+      "cover_image_url": "https://example.com/mock/浦东美术馆.jpg",
+      "highlight_text": "浦东美术馆适合购物主题路线,可作为餐饮衔接节点",
+      "highlight_text_tags": [
+        "购物",
+        "室内",
+        "现代"
+      ],
+      "ugc_tip": "雨天可优先选择室内动线,户外部分作为备选。"
+    },
+    {
+      "poi_id": "poi_014",
+      "name": "中华艺术宫",
+      "category": "gallery",
+      "tags": [
+        "艺术",
+        "拍照",
+        "文艺",
+        "儿童友好"
+      ],
+      "location": {
+        "city": "上海",
+        "district": "浦东新区",
+        "address": "浦东新区示例路94号",
+        "lat": 31.203,
+        "lng": 121.334
+      },
+      "visit_info": {
+        "avg_visit_duration_min": 69,
+        "price_min": 0,
+        "price_max": 160,
+        "open_time": "09:30",
+        "close_time": "21:00",
+        "last_entry_time": "20:30",
+        "need_booking": false,
+        "suitable_time_slots": [
+          "afternoon",
+          "evening"
+        ]
+      },
+      "quality": {
+        "rating": 4.7,
+        "review_count": 25546,
+        "popularity": 0.84,
+        "crowd_level": 0.68,
+        "queue_time_min": 10,
+        "peak_hours": [
+          "15:00-17:00"
+        ],
+        "live_crowd_level": 0.72,
+        "live_queue_time_min": 9
+      },
+      "suitability": {
+        "family": 0.94,
+        "couple": 0.79,
+        "friends": 0.84,
+        "solo": 0.52,
+        "elderly": 0.94,
+        "rainy_day": 0.89,
+        "budget_friendly": 0.68,
+        "photo_friendly": 0.88,
+        "food_nearby": 0.78,
+        "night_activity": 0.12
+      },
+      "planning_features": {
+        "indoor": true,
+        "walking_intensity": "low",
+        "recommended_transport": [
+          "metro",
+          "taxi",
+          "drive"
+        ],
+        "nearby_poi_ids": [
+          "poi_015",
+          "poi_022"
+        ],
+        "avoid_reasons": [],
+        "risk_flags": [],
+        "meal_type": "",
+        "transit_hub_nearby": true,
+        "parking_available": true
+      },
+      "cover_image_url": "https://example.com/mock/中华艺术宫.jpg",
+      "highlight_text": "中华艺术宫适合艺术主题路线,可作为雨天备选节点",
+      "highlight_text_tags": [
+        "艺术",
+        "拍照",
+        "文艺"
+      ],
+      "ugc_tip": "拍照点集中在入口和主空间,无需全程深逛。"
+    },
+    {
+      "poi_id": "poi_015",
+      "name": "上海当代艺术博物馆",
+      "category": "night_view",
+      "tags": [
+        "夜景",
+        "拍照",
+        "亲水",
+        "商业化"
+      ],
+      "location": {
+        "city": "上海",
+        "district": "长宁区",
+        "address": "长宁区示例路95号",
+        "lat": 31.24,
+        "lng": 121.375
+      },
+      "visit_info": {
+        "avg_visit_duration_min": 80,
+        "price_min": 0,
+        "price_max": 180,
+        "open_time": "17:00",
+        "close_time": "23:30",
+        "last_entry_time": "22:30",
+        "need_booking": false,
+        "suitable_time_slots": [
+          "evening",
+          "night"
+        ]
+      },
+      "quality": {
+        "rating": 4.1,
+        "review_count": 27285,
+        "popularity": 0.91,
+        "crowd_level": 0.81,
+        "queue_time_min": 17,
+        "peak_hours": [
+          "19:00-21:30"
+        ],
+        "live_crowd_level": 0.73,
+        "live_queue_time_min": 17
+      },
+      "suitability": {
+        "family": 0.43,
+        "couple": 0.84,
+        "friends": 0.56,
+        "solo": 0.63,
+        "elderly": 0.43,
+        "rainy_day": 0.38,
+        "budget_friendly": 0.64,
+        "photo_friendly": 0.93,
+        "food_nearby": 0.52,
+        "night_activity": 0.88
+      },
+      "planning_features": {
+        "indoor": false,
+        "walking_intensity": "medium",
+        "recommended_transport": [
+          "metro",
+          "bike",
+          "taxi"
+        ],
+        "nearby_poi_ids": [
+          "poi_016",
+          "poi_023"
+        ],
+        "avoid_reasons": [
+          "too_crowded"
+        ],
+        "risk_flags": [
+          "too_crowded"
+        ],
+        "meal_type": "",
+        "transit_hub_nearby": false,
+        "parking_available": false
+      },
+      "cover_image_url": "https://example.com/mock/上海当代艺术博物馆.jpg",
+      "highlight_text": "上海当代艺术博物馆适合夜景主题路线,可作为夜间收尾节点",
+      "highlight_text_tags": [
+        "夜景",
+        "拍照",
+        "亲水"
+      ],
+      "ugc_tip": "建议避开周末下午高峰,体验会更从容。"
+    },
+    {
+      "poi_id": "poi_016",
+      "name": "龙美术馆西岸馆",
+      "category": "theater",
+      "tags": [
+        "演出",
+        "室内",
+        "文艺",
+        "小众"
+      ],
+      "location": {
+        "city": "上海",
+        "district": "虹口区",
+        "address": "虹口区示例路96号",
+        "lat": 31.132,
+        "lng": 121.416
+      },
+      "visit_info": {
+        "avg_visit_duration_min": 91,
+        "price_min": 120,
+        "price_max": 500,
+        "open_time": "09:30",
+        "close_time": "21:00",
+        "last_entry_time": "20:30",
+        "need_booking": true,
+        "suitable_time_slots": [
+          "evening",
+          "night"
+        ]
+      },
+      "quality": {
+        "rating": 4.4,
+        "review_count": 29024,
+        "popularity": 0.42,
+        "crowd_level": 0.26,
+        "queue_time_min": 24,
+        "peak_hours": [
+          "10:00-12:00",
+          "14:00-16:00"
+        ],
+        "live_crowd_level": 0.21,
+        "live_queue_time_min": 25
+      },
+      "suitability": {
+        "family": 0.46,
+        "couple": 0.89,
+        "friends": 0.63,
+        "solo": 0.49,
+        "elderly": 0.46,
+        "rainy_day": 0.95,
+        "budget_friendly": 0.0,
+        "photo_friendly": 0.45,
+        "food_nearby": 0.56,
+        "night_activity": 0.24
+      },
+      "planning_features": {
+        "indoor": true,
+        "walking_intensity": "low",
+        "recommended_transport": [
+          "metro",
+          "bus",
+          "taxi"
+        ],
+        "nearby_poi_ids": [
+          "poi_017",
+          "poi_024"
+        ],
+        "avoid_reasons": [
+          "long_queue",
+          "booking_required",
+          "too_expensive"
+        ],
+        "risk_flags": [
+          "long_queue",
+          "booking_required"
+        ],
+        "meal_type": "",
+        "transit_hub_nearby": true,
+        "parking_available": true
+      },
+      "cover_image_url": "https://example.com/mock/龙美术馆西岸馆.jpg",
+      "highlight_text": "龙美术馆西岸馆适合演出主题路线,可作为半日核心节点",
+      "highlight_text_tags": [
+        "演出",
+        "室内",
+        "文艺"
+      ],
+      "ugc_tip": "如果时间紧,只保留核心区域也能形成完整体验。"
+    },
+    {
+      "poi_id": "poi_017",
+      "name": "油罐艺术中心",
+      "category": "market",
+      "tags": [
+        "市集",
+        "本地",
+        "小吃",
+        "亲子"
+      ],
+      "location": {
+        "city": "上海",
+        "district": "杨浦区",
+        "address": "杨浦区示例路97号",
+        "lat": 31.169,
+        "lng": 121.457
+      },
+      "visit_info": {
+        "avg_visit_duration_min": 102,
+        "price_min": 20,
+        "price_max": 200,
+        "open_time": "09:30",
+        "close_time": "21:00",
+        "last_entry_time": "20:30",
+        "need_booking": false,
+        "suitable_time_slots": [
+          "morning",
+          "noon",
+          "afternoon"
+        ]
+      },
+      "quality": {
+        "rating": 4.7,
+        "review_count": 30763,
+        "popularity": 0.49,
+        "crowd_level": 0.39,
+        "queue_time_min": 5,
+        "peak_hours": [
+          "11:30-13:00",
+          "18:00-19:30"
+        ],
+        "live_crowd_level": 0.37,
+        "live_queue_time_min": 7
+      },
+      "suitability": {
+        "family": 0.81,
+        "couple": 0.51,
+        "friends": 0.7,
+        "solo": 0.6,
+        "elderly": 0.81,
+        "rainy_day": 0.42,
+        "budget_friendly": 0.6,
+        "photo_friendly": 0.5,
+        "food_nearby": 0.6,
+        "night_activity": 0.3
+      },
+      "planning_features": {
+        "indoor": false,
+        "walking_intensity": "medium",
+        "recommended_transport": [
+          "metro",
+          "bike",
+          "bus"
+        ],
+        "nearby_poi_ids": [
+          "poi_018",
+          "poi_025"
+        ],
+        "avoid_reasons": [],
+        "risk_flags": [],
+        "meal_type": "",
+        "transit_hub_nearby": true,
+        "parking_available": false
+      },
+      "cover_image_url": "https://example.com/mock/油罐艺术中心.jpg",
+      "highlight_text": "油罐艺术中心适合市集主题路线,可作为餐饮衔接节点",
+      "highlight_text_tags": [
+        "市集",
+        "本地",
+        "小吃"
+      ],
+      "ugc_tip": "适合和附近餐饮节点组合,减少来回折返。"
+    },
+    {
+      "poi_id": "poi_018",
+      "name": "西岸滨江步道",
+      "category": "museum",
+      "tags": [
+        "室内",
+        "展览",
+        "文艺",
+        "免费"
+      ],
+      "location": {
+        "city": "上海",
+        "district": "普陀区",
+        "address": "普陀区示例路98号",
+        "lat": 31.206,
+        "lng": 121.498
+      },
+      "visit_info": {
+        "avg_visit_duration_min": 113,
+        "price_min": 0,
+        "price_max": 80,
+        "open_time": "09:30",
+        "close_time": "21:00",
+        "last_entry_time": "20:30",
+        "need_booking": false,
+        "suitable_time_slots": [
+          "morning",
+          "afternoon"
+        ]
+      },
+      "quality": {
+        "rating": 4.1,
+        "review_count": 32502,
+        "popularity": 0.56,
+        "crowd_level": 0.52,
+        "queue_time_min": 0,
+        "peak_hours": [
+          "15:00-17:00"
+        ],
+        "live_crowd_level": 0.53,
+        "live_queue_time_min": 0
+      },
+      "suitability": {
+        "family": 0.52,
+        "couple": 0.78,
+        "friends": 0.77,
+        "solo": 0.71,
+        "elderly": 0.52,
+        "rainy_day": 0.76,
+        "budget_friendly": 0.84,
+        "photo_friendly": 0.55,
+        "food_nearby": 0.64,
+        "night_activity": 0.36
+      },
+      "planning_features": {
+        "indoor": true,
+        "walking_intensity": "medium",
+        "recommended_transport": [
+          "metro",
+          "bus",
+          "taxi"
+        ],
+        "nearby_poi_ids": [
+          "poi_019",
+          "poi_026"
+        ],
+        "avoid_reasons": [],
+        "risk_flags": [],
+        "meal_type": "",
+        "transit_hub_nearby": true,
+        "parking_available": false
+      },
+      "cover_image_url": "https://example.com/mock/西岸滨江步道.jpg",
+      "highlight_text": "西岸滨江步道适合室内主题路线,可作为雨天备选节点",
+      "highlight_text_tags": [
+        "室内",
+        "展览",
+        "文艺"
+      ],
+      "ugc_tip": "雨天可优先选择室内动线,户外部分作为备选。"
+    },
+    {
+      "poi_id": "poi_019",
+      "name": "北外滩滨江",
+      "category": "landmark",
+      "tags": [
+        "经典",
+        "拍照",
+        "历史",
+        "预约"
+      ],
+      "location": {
+        "city": "上海",
+        "district": "闵行区",
+        "address": "闵行区示例路99号",
+        "lat": 31.243,
+        "lng": 121.539
+      },
+      "visit_info": {
+        "avg_visit_duration_min": 124,
+        "price_min": 0,
+        "price_max": 80,
+        "open_time": "09:30",
+        "close_time": "21:00",
+        "last_entry_time": "20:30",
+        "need_booking": false,
+        "suitable_time_slots": [
+          "morning",
+          "afternoon",
+          "evening"
+        ]
+      },
+      "quality": {
+        "rating": 4.4,
+        "review_count": 34241,
+        "popularity": 0.63,
+        "crowd_level": 0.65,
+        "queue_time_min": 1,
+        "peak_hours": [
+          "19:00-21:30"
+        ],
+        "live_crowd_level": 0.69,
+        "live_queue_time_min": 0
+      },
+      "suitability": {
+        "family": 0.55,
+        "couple": 0.61,
+        "friends": 0.84,
+        "solo": 0.57,
+        "elderly": 0.55,
+        "rainy_day": 0.11,
+        "budget_friendly": 0.84,
+        "photo_friendly": 0.93,
+        "food_nearby": 0.68,
+        "night_activity": 0.14
+      },
+      "planning_features": {
+        "indoor": false,
+        "walking_intensity": "medium",
+        "recommended_transport": [
+          "metro",
+          "drive",
+          "taxi"
+        ],
+        "nearby_poi_ids": [
+          "poi_020",
+          "poi_027"
+        ],
+        "avoid_reasons": [],
+        "risk_flags": [],
+        "meal_type": "",
+        "transit_hub_nearby": true,
+        "parking_available": true
+      },
+      "cover_image_url": "https://example.com/mock/北外滩滨江.jpg",
+      "highlight_text": "北外滩滨江适合经典主题路线,可作为夜间收尾节点",
+      "highlight_text_tags": [
+        "经典",
+        "拍照",
+        "历史"
+      ],
+      "ugc_tip": "拍照点集中在入口和主空间,无需全程深逛。"
+    },
+    {
+      "poi_id": "poi_020",
+      "name": "前滩太古里",
+      "category": "cafe",
+      "tags": [
+        "咖啡",
+        "安静",
+        "轻食",
+        "夜景"
+      ],
+      "location": {
+        "city": "上海",
+        "district": "松江区",
+        "address": "松江区示例路100号",
+        "lat": 31.135,
+        "lng": 121.58
+      },
+      "visit_info": {
+        "avg_visit_duration_min": 135,
+        "price_min": 30,
+        "price_max": 160,
+        "open_time": "09:30",
+        "close_time": "21:00",
+        "last_entry_time": "20:30",
+        "need_booking": true,
+        "suitable_time_slots": [
+          "afternoon",
+          "evening"
+        ]
+      },
+      "quality": {
+        "rating": 4.7,
+        "review_count": 35980,
+        "popularity": 0.7,
+        "crowd_level": 0.78,
+        "queue_time_min": 21,
+        "peak_hours": [
+          "10:00-12:00",
+          "14:00-16:00"
+        ],
+        "live_crowd_level": 0.7,
+        "live_queue_time_min": 17
+      },
+      "suitability": {
+        "family": 0.58,
+        "couple": 0.88,
+        "friends": 0.56,
+        "solo": 0.98,
+        "elderly": 0.58,
+        "rainy_day": 0.82,
+        "budget_friendly": 0.68,
+        "photo_friendly": 0.78,
+        "food_nearby": 1.0,
+        "night_activity": 0.9
+      },
+      "planning_features": {
+        "indoor": true,
+        "walking_intensity": "low",
+        "recommended_transport": [
+          "drive",
+          "taxi",
+          "bus"
+        ],
+        "nearby_poi_ids": [
+          "poi_021",
+          "poi_028"
+        ],
+        "avoid_reasons": [
+          "too_crowded",
+          "long_queue",
+          "booking_required"
+        ],
+        "risk_flags": [
+          "booking_required"
+        ],
+        "meal_type": "cafe",
+        "transit_hub_nearby": false,
+        "parking_available": true
+      },
+      "cover_image_url": "https://example.com/mock/前滩太古里.jpg",
+      "highlight_text": "前滩太古里适合咖啡主题路线,可作为半日核心节点",
+      "highlight_text_tags": [
+        "咖啡",
+        "安静",
+        "轻食"
+      ],
+      "ugc_tip": "建议避开周末下午高峰,体验会更从容。"
+    },
+    {
+      "poi_id": "poi_021",
+      "name": "静安嘉里中心",
+      "category": "restaurant",
+      "tags": [
+        "本帮菜",
+        "室内",
+        "聚餐",
+        "高性价比"
+      ],
+      "location": {
+        "city": "上海",
+        "district": "青浦区",
+        "address": "青浦区示例路101号",
+        "lat": 31.172,
+        "lng": 121.341
+      },
+      "visit_info": {
+        "avg_visit_duration_min": 146,
+        "price_min": 60,
+        "price_max": 220,
+        "open_time": "11:00",
+        "close_time": "21:30",
+        "last_entry_time": "21:00",
+        "need_booking": false,
+        "suitable_time_slots": [
+          "noon",
+          "evening"
+        ]
+      },
+      "quality": {
+        "rating": 4.1,
+        "review_count": 37719,
+        "popularity": 0.77,
+        "crowd_level": 0.23,
+        "queue_time_min": 3,
+        "peak_hours": [
+          "11:30-13:00",
+          "18:00-19:30"
+        ],
+        "live_crowd_level": 0.18,
+        "live_queue_time_min": 0
+      },
+      "suitability": {
+        "family": 0.61,
+        "couple": 0.5,
+        "friends": 0.63,
+        "solo": 0.54,
+        "elderly": 0.61,
+        "rainy_day": 0.85,
+        "budget_friendly": 0.56,
+        "photo_friendly": 0.5,
+        "food_nearby": 1.0,
+        "night_activity": 0.26
+      },
+      "planning_features": {
+        "indoor": true,
+        "walking_intensity": "low",
+        "recommended_transport": [
+          "drive",
+          "taxi",
+          "bus"
+        ],
+        "nearby_poi_ids": [
+          "poi_022",
+          "poi_029"
+        ],
+        "avoid_reasons": [],
+        "risk_flags": [],
+        "meal_type": "light_meal",
+        "transit_hub_nearby": true,
+        "parking_available": true
+      },
+      "cover_image_url": "https://example.com/mock/静安嘉里中心.jpg",
+      "highlight_text": "静安嘉里中心适合本帮菜主题路线,可作为餐饮衔接节点",
+      "highlight_text_tags": [
+        "本帮菜",
+        "室内",
+        "聚餐"
+      ],
+      "ugc_tip": "如果时间紧,只保留核心区域也能形成完整体验。"
+    },
+    {
+      "poi_id": "poi_022",
+      "name": "新天地石库门街区",
+      "category": "shopping",
+      "tags": [
+        "购物",
+        "室内",
+        "现代",
+        "儿童友好"
+      ],
+      "location": {
+        "city": "上海",
+        "district": "黄浦区",
+        "address": "黄浦区示例路102号",
+        "lat": 31.209,
+        "lng": 121.382
+      },
+      "visit_info": {
+        "avg_visit_duration_min": 157,
+        "price_min": 0,
+        "price_max": 320,
+        "open_time": "09:30",
+        "close_time": "21:00",
+        "last_entry_time": "20:30",
+        "need_booking": false,
+        "suitable_time_slots": [
+          "afternoon",
+          "evening",
+          "night"
+        ]
+      },
+      "quality": {
+        "rating": 4.4,
+        "review_count": 39458,
+        "popularity": 0.84,
+        "crowd_level": 0.36,
+        "queue_time_min": 4,
+        "peak_hours": [
+          "15:00-17:00"
+        ],
+        "live_crowd_level": 0.34,
+        "live_queue_time_min": 2
+      },
+      "suitability": {
+        "family": 0.74,
+        "couple": 0.55,
+        "friends": 0.7,
+        "solo": 0.65,
+        "elderly": 0.74,
+        "rainy_day": 0.88,
+        "budget_friendly": 0.36,
+        "photo_friendly": 0.55,
+        "food_nearby": 0.8,
+        "night_activity": 0.32
+      },
+      "planning_features": {
+        "indoor": true,
+        "walking_intensity": "medium",
+        "recommended_transport": [
+          "metro",
+          "walk",
+          "taxi"
+        ],
+        "nearby_poi_ids": [
+          "poi_023",
+          "poi_030"
+        ],
+        "avoid_reasons": [
+          "too_expensive"
+        ],
+        "risk_flags": [],
+        "meal_type": "",
+        "transit_hub_nearby": true,
+        "parking_available": false
+      },
+      "cover_image_url": "https://example.com/mock/新天地石库门街区.jpg",
+      "highlight_text": "新天地石库门街区适合购物主题路线,可作为雨天备选节点",
+      "highlight_text_tags": [
+        "购物",
+        "室内",
+        "现代"
+      ],
+      "ugc_tip": "适合和附近餐饮节点组合,减少来回折返。"
+    },
+    {
+      "poi_id": "poi_023",
+      "name": "田子坊",
+      "category": "gallery",
+      "tags": [
+        "艺术",
+        "拍照",
+        "文艺",
+        "商业化"
+      ],
+      "location": {
+        "city": "上海",
+        "district": "徐汇区",
+        "address": "徐汇区示例路103号",
+        "lat": 31.246,
+        "lng": 121.423
+      },
+      "visit_info": {
+        "avg_visit_duration_min": 168,
+        "price_min": 0,
+        "price_max": 160,
+        "open_time": "09:30",
+        "close_time": "21:00",
+        "last_entry_time": "20:30",
+        "need_booking": false,
+        "suitable_time_slots": [
+          "afternoon",
+          "evening"
+        ]
+      },
+      "quality": {
+        "rating": 4.7,
+        "review_count": 41197,
+        "popularity": 0.91,
+        "crowd_level": 0.49,
+        "queue_time_min": 5,
+        "peak_hours": [
+          "19:00-21:30"
+        ],
+        "live_crowd_level": 0.5,
+        "live_queue_time_min": 4
+      },
+      "suitability": {
+        "family": 0.45,
+        "couple": 0.82,
+        "friends": 0.77,
+        "solo": 0.51,
+        "elderly": 0.45,
+        "rainy_day": 0.91,
+        "budget_friendly": 0.68,
+        "photo_friendly": 0.93,
+        "food_nearby": 0.54,
+        "night_activity": 0.38
+      },
+      "planning_features": {
+        "indoor": true,
+        "walking_intensity": "low",
+        "recommended_transport": [
+          "metro",
+          "bike",
+          "walk"
+        ],
+        "nearby_poi_ids": [
+          "poi_024",
+          "poi_031"
+        ],
+        "avoid_reasons": [],
+        "risk_flags": [],
+        "meal_type": "",
+        "transit_hub_nearby": true,
+        "parking_available": false
+      },
+      "cover_image_url": "https://example.com/mock/田子坊.jpg",
+      "highlight_text": "田子坊适合艺术主题路线,可作为夜间收尾节点",
+      "highlight_text_tags": [
+        "艺术",
+        "拍照",
+        "文艺"
+      ],
+      "ugc_tip": "雨天可优先选择室内动线,户外部分作为备选。"
+    },
+    {
+      "poi_id": "poi_024",
+      "name": "M50创意园",
+      "category": "night_view",
+      "tags": [
+        "夜景",
+        "拍照",
+        "亲水",
+        "小众"
+      ],
+      "location": {
+        "city": "上海",
+        "district": "静安区",
+        "address": "静安区示例路104号",
+        "lat": 31.138,
+        "lng": 121.464
+      },
+      "visit_info": {
+        "avg_visit_duration_min": 49,
+        "price_min": 0,
+        "price_max": 180,
+        "open_time": "17:00",
+        "close_time": "23:30",
+        "last_entry_time": "22:30",
+        "need_booking": true,
+        "suitable_time_slots": [
+          "evening",
+          "night"
+        ]
+      },
+      "quality": {
+        "rating": 4.1,
+        "review_count": 42936,
+        "popularity": 0.42,
+        "crowd_level": 0.62,
+        "queue_time_min": 18,
+        "peak_hours": [
+          "10:00-12:00",
+          "14:00-16:00"
+        ],
+        "live_crowd_level": 0.66,
+        "live_queue_time_min": 18
+      },
+      "suitability": {
+        "family": 0.48,
+        "couple": 0.87,
+        "friends": 0.84,
+        "solo": 0.62,
+        "elderly": 0.48,
+        "rainy_day": 0.21,
+        "budget_friendly": 0.64,
+        "photo_friendly": 0.78,
+        "food_nearby": 0.58,
+        "night_activity": 0.86
+      },
+      "planning_features": {
+        "indoor": false,
+        "walking_intensity": "medium",
+        "recommended_transport": [
+          "metro",
+          "walk",
+          "taxi"
+        ],
+        "nearby_poi_ids": [
+          "poi_025",
+          "poi_032"
+        ],
+        "avoid_reasons": [
+          "booking_required"
+        ],
+        "risk_flags": [
+          "booking_required"
+        ],
+        "meal_type": "",
+        "transit_hub_nearby": true,
+        "parking_available": true
+      },
+      "cover_image_url": "https://example.com/mock/m50创意园.jpg",
+      "highlight_text": "M50创意园适合夜景主题路线,可作为半日核心节点",
+      "highlight_text_tags": [
+        "夜景",
+        "拍照",
+        "亲水"
+      ],
+      "ugc_tip": "拍照点集中在入口和主空间,无需全程深逛。"
+    },
+    {
+      "poi_id": "poi_025",
+      "name": "思南公馆",
+      "category": "theater",
+      "tags": [
+        "演出",
+        "室内",
+        "文艺",
+        "亲子"
+      ],
+      "location": {
+        "city": "上海",
+        "district": "浦东新区",
+        "address": "浦东新区示例路105号",
+        "lat": 31.175,
+        "lng": 121.505
+      },
+      "visit_info": {
+        "avg_visit_duration_min": 60,
+        "price_min": 120,
+        "price_max": 500,
+        "open_time": "09:30",
+        "close_time": "21:00",
+        "last_entry_time": "20:30",
+        "need_booking": false,
+        "suitable_time_slots": [
+          "evening",
+          "night"
+        ]
+      },
+      "quality": {
+        "rating": 4.4,
+        "review_count": 44675,
+        "popularity": 0.49,
+        "crowd_level": 0.75,
+        "queue_time_min": 25,
+        "peak_hours": [
+          "11:30-13:00",
+          "18:00-19:30"
+        ],
+        "live_crowd_level": 0.67,
+        "live_queue_time_min": 26
+      },
+      "suitability": {
+        "family": 0.83,
+        "couple": 0.92,
+        "friends": 0.56,
+        "solo": 0.48,
+        "elderly": 0.83,
+        "rainy_day": 0.72,
+        "budget_friendly": 0.0,
+        "photo_friendly": 0.5,
+        "food_nearby": 0.62,
+        "night_activity": 0.22
+      },
+      "planning_features": {
+        "indoor": true,
+        "walking_intensity": "low",
+        "recommended_transport": [
+          "metro",
+          "taxi",
+          "drive"
+        ],
+        "nearby_poi_ids": [
+          "poi_026",
+          "poi_033"
+        ],
+        "avoid_reasons": [
+          "too_crowded",
+          "long_queue",
+          "too_expensive"
+        ],
+        "risk_flags": [
+          "long_queue"
+        ],
+        "meal_type": "",
+        "transit_hub_nearby": false,
+        "parking_available": true
+      },
+      "cover_image_url": "https://example.com/mock/思南公馆.jpg",
+      "highlight_text": "思南公馆适合演出主题路线,可作为餐饮衔接节点",
+      "highlight_text_tags": [
+        "演出",
+        "室内",
+        "文艺"
+      ],
+      "ugc_tip": "建议避开周末下午高峰,体验会更从容。"
+    },
+    {
+      "poi_id": "poi_026",
+      "name": "复兴公园",
+      "category": "market",
+      "tags": [
+        "市集",
+        "本地",
+        "小吃",
+        "免费"
+      ],
+      "location": {
+        "city": "上海",
+        "district": "长宁区",
+        "address": "长宁区示例路106号",
+        "lat": 31.212,
+        "lng": 121.546
+      },
+      "visit_info": {
+        "avg_visit_duration_min": 71,
+        "price_min": 20,
+        "price_max": 200,
+        "open_time": "09:30",
+        "close_time": "21:00",
+        "last_entry_time": "20:30",
+        "need_booking": false,
+        "suitable_time_slots": [
+          "morning",
+          "noon",
+          "afternoon"
+        ]
+      },
+      "quality": {
+        "rating": 4.7,
+        "review_count": 46414,
+        "popularity": 0.56,
+        "crowd_level": 0.88,
+        "queue_time_min": 32,
+        "peak_hours": [
+          "15:00-17:00"
+        ],
+        "live_crowd_level": 0.83,
+        "live_queue_time_min": 34
+      },
+      "suitability": {
+        "family": 0.54,
+        "couple": 0.54,
+        "friends": 0.63,
+        "solo": 0.59,
+        "elderly": 0.54,
+        "rainy_day": 0.25,
+        "budget_friendly": 0.6,
+        "photo_friendly": 0.55,
+        "food_nearby": 0.66,
+        "night_activity": 0.28
+      },
+      "planning_features": {
+        "indoor": false,
+        "walking_intensity": "medium",
+        "recommended_transport": [
+          "metro",
+          "bike",
+          "taxi"
+        ],
+        "nearby_poi_ids": [
+          "poi_027",
+          "poi_034"
+        ],
+        "avoid_reasons": [
+          "too_crowded",
+          "long_queue"
+        ],
+        "risk_flags": [
+          "too_crowded",
+          "long_queue"
+        ],
+        "meal_type": "",
+        "transit_hub_nearby": true,
+        "parking_available": false
+      },
+      "cover_image_url": "https://example.com/mock/复兴公园.jpg",
+      "highlight_text": "复兴公园适合市集主题路线,可作为雨天备选节点",
+      "highlight_text_tags": [
+        "市集",
+        "本地",
+        "小吃"
+      ],
+      "ugc_tip": "如果时间紧,只保留核心区域也能形成完整体验。"
+    },
+    {
+      "poi_id": "poi_027",
+      "name": "共青森林公园",
+      "category": "museum",
+      "tags": [
+        "室内",
+        "展览",
+        "文艺",
+        "预约"
+      ],
+      "location": {
+        "city": "上海",
+        "district": "虹口区",
+        "address": "虹口区示例路107号",
+        "lat": 31.249,
+        "lng": 121.587
+      },
+      "visit_info": {
+        "avg_visit_duration_min": 82,
+        "price_min": 0,
+        "price_max": 80,
+        "open_time": "09:30",
+        "close_time": "21:00",
+        "last_entry_time": "20:30",
+        "need_booking": false,
+        "suitable_time_slots": [
+          "morning",
+          "afternoon"
+        ]
+      },
+      "quality": {
+        "rating": 4.1,
+        "review_count": 48153,
+        "popularity": 0.63,
+        "crowd_level": 0.33,
+        "queue_time_min": 3,
+        "peak_hours": [
+          "19:00-21:30"
+        ],
+        "live_crowd_level": 0.31,
+        "live_queue_time_min": 0
+      },
+      "suitability": {
+        "family": 0.57,
+        "couple": 0.81,
+        "friends": 0.7,
+        "solo": 0.7,
+        "elderly": 0.57,
+        "rainy_day": 0.78,
+        "budget_friendly": 0.84,
+        "photo_friendly": 0.6,
+        "food_nearby": 0.7,
+        "night_activity": 0.34
+      },
+      "planning_features": {
+        "indoor": true,
+        "walking_intensity": "medium",
+        "recommended_transport": [
+          "metro",
+          "bus",
+          "taxi"
+        ],
+        "nearby_poi_ids": [
+          "poi_028",
+          "poi_035"
+        ],
+        "avoid_reasons": [],
+        "risk_flags": [],
+        "meal_type": "",
+        "transit_hub_nearby": true,
+        "parking_available": false
+      },
+      "cover_image_url": "https://example.com/mock/共青森林公园.jpg",
+      "highlight_text": "共青森林公园适合室内主题路线,可作为夜间收尾节点",
+      "highlight_text_tags": [
+        "室内",
+        "展览",
+        "文艺"
+      ],
+      "ugc_tip": "适合和附近餐饮节点组合,减少来回折返。"
+    },
+    {
+      "poi_id": "poi_028",
+      "name": "上海植物园",
+      "category": "landmark",
+      "tags": [
+        "经典",
+        "拍照",
+        "历史",
+        "夜景"
+      ],
+      "location": {
+        "city": "上海",
+        "district": "杨浦区",
+        "address": "杨浦区示例路108号",
+        "lat": 31.141,
+        "lng": 121.348
+      },
+      "visit_info": {
+        "avg_visit_duration_min": 93,
+        "price_min": 0,
+        "price_max": 80,
+        "open_time": "09:30",
+        "close_time": "21:00",
+        "last_entry_time": "20:30",
+        "need_booking": true,
+        "suitable_time_slots": [
+          "morning",
+          "afternoon",
+          "evening"
+        ]
+      },
+      "quality": {
+        "rating": 4.4,
+        "review_count": 49892,
+        "popularity": 0.7,
+        "crowd_level": 0.46,
+        "queue_time_min": 15,
+        "peak_hours": [
+          "10:00-12:00",
+          "14:00-16:00"
+        ],
+        "live_crowd_level": 0.47,
+        "live_queue_time_min": 10
+      },
+      "suitability": {
+        "family": 0.6,
+        "couple": 0.86,
+        "friends": 0.77,
+        "solo": 0.56,
+        "elderly": 0.6,
+        "rainy_day": 0.29,
+        "budget_friendly": 0.84,
+        "photo_friendly": 0.78,
+        "food_nearby": 0.74,
+        "night_activity": 0.82
+      },
+      "planning_features": {
+        "indoor": false,
+        "walking_intensity": "medium",
+        "recommended_transport": [
+          "metro",
+          "bike",
+          "bus"
+        ],
+        "nearby_poi_ids": [
+          "poi_029",
+          "poi_036"
+        ],
+        "avoid_reasons": [
+          "booking_required"
+        ],
+        "risk_flags": [
+          "booking_required"
+        ],
+        "meal_type": "",
+        "transit_hub_nearby": true,
+        "parking_available": false
+      },
+      "cover_image_url": "https://example.com/mock/上海植物园.jpg",
+      "highlight_text": "上海植物园适合经典主题路线,可作为半日核心节点",
+      "highlight_text_tags": [
+        "经典",
+        "拍照",
+        "历史"
+      ],
+      "ugc_tip": "雨天可优先选择室内动线,户外部分作为备选。"
+    },
+    {
+      "poi_id": "poi_029",
+      "name": "长风海洋世界",
+      "category": "cafe",
+      "tags": [
+        "咖啡",
+        "安静",
+        "轻食",
+        "高性价比"
+      ],
+      "location": {
+        "city": "上海",
+        "district": "普陀区",
+        "address": "普陀区示例路109号",
+        "lat": 31.178,
+        "lng": 121.389
+      },
+      "visit_info": {
+        "avg_visit_duration_min": 104,
+        "price_min": 30,
+        "price_max": 160,
+        "open_time": "09:30",
+        "close_time": "21:00",
+        "last_entry_time": "20:30",
+        "need_booking": false,
+        "suitable_time_slots": [
+          "afternoon",
+          "evening"
+        ]
+      },
+      "quality": {
+        "rating": 4.7,
+        "review_count": 51631,
+        "popularity": 0.77,
+        "crowd_level": 0.59,
+        "queue_time_min": 5,
+        "peak_hours": [
+          "11:30-13:00",
+          "18:00-19:30"
+        ],
+        "live_crowd_level": 0.63,
+        "live_queue_time_min": 1
+      },
+      "suitability": {
+        "family": 0.63,
+        "couple": 0.69,
+        "friends": 0.84,
+        "solo": 0.97,
+        "elderly": 0.63,
+        "rainy_day": 0.84,
+        "budget_friendly": 0.68,
+        "photo_friendly": 0.5,
+        "food_nearby": 1.0,
+        "night_activity": 0.18
+      },
+      "planning_features": {
+        "indoor": true,
+        "walking_intensity": "low",
+        "recommended_transport": [
+          "metro",
+          "bus",
+          "taxi"
+        ],
+        "nearby_poi_ids": [
+          "poi_030",
+          "poi_037"
+        ],
+        "avoid_reasons": [],
+        "risk_flags": [],
+        "meal_type": "cafe",
+        "transit_hub_nearby": true,
+        "parking_available": false
+      },
+      "cover_image_url": "https://example.com/mock/长风海洋世界.jpg",
+      "highlight_text": "长风海洋世界适合咖啡主题路线,可作为餐饮衔接节点",
+      "highlight_text_tags": [
+        "咖啡",
+        "安静",
+        "轻食"
+      ],
+      "ugc_tip": "拍照点集中在入口和主空间,无需全程深逛。"
+    },
+    {
+      "poi_id": "poi_030",
+      "name": "上海儿童博物馆",
+      "category": "restaurant",
+      "tags": [
+        "本帮菜",
+        "室内",
+        "聚餐",
+        "儿童友好"
+      ],
+      "location": {
+        "city": "上海",
+        "district": "闵行区",
+        "address": "闵行区示例路110号",
+        "lat": 31.215,
+        "lng": 121.43
+      },
+      "visit_info": {
+        "avg_visit_duration_min": 115,
+        "price_min": 60,
+        "price_max": 220,
+        "open_time": "11:00",
+        "close_time": "21:30",
+        "last_entry_time": "21:00",
+        "need_booking": false,
+        "suitable_time_slots": [
+          "noon",
+          "evening"
+        ]
+      },
+      "quality": {
+        "rating": 4.1,
+        "review_count": 53370,
+        "popularity": 0.84,
+        "crowd_level": 0.72,
+        "queue_time_min": 29,
+        "peak_hours": [
+          "15:00-17:00"
+        ],
+        "live_crowd_level": 0.64,
+        "live_queue_time_min": 26
+      },
+      "suitability": {
+        "family": 0.76,
+        "couple": 0.53,
+        "friends": 0.56,
+        "solo": 0.53,
+        "elderly": 0.76,
+        "rainy_day": 0.87,
+        "budget_friendly": 0.56,
+        "photo_friendly": 0.55,
+        "food_nearby": 0.95,
+        "night_activity": 0.24
+      },
+      "planning_features": {
+        "indoor": true,
+        "walking_intensity": "low",
+        "recommended_transport": [
+          "metro",
+          "drive",
+          "taxi"
+        ],
+        "nearby_poi_ids": [
+          "poi_031",
+          "poi_038"
+        ],
+        "avoid_reasons": [
+          "long_queue"
+        ],
+        "risk_flags": [
+          "long_queue"
+        ],
+        "meal_type": "fine_dining",
+        "transit_hub_nearby": false,
+        "parking_available": true
+      },
+      "cover_image_url": "https://example.com/mock/上海儿童博物馆.jpg",
+      "highlight_text": "上海儿童博物馆适合本帮菜主题路线,可作为雨天备选节点",
+      "highlight_text_tags": [
+        "本帮菜",
+        "室内",
+        "聚餐"
+      ],
+      "ugc_tip": "建议避开周末下午高峰,体验会更从容。"
+    },
+    {
+      "poi_id": "poi_031",
+      "name": "上海电影博物馆",
+      "category": "shopping",
+      "tags": [
+        "购物",
+        "室内",
+        "现代",
+        "商业化"
+      ],
+      "location": {
+        "city": "上海",
+        "district": "松江区",
+        "address": "松江区示例路111号",
+        "lat": 31.252,
+        "lng": 121.471
+      },
+      "visit_info": {
+        "avg_visit_duration_min": 126,
+        "price_min": 0,
+        "price_max": 320,
+        "open_time": "09:30",
+        "close_time": "21:00",
+        "last_entry_time": "20:30",
+        "need_booking": false,
+        "suitable_time_slots": [
+          "afternoon",
+          "evening",
+          "night"
+        ]
+      },
+      "quality": {
+        "rating": 4.4,
+        "review_count": 55109,
+        "popularity": 0.91,
+        "crowd_level": 0.85,
+        "queue_time_min": 5,
+        "peak_hours": [
+          "19:00-21:30"
+        ],
+        "live_crowd_level": 0.8,
+        "live_queue_time_min": 3
+      },
+      "suitability": {
+        "family": 0.47,
+        "couple": 0.58,
+        "friends": 0.63,
+        "solo": 0.64,
+        "elderly": 0.47,
+        "rainy_day": 0.9,
+        "budget_friendly": 0.36,
+        "photo_friendly": 0.6,
+        "food_nearby": 0.56,
+        "night_activity": 0.3
+      },
+      "planning_features": {
+        "indoor": true,
+        "walking_intensity": "medium",
+        "recommended_transport": [
+          "drive",
+          "taxi",
+          "bus"
+        ],
+        "nearby_poi_ids": [
+          "poi_032",
+          "poi_039"
+        ],
+        "avoid_reasons": [
+          "too_crowded",
+          "too_expensive"
+        ],
+        "risk_flags": [
+          "too_crowded"
+        ],
+        "meal_type": "",
+        "transit_hub_nearby": true,
+        "parking_available": true
+      },
+      "cover_image_url": "https://example.com/mock/上海电影博物馆.jpg",
+      "highlight_text": "上海电影博物馆适合购物主题路线,可作为夜间收尾节点",
+      "highlight_text_tags": [
+        "购物",
+        "室内",
+        "现代"
+      ],
+      "ugc_tip": "如果时间紧,只保留核心区域也能形成完整体验。"
+    },
+    {
+      "poi_id": "poi_032",
+      "name": "宋庆龄故居纪念馆",
+      "category": "gallery",
+      "tags": [
+        "艺术",
+        "拍照",
+        "文艺",
+        "小众"
+      ],
+      "location": {
+        "city": "上海",
+        "district": "青浦区",
+        "address": "青浦区示例路112号",
+        "lat": 31.144,
+        "lng": 121.512
+      },
+      "visit_info": {
+        "avg_visit_duration_min": 137,
+        "price_min": 0,
+        "price_max": 160,
+        "open_time": "09:30",
+        "close_time": "21:00",
+        "last_entry_time": "20:30",
+        "need_booking": true,
+        "suitable_time_slots": [
+          "afternoon",
+          "evening"
+        ]
+      },
+      "quality": {
+        "rating": 4.7,
+        "review_count": 56848,
+        "popularity": 0.42,
+        "crowd_level": 0.3,
+        "queue_time_min": 12,
+        "peak_hours": [
+          "10:00-12:00",
+          "14:00-16:00"
+        ],
+        "live_crowd_level": 0.28,
+        "live_queue_time_min": 11
+      },
+      "suitability": {
+        "family": 0.5,
+        "couple": 0.85,
+        "friends": 0.7,
+        "solo": 0.5,
+        "elderly": 0.5,
+        "rainy_day": 0.93,
+        "budget_friendly": 0.68,
+        "photo_friendly": 0.78,
+        "food_nearby": 0.6,
+        "night_activity": 0.36
+      },
+      "planning_features": {
+        "indoor": true,
+        "walking_intensity": "low",
+        "recommended_transport": [
+          "drive",
+          "taxi",
+          "bus"
+        ],
+        "nearby_poi_ids": [
+          "poi_033",
+          "poi_040"
+        ],
+        "avoid_reasons": [
+          "booking_required"
+        ],
+        "risk_flags": [
+          "booking_required"
+        ],
+        "meal_type": "",
+        "transit_hub_nearby": true,
+        "parking_available": true
+      },
+      "cover_image_url": "https://example.com/mock/宋庆龄故居纪念馆.jpg",
+      "highlight_text": "宋庆龄故居纪念馆适合艺术主题路线,可作为半日核心节点",
+      "highlight_text_tags": [
+        "艺术",
+        "拍照",
+        "文艺"
+      ],
+      "ugc_tip": "适合和附近餐饮节点组合,减少来回折返。"
+    },
+    {
+      "poi_id": "poi_033",
+      "name": "上海图书馆东馆",
+      "category": "night_view",
+      "tags": [
+        "夜景",
+        "拍照",
+        "亲水",
+        "亲子"
+      ],
+      "location": {
+        "city": "上海",
+        "district": "黄浦区",
+        "address": "黄浦区示例路113号",
+        "lat": 31.181,
+        "lng": 121.553
+      },
+      "visit_info": {
+        "avg_visit_duration_min": 148,
+        "price_min": 0,
+        "price_max": 180,
+        "open_time": "17:00",
+        "close_time": "23:30",
+        "last_entry_time": "22:30",
+        "need_booking": false,
+        "suitable_time_slots": [
+          "evening",
+          "night"
+        ]
+      },
+      "quality": {
+        "rating": 4.1,
+        "review_count": 58587,
+        "popularity": 0.49,
+        "crowd_level": 0.43,
+        "queue_time_min": 3,
+        "peak_hours": [
+          "11:30-13:00",
+          "18:00-19:30"
+        ],
+        "live_crowd_level": 0.44,
+        "live_queue_time_min": 3
+      },
+      "suitability": {
+        "family": 0.85,
+        "couple": 0.9,
+        "friends": 0.77,
+        "solo": 0.61,
+        "elderly": 0.85,
+        "rainy_day": 0.39,
+        "budget_friendly": 0.64,
+        "photo_friendly": 0.83,
+        "food_nearby": 0.64,
+        "night_activity": 0.84
+      },
+      "planning_features": {
+        "indoor": false,
+        "walking_intensity": "medium",
+        "recommended_transport": [
+          "metro",
+          "walk",
+          "taxi"
+        ],
+        "nearby_poi_ids": [
+          "poi_034",
+          "poi_041"
+        ],
+        "avoid_reasons": [],
+        "risk_flags": [],
+        "meal_type": "",
+        "transit_hub_nearby": true,
+        "parking_available": false
+      },
+      "cover_image_url": "https://example.com/mock/上海图书馆东馆.jpg",
+      "highlight_text": "上海图书馆东馆适合夜景主题路线,可作为餐饮衔接节点",
+      "highlight_text_tags": [
+        "夜景",
+        "拍照",
+        "亲水"
+      ],
+      "ugc_tip": "雨天可优先选择室内动线,户外部分作为备选。"
+    },
+    {
+      "poi_id": "poi_034",
+      "name": "朵云书院旗舰店",
+      "category": "theater",
+      "tags": [
+        "演出",
+        "室内",
+        "文艺",
+        "免费"
+      ],
+      "location": {
+        "city": "上海",
+        "district": "徐汇区",
+        "address": "徐汇区示例路114号",
+        "lat": 31.218,
+        "lng": 121.594
+      },
+      "visit_info": {
+        "avg_visit_duration_min": 159,
+        "price_min": 120,
+        "price_max": 500,
+        "open_time": "09:30",
+        "close_time": "21:00",
+        "last_entry_time": "20:30",
+        "need_booking": false,
+        "suitable_time_slots": [
+          "evening",
+          "night"
+        ]
+      },
+      "quality": {
+        "rating": 4.4,
+        "review_count": 60326,
+        "popularity": 0.56,
+        "crowd_level": 0.56,
+        "queue_time_min": 4,
+        "peak_hours": [
+          "15:00-17:00"
+        ],
+        "live_crowd_level": 0.6,
+        "live_queue_time_min": 5
+      },
+      "suitability": {
+        "family": 0.56,
+        "couple": 0.74,
+        "friends": 0.84,
+        "solo": 0.72,
+        "elderly": 0.56,
+        "rainy_day": 0.74,
+        "budget_friendly": 0.0,
+        "photo_friendly": 0.55,
+        "food_nearby": 0.68,
+        "night_activity": 0.2
+      },
+      "planning_features": {
+        "indoor": true,
+        "walking_intensity": "low",
+        "recommended_transport": [
+          "metro",
+          "bike",
+          "walk"
+        ],
+        "nearby_poi_ids": [
+          "poi_035",
+          "poi_042"
+        ],
+        "avoid_reasons": [
+          "too_expensive"
+        ],
+        "risk_flags": [],
+        "meal_type": "",
+        "transit_hub_nearby": true,
+        "parking_available": false
+      },
+      "cover_image_url": "https://example.com/mock/朵云书院旗舰店.jpg",
+      "highlight_text": "朵云书院旗舰店适合演出主题路线,可作为雨天备选节点",
+      "highlight_text_tags": [
+        "演出",
+        "室内",
+        "文艺"
+      ],
+      "ugc_tip": "拍照点集中在入口和主空间,无需全程深逛。"
+    },
+    {
+      "poi_id": "poi_035",
+      "name": "建投书局衡山路店",
+      "category": "market",
+      "tags": [
+        "市集",
+        "本地",
+        "小吃",
+        "预约"
+      ],
+      "location": {
+        "city": "上海",
+        "district": "静安区",
+        "address": "静安区示例路115号",
+        "lat": 31.255,
+        "lng": 121.355
+      },
+      "visit_info": {
+        "avg_visit_duration_min": 170,
+        "price_min": 20,
+        "price_max": 200,
+        "open_time": "09:30",
+        "close_time": "21:00",
+        "last_entry_time": "20:30",
+        "need_booking": false,
+        "suitable_time_slots": [
+          "morning",
+          "noon",
+          "afternoon"
+        ]
+      },
+      "quality": {
+        "rating": 4.7,
+        "review_count": 62065,
+        "popularity": 0.63,
+        "crowd_level": 0.69,
+        "queue_time_min": 33,
+        "peak_hours": [
+          "19:00-21:30"
+        ],
+        "live_crowd_level": 0.61,
+        "live_queue_time_min": 35
+      },
+      "suitability": {
+        "family": 0.59,
+        "couple": 0.57,
+        "friends": 0.56,
+        "solo": 0.58,
+        "elderly": 0.59,
+        "rainy_day": 0.08,
+        "budget_friendly": 0.6,
+        "photo_friendly": 0.6,
+        "food_nearby": 0.72,
+        "night_activity": 0.26
+      },
+      "planning_features": {
+        "indoor": false,
+        "walking_intensity": "medium",
+        "recommended_transport": [
+          "metro",
+          "walk",
+          "taxi"
+        ],
+        "nearby_poi_ids": [
+          "poi_036",
+          "poi_043"
+        ],
+        "avoid_reasons": [
+          "long_queue"
+        ],
+        "risk_flags": [
+          "long_queue"
+        ],
+        "meal_type": "",
+        "transit_hub_nearby": false,
+        "parking_available": false
+      },
+      "cover_image_url": "https://example.com/mock/建投书局衡山路店.jpg",
+      "highlight_text": "建投书局衡山路店适合市集主题路线,可作为夜间收尾节点",
+      "highlight_text_tags": [
+        "市集",
+        "本地",
+        "小吃"
+      ],
+      "ugc_tip": "建议避开周末下午高峰,体验会更从容。"
+    },
+    {
+      "poi_id": "poi_036",
+      "name": "黑石公寓街区",
+      "category": "museum",
+      "tags": [
+        "室内",
+        "展览",
+        "文艺",
+        "夜景"
+      ],
+      "location": {
+        "city": "上海",
+        "district": "浦东新区",
+        "address": "浦东新区示例路116号",
+        "lat": 31.147,
+        "lng": 121.396
+      },
+      "visit_info": {
+        "avg_visit_duration_min": 51,
+        "price_min": 0,
+        "price_max": 80,
+        "open_time": "09:30",
+        "close_time": "21:00",
+        "last_entry_time": "20:30",
+        "need_booking": true,
+        "suitable_time_slots": [
+          "morning",
+          "afternoon"
+        ]
+      },
+      "quality": {
+        "rating": 4.1,
+        "review_count": 63804,
+        "popularity": 0.7,
+        "crowd_level": 0.82,
+        "queue_time_min": 9,
+        "peak_hours": [
+          "10:00-12:00",
+          "14:00-16:00"
+        ],
+        "live_crowd_level": 0.77,
+        "live_queue_time_min": 3
+      },
+      "suitability": {
+        "family": 0.62,
+        "couple": 0.84,
+        "friends": 0.63,
+        "solo": 0.69,
+        "elderly": 0.62,
+        "rainy_day": 0.8,
+        "budget_friendly": 0.84,
+        "photo_friendly": 0.78,
+        "food_nearby": 0.76,
+        "night_activity": 1.0
+      },
+      "planning_features": {
+        "indoor": true,
+        "walking_intensity": "medium",
+        "recommended_transport": [
+          "metro",
+          "taxi",
+          "drive"
+        ],
+        "nearby_poi_ids": [
+          "poi_037",
+          "poi_044"
+        ],
+        "avoid_reasons": [
+          "too_crowded",
+          "booking_required"
+        ],
+        "risk_flags": [
+          "too_crowded",
+          "booking_required"
+        ],
+        "meal_type": "",
+        "transit_hub_nearby": true,
+        "parking_available": true
+      },
+      "cover_image_url": "https://example.com/mock/黑石公寓街区.jpg",
+      "highlight_text": "黑石公寓街区适合室内主题路线,可作为半日核心节点",
+      "highlight_text_tags": [
+        "室内",
+        "展览",
+        "文艺"
+      ],
+      "ugc_tip": "如果时间紧,只保留核心区域也能形成完整体验。"
+    },
+    {
+      "poi_id": "poi_037",
+      "name": "愚园路城市漫步",
+      "category": "landmark",
+      "tags": [
+        "经典",
+        "拍照",
+        "历史",
+        "高性价比"
+      ],
+      "location": {
+        "city": "上海",
+        "district": "长宁区",
+        "address": "长宁区示例路117号",
+        "lat": 31.184,
+        "lng": 121.437
+      },
+      "visit_info": {
+        "avg_visit_duration_min": 62,
+        "price_min": 0,
+        "price_max": 80,
+        "open_time": "09:30",
+        "close_time": "21:00",
+        "last_entry_time": "20:30",
+        "need_booking": false,
+        "suitable_time_slots": [
+          "morning",
+          "afternoon",
+          "evening"
+        ]
+      },
+      "quality": {
+        "rating": 4.4,
+        "review_count": 65543,
+        "popularity": 0.77,
+        "crowd_level": 0.27,
+        "queue_time_min": 1,
+        "peak_hours": [
+          "11:30-13:00",
+          "18:00-19:30"
+        ],
+        "live_crowd_level": 0.25,
+        "live_queue_time_min": 0
+      },
+      "suitability": {
+        "family": 0.43,
+        "couple": 0.67,
+        "friends": 0.7,
+        "solo": 0.55,
+        "elderly": 0.43,
+        "rainy_day": 0.12,
+        "budget_friendly": 0.84,
+        "photo_friendly": 0.83,
+        "food_nearby": 0.8,
+        "night_activity": 0.38
+      },
+      "planning_features": {
+        "indoor": false,
+        "walking_intensity": "medium",
+        "recommended_transport": [
+          "metro",
+          "bike",
+          "taxi"
+        ],
+        "nearby_poi_ids": [
+          "poi_038",
+          "poi_045"
+        ],
+        "avoid_reasons": [],
+        "risk_flags": [],
+        "meal_type": "",
+        "transit_hub_nearby": true,
+        "parking_available": false
+      },
+      "cover_image_url": "https://example.com/mock/愚园路城市漫步.jpg",
+      "highlight_text": "愚园路城市漫步适合经典主题路线,可作为餐饮衔接节点",
+      "highlight_text_tags": [
+        "经典",
+        "拍照",
+        "历史"
+      ],
+      "ugc_tip": "适合和附近餐饮节点组合,减少来回折返。"
+    },
+    {
+      "poi_id": "poi_038",
+      "name": "大宁国际商业广场",
+      "category": "cafe",
+      "tags": [
+        "咖啡",
+        "安静",
+        "轻食",
+        "儿童友好"
+      ],
+      "location": {
+        "city": "上海",
+        "district": "虹口区",
+        "address": "虹口区示例路118号",
+        "lat": 31.221,
+        "lng": 121.478
+      },
+      "visit_info": {
+        "avg_visit_duration_min": 73,
+        "price_min": 30,
+        "price_max": 160,
+        "open_time": "09:30",
+        "close_time": "21:00",
+        "last_entry_time": "20:30",
+        "need_booking": false,
+        "suitable_time_slots": [
+          "afternoon",
+          "evening"
+        ]
+      },
+      "quality": {
+        "rating": 4.7,
+        "review_count": 67282,
+        "popularity": 0.84,
+        "crowd_level": 0.4,
+        "queue_time_min": 2,
+        "peak_hours": [
+          "15:00-17:00"
+        ],
+        "live_crowd_level": 0.41,
+        "live_queue_time_min": 0
+      },
+      "suitability": {
+        "family": 0.78,
+        "couple": 0.51,
+        "friends": 0.77,
+        "solo": 0.96,
+        "elderly": 0.78,
+        "rainy_day": 0.86,
+        "budget_friendly": 0.68,
+        "photo_friendly": 0.55,
+        "food_nearby": 0.97,
+        "night_activity": 0.16
+      },
+      "planning_features": {
+        "indoor": true,
+        "walking_intensity": "low",
+        "recommended_transport": [
+          "metro",
+          "bus",
+          "taxi"
+        ],
+        "nearby_poi_ids": [
+          "poi_039",
+          "poi_046"
+        ],
+        "avoid_reasons": [],
+        "risk_flags": [],
+        "meal_type": "cafe",
+        "transit_hub_nearby": true,
+        "parking_available": false
+      },
+      "cover_image_url": "https://example.com/mock/大宁国际商业广场.jpg",
+      "highlight_text": "大宁国际商业广场适合咖啡主题路线,可作为雨天备选节点",
+      "highlight_text_tags": [
+        "咖啡",
+        "安静",
+        "轻食"
+      ],
+      "ugc_tip": "雨天可优先选择室内动线,户外部分作为备选。"
+    },
+    {
+      "poi_id": "poi_039",
+      "name": "环球港",
+      "category": "restaurant",
+      "tags": [
+        "本帮菜",
+        "室内",
+        "聚餐",
+        "商业化"
+      ],
+      "location": {
+        "city": "上海",
+        "district": "杨浦区",
+        "address": "杨浦区示例路119号",
+        "lat": 31.258,
+        "lng": 121.519
+      },
+      "visit_info": {
+        "avg_visit_duration_min": 84,
+        "price_min": 60,
+        "price_max": 220,
+        "open_time": "11:00",
+        "close_time": "21:30",
+        "last_entry_time": "21:00",
+        "need_booking": false,
+        "suitable_time_slots": [
+          "noon",
+          "evening"
+        ]
+      },
+      "quality": {
+        "rating": 4.1,
+        "review_count": 69021,
+        "popularity": 0.91,
+        "crowd_level": 0.53,
+        "queue_time_min": 3,
+        "peak_hours": [
+          "19:00-21:30"
+        ],
+        "live_crowd_level": 0.57,
+        "live_queue_time_min": 0
+      },
+      "suitability": {
+        "family": 0.49,
+        "couple": 0.56,
+        "friends": 0.84,
+        "solo": 0.52,
+        "elderly": 0.49,
+        "rainy_day": 0.89,
+        "budget_friendly": 0.56,
+        "photo_friendly": 0.6,
+        "food_nearby": 1.0,
+        "night_activity": 0.22
+      },
+      "planning_features": {
+        "indoor": true,
+        "walking_intensity": "low",
+        "recommended_transport": [
+          "metro",
+          "bike",
+          "bus"
+        ],
+        "nearby_poi_ids": [
+          "poi_040",
+          "poi_047"
+        ],
+        "avoid_reasons": [],
+        "risk_flags": [],
+        "meal_type": "fast_food",
+        "transit_hub_nearby": true,
+        "parking_available": false
+      },
+      "cover_image_url": "https://example.com/mock/环球港.jpg",
+      "highlight_text": "环球港适合本帮菜主题路线,可作为夜间收尾节点",
+      "highlight_text_tags": [
+        "本帮菜",
+        "室内",
+        "聚餐"
+      ],
+      "ugc_tip": "拍照点集中在入口和主空间,无需全程深逛。"
+    },
+    {
+      "poi_id": "poi_040",
+      "name": "兴业太古汇",
+      "category": "shopping",
+      "tags": [
+        "购物",
+        "室内",
+        "现代",
+        "小众"
+      ],
+      "location": {
+        "city": "上海",
+        "district": "普陀区",
+        "address": "普陀区示例路120号",
+        "lat": 31.15,
+        "lng": 121.56
+      },
+      "visit_info": {
+        "avg_visit_duration_min": 95,
+        "price_min": 0,
+        "price_max": 320,
+        "open_time": "09:30",
+        "close_time": "21:00",
+        "last_entry_time": "20:30",
+        "need_booking": true,
+        "suitable_time_slots": [
+          "afternoon",
+          "evening",
+          "night"
+        ]
+      },
+      "quality": {
+        "rating": 4.4,
+        "review_count": 2760,
+        "popularity": 0.42,
+        "crowd_level": 0.66,
+        "queue_time_min": 6,
+        "peak_hours": [
+          "10:00-12:00",
+          "14:00-16:00"
+        ],
+        "live_crowd_level": 0.58,
+        "live_queue_time_min": 4
+      },
+      "suitability": {
+        "family": 0.52,
+        "couple": 0.61,
+        "friends": 0.56,
+        "solo": 0.63,
+        "elderly": 0.52,
+        "rainy_day": 0.92,
+        "budget_friendly": 0.36,
+        "photo_friendly": 0.45,
+        "food_nearby": 0.62,
+        "night_activity": 0.28
+      },
+      "planning_features": {
+        "indoor": true,
+        "walking_intensity": "medium",
+        "recommended_transport": [
+          "metro",
+          "bus",
+          "taxi"
+        ],
+        "nearby_poi_ids": [
+          "poi_041",
+          "poi_048"
+        ],
+        "avoid_reasons": [
+          "booking_required",
+          "too_expensive"
+        ],
+        "risk_flags": [
+          "booking_required"
+        ],
+        "meal_type": "",
+        "transit_hub_nearby": false,
+        "parking_available": true
+      },
+      "cover_image_url": "https://example.com/mock/兴业太古汇.jpg",
+      "highlight_text": "兴业太古汇适合购物主题路线,可作为半日核心节点",
+      "highlight_text_tags": [
+        "购物",
+        "室内",
+        "现代"
+      ],
+      "ugc_tip": "建议避开周末下午高峰,体验会更从容。"
+    },
+    {
+      "poi_id": "poi_041",
+      "name": "BFC外滩金融中心",
+      "category": "gallery",
+      "tags": [
+        "艺术",
+        "拍照",
+        "文艺",
+        "亲子"
+      ],
+      "location": {
+        "city": "上海",
+        "district": "闵行区",
+        "address": "闵行区示例路121号",
+        "lat": 31.187,
+        "lng": 121.321
+      },
+      "visit_info": {
+        "avg_visit_duration_min": 106,
+        "price_min": 0,
+        "price_max": 160,
+        "open_time": "09:30",
+        "close_time": "21:00",
+        "last_entry_time": "20:30",
+        "need_booking": false,
+        "suitable_time_slots": [
+          "afternoon",
+          "evening"
+        ]
+      },
+      "quality": {
+        "rating": 4.7,
+        "review_count": 4499,
+        "popularity": 0.49,
+        "crowd_level": 0.79,
+        "queue_time_min": 13,
+        "peak_hours": [
+          "11:30-13:00",
+          "18:00-19:30"
+        ],
+        "live_crowd_level": 0.74,
+        "live_queue_time_min": 12
+      },
+      "suitability": {
+        "family": 0.87,
+        "couple": 0.88,
+        "friends": 0.63,
+        "solo": 0.49,
+        "elderly": 0.87,
+        "rainy_day": 0.95,
+        "budget_friendly": 0.68,
+        "photo_friendly": 0.83,
+        "food_nearby": 0.66,
+        "night_activity": 0.34
+      },
+      "planning_features": {
+        "indoor": true,
+        "walking_intensity": "low",
+        "recommended_transport": [
+          "metro",
+          "drive",
+          "taxi"
+        ],
+        "nearby_poi_ids": [
+          "poi_042",
+          "poi_049"
+        ],
+        "avoid_reasons": [
+          "too_crowded"
+        ],
+        "risk_flags": [
+          "too_crowded"
+        ],
+        "meal_type": "",
+        "transit_hub_nearby": true,
+        "parking_available": true
+      },
+      "cover_image_url": "https://example.com/mock/bfc外滩金融中心.jpg",
+      "highlight_text": "BFC外滩金融中心适合艺术主题路线,可作为餐饮衔接节点",
+      "highlight_text_tags": [
+        "艺术",
+        "拍照",
+        "文艺"
+      ],
+      "ugc_tip": "如果时间紧,只保留核心区域也能形成完整体验。"
+    },
+    {
+      "poi_id": "poi_042",
+      "name": "陆家嘴中心",
+      "category": "night_view",
+      "tags": [
+        "夜景",
+        "拍照",
+        "亲水",
+        "免费"
+      ],
+      "location": {
+        "city": "上海",
+        "district": "松江区",
+        "address": "松江区示例路122号",
+        "lat": 31.224,
+        "lng": 121.362
+      },
+      "visit_info": {
+        "avg_visit_duration_min": 117,
+        "price_min": 0,
+        "price_max": 180,
+        "open_time": "17:00",
+        "close_time": "23:30",
+        "last_entry_time": "22:30",
+        "need_booking": false,
+        "suitable_time_slots": [
+          "evening",
+          "night"
+        ]
+      },
+      "quality": {
+        "rating": 4.1,
+        "review_count": 6238,
+        "popularity": 0.56,
+        "crowd_level": 0.24,
+        "queue_time_min": 0,
+        "peak_hours": [
+          "15:00-17:00"
+        ],
+        "live_crowd_level": 0.22,
+        "live_queue_time_min": 0
+      },
+      "suitability": {
+        "family": 0.58,
+        "couple": 0.72,
+        "friends": 0.7,
+        "solo": 0.6,
+        "elderly": 0.58,
+        "rainy_day": 0.22,
+        "budget_friendly": 0.64,
+        "photo_friendly": 0.88,
+        "food_nearby": 0.7,
+        "night_activity": 0.82
+      },
+      "planning_features": {
+        "indoor": false,
+        "walking_intensity": "medium",
+        "recommended_transport": [
+          "drive",
+          "taxi",
+          "bus"
+        ],
+        "nearby_poi_ids": [
+          "poi_043",
+          "poi_050"
+        ],
+        "avoid_reasons": [],
+        "risk_flags": [],
+        "meal_type": "",
+        "transit_hub_nearby": true,
+        "parking_available": true
+      },
+      "cover_image_url": "https://example.com/mock/陆家嘴中心.jpg",
+      "highlight_text": "陆家嘴中心适合夜景主题路线,可作为雨天备选节点",
+      "highlight_text_tags": [
+        "夜景",
+        "拍照",
+        "亲水"
+      ],
+      "ugc_tip": "适合和附近餐饮节点组合,减少来回折返。"
+    },
+    {
+      "poi_id": "poi_043",
+      "name": "东方明珠城市广场",
+      "category": "theater",
+      "tags": [
+        "演出",
+        "室内",
+        "文艺",
+        "预约"
+      ],
+      "location": {
+        "city": "上海",
+        "district": "青浦区",
+        "address": "青浦区示例路123号",
+        "lat": 31.261,
+        "lng": 121.403
+      },
+      "visit_info": {
+        "avg_visit_duration_min": 128,
+        "price_min": 120,
+        "price_max": 500,
+        "open_time": "09:30",
+        "close_time": "21:00",
+        "last_entry_time": "20:30",
+        "need_booking": false,
+        "suitable_time_slots": [
+          "evening",
+          "night"
+        ]
+      },
+      "quality": {
+        "rating": 4.4,
+        "review_count": 7977,
+        "popularity": 0.63,
+        "crowd_level": 0.37,
+        "queue_time_min": 1,
+        "peak_hours": [
+          "19:00-21:30"
+        ],
+        "live_crowd_level": 0.38,
+        "live_queue_time_min": 2
+      },
+      "suitability": {
+        "family": 0.61,
+        "couple": 0.77,
+        "friends": 0.77,
+        "solo": 0.71,
+        "elderly": 0.61,
+        "rainy_day": 0.76,
+        "budget_friendly": 0.0,
+        "photo_friendly": 0.6,
+        "food_nearby": 0.74,
+        "night_activity": 0.18
+      },
+      "planning_features": {
+        "indoor": true,
+        "walking_intensity": "low",
+        "recommended_transport": [
+          "drive",
+          "taxi",
+          "bus"
+        ],
+        "nearby_poi_ids": [
+          "poi_044",
+          "poi_051"
+        ],
+        "avoid_reasons": [
+          "too_expensive"
+        ],
+        "risk_flags": [],
+        "meal_type": "",
+        "transit_hub_nearby": true,
+        "parking_available": true
+      },
+      "cover_image_url": "https://example.com/mock/东方明珠城市广场.jpg",
+      "highlight_text": "东方明珠城市广场适合演出主题路线,可作为夜间收尾节点",
+      "highlight_text_tags": [
+        "演出",
+        "室内",
+        "文艺"
+      ],
+      "ugc_tip": "雨天可优先选择室内动线,户外部分作为备选。"
+    },
+    {
+      "poi_id": "poi_044",
+      "name": "金茂大厦观光厅",
+      "category": "market",
+      "tags": [
+        "市集",
+        "本地",
+        "小吃",
+        "夜景"
+      ],
+      "location": {
+        "city": "上海",
+        "district": "黄浦区",
+        "address": "黄浦区示例路124号",
+        "lat": 31.153,
+        "lng": 121.444
+      },
+      "visit_info": {
+        "avg_visit_duration_min": 139,
+        "price_min": 20,
+        "price_max": 200,
+        "open_time": "09:30",
+        "close_time": "21:00",
+        "last_entry_time": "20:30",
+        "need_booking": true,
+        "suitable_time_slots": [
+          "morning",
+          "noon",
+          "afternoon"
+        ]
+      },
+      "quality": {
+        "rating": 4.7,
+        "review_count": 9716,
+        "popularity": 0.7,
+        "crowd_level": 0.5,
+        "queue_time_min": 34,
+        "peak_hours": [
+          "10:00-12:00",
+          "14:00-16:00"
+        ],
+        "live_crowd_level": 0.54,
+        "live_queue_time_min": 36
+      },
+      "suitability": {
+        "family": 0.42,
+        "couple": 0.82,
+        "friends": 0.84,
+        "solo": 0.57,
+        "elderly": 0.42,
+        "rainy_day": 0.26,
+        "budget_friendly": 0.6,
+        "photo_friendly": 0.78,
+        "food_nearby": 0.78,
+        "night_activity": 0.94
+      },
+      "planning_features": {
+        "indoor": false,
+        "walking_intensity": "medium",
+        "recommended_transport": [
+          "metro",
+          "walk",
+          "taxi"
+        ],
+        "nearby_poi_ids": [
+          "poi_045",
+          "poi_052"
+        ],
+        "avoid_reasons": [
+          "long_queue",
+          "booking_required"
+        ],
+        "risk_flags": [
+          "long_queue",
+          "booking_required"
+        ],
+        "meal_type": "",
+        "transit_hub_nearby": true,
+        "parking_available": false
+      },
+      "cover_image_url": "https://example.com/mock/金茂大厦观光厅.jpg",
+      "highlight_text": "金茂大厦观光厅适合市集主题路线,可作为半日核心节点",
+      "highlight_text_tags": [
+        "市集",
+        "本地",
+        "小吃"
+      ],
+      "ugc_tip": "拍照点集中在入口和主空间,无需全程深逛。"
+    },
+    {
+      "poi_id": "poi_045",
+      "name": "上海中心观光厅",
+      "category": "museum",
+      "tags": [
+        "室内",
+        "展览",
+        "文艺",
+        "高性价比"
+      ],
+      "location": {
+        "city": "上海",
+        "district": "徐汇区",
+        "address": "徐汇区示例路125号",
+        "lat": 31.19,
+        "lng": 121.485
+      },
+      "visit_info": {
+        "avg_visit_duration_min": 150,
+        "price_min": 0,
+        "price_max": 80,
+        "open_time": "09:30",
+        "close_time": "21:00",
+        "last_entry_time": "20:30",
+        "need_booking": false,
+        "suitable_time_slots": [
+          "morning",
+          "afternoon"
+        ]
+      },
+      "quality": {
+        "rating": 4.1,
+        "review_count": 11455,
+        "popularity": 0.77,
+        "crowd_level": 0.63,
+        "queue_time_min": 3,
+        "peak_hours": [
+          "11:30-13:00",
+          "18:00-19:30"
+        ],
+        "live_crowd_level": 0.55,
+        "live_queue_time_min": 0
+      },
+      "suitability": {
+        "family": 0.45,
+        "couple": 0.87,
+        "friends": 0.56,
+        "solo": 0.68,
+        "elderly": 0.45,
+        "rainy_day": 0.82,
+        "budget_friendly": 0.84,
+        "photo_friendly": 0.5,
+        "food_nearby": 0.52,
+        "night_activity": 0.3
+      },
+      "planning_features": {
+        "indoor": true,
+        "walking_intensity": "medium",
+        "recommended_transport": [
+          "metro",
+          "bike",
+          "walk"
+        ],
+        "nearby_poi_ids": [
+          "poi_046",
+          "poi_053"
+        ],
+        "avoid_reasons": [],
+        "risk_flags": [],
+        "meal_type": "",
+        "transit_hub_nearby": false,
+        "parking_available": false
+      },
+      "cover_image_url": "https://example.com/mock/上海中心观光厅.jpg",
+      "highlight_text": "上海中心观光厅适合室内主题路线,可作为餐饮衔接节点",
+      "highlight_text_tags": [
+        "室内",
+        "展览",
+        "文艺"
+      ],
+      "ugc_tip": "建议避开周末下午高峰,体验会更从容。"
+    },
+    {
+      "poi_id": "poi_046",
+      "name": "浦江游船十六铺码头",
+      "category": "landmark",
+      "tags": [
+        "经典",
+        "拍照",
+        "历史",
+        "儿童友好"
+      ],
+      "location": {
+        "city": "上海",
+        "district": "静安区",
+        "address": "静安区示例路126号",
+        "lat": 31.227,
+        "lng": 121.526
+      },
+      "visit_info": {
+        "avg_visit_duration_min": 161,
+        "price_min": 0,
+        "price_max": 80,
+        "open_time": "09:30",
+        "close_time": "21:00",
+        "last_entry_time": "20:30",
+        "need_booking": false,
+        "suitable_time_slots": [
+          "morning",
+          "afternoon",
+          "evening"
+        ]
+      },
+      "quality": {
+        "rating": 4.4,
+        "review_count": 13194,
+        "popularity": 0.84,
+        "crowd_level": 0.76,
+        "queue_time_min": 17,
+        "peak_hours": [
+          "15:00-17:00"
+        ],
+        "live_crowd_level": 0.71,
+        "live_queue_time_min": 12
+      },
+      "suitability": {
+        "family": 0.8,
+        "couple": 0.7,
+        "friends": 0.63,
+        "solo": 0.54,
+        "elderly": 0.8,
+        "rainy_day": 0.3,
+        "budget_friendly": 0.84,
+        "photo_friendly": 0.88,
+        "food_nearby": 0.56,
+        "night_activity": 0.36
+      },
+      "planning_features": {
+        "indoor": false,
+        "walking_intensity": "medium",
+        "recommended_transport": [
+          "metro",
+          "walk",
+          "taxi"
+        ],
+        "nearby_poi_ids": [
+          "poi_047",
+          "poi_054"
+        ],
+        "avoid_reasons": [
+          "too_crowded"
+        ],
+        "risk_flags": [],
+        "meal_type": "",
+        "transit_hub_nearby": true,
+        "parking_available": false
+      },
+      "cover_image_url": "https://example.com/mock/浦江游船十六铺码头.jpg",
+      "highlight_text": "浦江游船十六铺码头适合经典主题路线,可作为雨天备选节点",
+      "highlight_text_tags": [
+        "经典",
+        "拍照",
+        "历史"
+      ],
+      "ugc_tip": "如果时间紧,只保留核心区域也能形成完整体验。"
+    },
+    {
+      "poi_id": "poi_047",
+      "name": "苏州河游船码头",
+      "category": "cafe",
+      "tags": [
+        "咖啡",
+        "安静",
+        "轻食",
+        "商业化"
+      ],
+      "location": {
+        "city": "上海",
+        "district": "浦东新区",
+        "address": "浦东新区示例路127号",
+        "lat": 31.264,
+        "lng": 121.567
+      },
+      "visit_info": {
+        "avg_visit_duration_min": 172,
+        "price_min": 30,
+        "price_max": 160,
+        "open_time": "09:30",
+        "close_time": "21:00",
+        "last_entry_time": "20:30",
+        "need_booking": false,
+        "suitable_time_slots": [
+          "afternoon",
+          "evening"
+        ]
+      },
+      "quality": {
+        "rating": 4.7,
+        "review_count": 14933,
+        "popularity": 0.91,
+        "crowd_level": 0.89,
+        "queue_time_min": 24,
+        "peak_hours": [
+          "19:00-21:30"
+        ],
+        "live_crowd_level": 0.87,
+        "live_queue_time_min": 20
+      },
+      "suitability": {
+        "family": 0.51,
+        "couple": 0.54,
+        "friends": 0.7,
+        "solo": 0.95,
+        "elderly": 0.51,
+        "rainy_day": 0.88,
+        "budget_friendly": 0.68,
+        "photo_friendly": 0.6,
+        "food_nearby": 1.0,
+        "night_activity": 0.14
+      },
+      "planning_features": {
+        "indoor": true,
+        "walking_intensity": "low",
+        "recommended_transport": [
+          "metro",
+          "taxi",
+          "drive"
+        ],
+        "nearby_poi_ids": [
+          "poi_048",
+          "poi_055"
+        ],
+        "avoid_reasons": [
+          "too_crowded",
+          "long_queue"
+        ],
+        "risk_flags": [
+          "too_crowded",
+          "long_queue"
+        ],
+        "meal_type": "cafe",
+        "transit_hub_nearby": true,
+        "parking_available": true
+      },
+      "cover_image_url": "https://example.com/mock/苏州河游船码头.jpg",
+      "highlight_text": "苏州河游船码头适合咖啡主题路线,可作为夜间收尾节点",
+      "highlight_text_tags": [
+        "咖啡",
+        "安静",
+        "轻食"
+      ],
+      "ugc_tip": "适合和附近餐饮节点组合,减少来回折返。"
+    },
+    {
+      "poi_id": "poi_048",
+      "name": "龙华会",
+      "category": "restaurant",
+      "tags": [
+        "本帮菜",
+        "室内",
+        "聚餐",
+        "小众"
+      ],
+      "location": {
+        "city": "上海",
+        "district": "长宁区",
+        "address": "长宁区示例路128号",
+        "lat": 31.156,
+        "lng": 121.328
+      },
+      "visit_info": {
+        "avg_visit_duration_min": 53,
+        "price_min": 60,
+        "price_max": 220,
+        "open_time": "11:00",
+        "close_time": "21:30",
+        "last_entry_time": "21:00",
+        "need_booking": true,
+        "suitable_time_slots": [
+          "noon",
+          "evening"
+        ]
+      },
+      "quality": {
+        "rating": 4.1,
+        "review_count": 16672,
+        "popularity": 0.42,
+        "crowd_level": 0.34,
+        "queue_time_min": 31,
+        "peak_hours": [
+          "10:00-12:00",
+          "14:00-16:00"
+        ],
+        "live_crowd_level": 0.35,
+        "live_queue_time_min": 28
+      },
+      "suitability": {
+        "family": 0.54,
+        "couple": 0.59,
+        "friends": 0.77,
+        "solo": 0.51,
+        "elderly": 0.54,
+        "rainy_day": 0.91,
+        "budget_friendly": 0.56,
+        "photo_friendly": 0.45,
+        "food_nearby": 1.0,
+        "night_activity": 0.2
+      },
+      "planning_features": {
+        "indoor": true,
+        "walking_intensity": "low",
+        "recommended_transport": [
+          "metro",
+          "bike",
+          "taxi"
+        ],
+        "nearby_poi_ids": [
+          "poi_049",
+          "poi_056"
+        ],
+        "avoid_reasons": [
+          "long_queue",
+          "booking_required"
+        ],
+        "risk_flags": [
+          "long_queue",
+          "booking_required"
+        ],
+        "meal_type": "local_food",
+        "transit_hub_nearby": true,
+        "parking_available": true
+      },
+      "cover_image_url": "https://example.com/mock/龙华会.jpg",
+      "highlight_text": "龙华会适合本帮菜主题路线,可作为半日核心节点",
+      "highlight_text_tags": [
+        "本帮菜",
+        "室内",
+        "聚餐"
+      ],
+      "ugc_tip": "雨天可优先选择室内动线,户外部分作为备选。"
+    },
+    {
+      "poi_id": "poi_049",
+      "name": "徐汇滨江绿地",
+      "category": "shopping",
+      "tags": [
+        "购物",
+        "室内",
+        "现代",
+        "亲子"
+      ],
+      "location": {
+        "city": "上海",
+        "district": "虹口区",
+        "address": "虹口区示例路129号",
+        "lat": 31.193,
+        "lng": 121.369
+      },
+      "visit_info": {
+        "avg_visit_duration_min": 64,
+        "price_min": 0,
+        "price_max": 320,
+        "open_time": "09:30",
+        "close_time": "21:00",
+        "last_entry_time": "20:30",
+        "need_booking": false,
+        "suitable_time_slots": [
+          "afternoon",
+          "evening",
+          "night"
+        ]
+      },
+      "quality": {
+        "rating": 4.4,
+        "review_count": 18411,
+        "popularity": 0.49,
+        "crowd_level": 0.47,
+        "queue_time_min": 1,
+        "peak_hours": [
+          "11:30-13:00",
+          "18:00-19:30"
+        ],
+        "live_crowd_level": 0.51,
+        "live_queue_time_min": 0
+      },
+      "suitability": {
+        "family": 0.89,
+        "couple": 0.64,
+        "friends": 0.84,
+        "solo": 0.62,
+        "elderly": 0.89,
+        "rainy_day": 0.94,
+        "budget_friendly": 0.36,
+        "photo_friendly": 0.5,
+        "food_nearby": 0.68,
+        "night_activity": 0.26
+      },
+      "planning_features": {
+        "indoor": true,
+        "walking_intensity": "medium",
+        "recommended_transport": [
+          "metro",
+          "bus",
+          "taxi"
+        ],
+        "nearby_poi_ids": [
+          "poi_050",
+          "poi_057"
+        ],
+        "avoid_reasons": [
+          "too_expensive"
+        ],
+        "risk_flags": [],
+        "meal_type": "",
+        "transit_hub_nearby": true,
+        "parking_available": false
+      },
+      "cover_image_url": "https://example.com/mock/徐汇滨江绿地.jpg",
+      "highlight_text": "徐汇滨江绿地适合购物主题路线,可作为餐饮衔接节点",
+      "highlight_text_tags": [
+        "购物",
+        "室内",
+        "现代"
+      ],
+      "ugc_tip": "拍照点集中在入口和主空间,无需全程深逛。"
+    },
+    {
+      "poi_id": "poi_050",
+      "name": "桂林公园",
+      "category": "gallery",
+      "tags": [
+        "艺术",
+        "拍照",
+        "文艺",
+        "免费"
+      ],
+      "location": {
+        "city": "上海",
+        "district": "杨浦区",
+        "address": "杨浦区示例路130号",
+        "lat": 31.23,
+        "lng": 121.41
+      },
+      "visit_info": {
+        "avg_visit_duration_min": 75,
+        "price_min": 0,
+        "price_max": 160,
+        "open_time": "09:30",
+        "close_time": "21:00",
+        "last_entry_time": "20:30",
+        "need_booking": false,
+        "suitable_time_slots": [
+          "afternoon",
+          "evening"
+        ]
+      },
+      "quality": {
+        "rating": 4.7,
+        "review_count": 20150,
+        "popularity": 0.56,
+        "crowd_level": 0.6,
+        "queue_time_min": 2,
+        "peak_hours": [
+          "15:00-17:00"
+        ],
+        "live_crowd_level": 0.52,
+        "live_queue_time_min": 1
+      },
+      "suitability": {
+        "family": 0.6,
+        "couple": 0.91,
+        "friends": 0.56,
+        "solo": 0.48,
+        "elderly": 0.6,
+        "rainy_day": 0.72,
+        "budget_friendly": 0.68,
+        "photo_friendly": 0.88,
+        "food_nearby": 0.72,
+        "night_activity": 0.32
+      },
+      "planning_features": {
+        "indoor": true,
+        "walking_intensity": "low",
+        "recommended_transport": [
+          "metro",
+          "bike",
+          "bus"
+        ],
+        "nearby_poi_ids": [
+          "poi_051",
+          "poi_058"
+        ],
+        "avoid_reasons": [],
+        "risk_flags": [],
+        "meal_type": "",
+        "transit_hub_nearby": false,
+        "parking_available": false
+      },
+      "cover_image_url": "https://example.com/mock/桂林公园.jpg",
+      "highlight_text": "桂林公园适合艺术主题路线,可作为雨天备选节点",
+      "highlight_text_tags": [
+        "艺术",
+        "拍照",
+        "文艺"
+      ],
+      "ugc_tip": "建议避开周末下午高峰,体验会更从容。"
+    },
+    {
+      "poi_id": "poi_051",
+      "name": "古猗园",
+      "category": "night_view",
+      "tags": [
+        "夜景",
+        "拍照",
+        "亲水",
+        "预约"
+      ],
+      "location": {
+        "city": "上海",
+        "district": "普陀区",
+        "address": "普陀区示例路131号",
+        "lat": 31.122,
+        "lng": 121.451
+      },
+      "visit_info": {
+        "avg_visit_duration_min": 86,
+        "price_min": 0,
+        "price_max": 180,
+        "open_time": "17:00",
+        "close_time": "23:30",
+        "last_entry_time": "22:30",
+        "need_booking": false,
+        "suitable_time_slots": [
+          "evening",
+          "night"
+        ]
+      },
+      "quality": {
+        "rating": 4.1,
+        "review_count": 21889,
+        "popularity": 0.63,
+        "crowd_level": 0.73,
+        "queue_time_min": 21,
+        "peak_hours": [
+          "19:00-21:30"
+        ],
+        "live_crowd_level": 0.68,
+        "live_queue_time_min": 21
+      },
+      "suitability": {
+        "family": 0.63,
+        "couple": 0.75,
+        "friends": 0.63,
+        "solo": 0.59,
+        "elderly": 0.63,
+        "rainy_day": 0.4,
+        "budget_friendly": 0.64,
+        "photo_friendly": 0.93,
+        "food_nearby": 0.76,
+        "night_activity": 1.0
+      },
+      "planning_features": {
+        "indoor": false,
+        "walking_intensity": "medium",
+        "recommended_transport": [
+          "metro",
+          "bus",
+          "taxi"
+        ],
+        "nearby_poi_ids": [
+          "poi_052",
+          "poi_059"
+        ],
+        "avoid_reasons": [
+          "too_crowded",
+          "long_queue"
+        ],
+        "risk_flags": [],
+        "meal_type": "",
+        "transit_hub_nearby": true,
+        "parking_available": false
+      },
+      "cover_image_url": "https://example.com/mock/古猗园.jpg",
+      "highlight_text": "古猗园适合夜景主题路线,可作为夜间收尾节点",
+      "highlight_text_tags": [
+        "夜景",
+        "拍照",
+        "亲水"
+      ],
+      "ugc_tip": "如果时间紧,只保留核心区域也能形成完整体验。"
+    },
+    {
+      "poi_id": "poi_052",
+      "name": "七宝老街",
+      "category": "theater",
+      "tags": [
+        "演出",
+        "室内",
+        "文艺",
+        "夜景"
+      ],
+      "location": {
+        "city": "上海",
+        "district": "闵行区",
+        "address": "闵行区示例路132号",
+        "lat": 31.159,
+        "lng": 121.492
+      },
+      "visit_info": {
+        "avg_visit_duration_min": 97,
+        "price_min": 120,
+        "price_max": 500,
+        "open_time": "09:30",
+        "close_time": "21:00",
+        "last_entry_time": "20:30",
+        "need_booking": true,
+        "suitable_time_slots": [
+          "evening",
+          "night"
+        ]
+      },
+      "quality": {
+        "rating": 4.4,
+        "review_count": 23628,
+        "popularity": 0.7,
+        "crowd_level": 0.86,
+        "queue_time_min": 28,
+        "peak_hours": [
+          "10:00-12:00",
+          "14:00-16:00"
+        ],
+        "live_crowd_level": 0.84,
+        "live_queue_time_min": 29
+      },
+      "suitability": {
+        "family": 0.44,
+        "couple": 0.8,
+        "friends": 0.7,
+        "solo": 0.7,
+        "elderly": 0.44,
+        "rainy_day": 0.78,
+        "budget_friendly": 0.0,
+        "photo_friendly": 0.78,
+        "food_nearby": 0.8,
+        "night_activity": 0.86
+      },
+      "planning_features": {
+        "indoor": true,
+        "walking_intensity": "low",
+        "recommended_transport": [
+          "metro",
+          "drive",
+          "taxi"
+        ],
+        "nearby_poi_ids": [
+          "poi_053",
+          "poi_060"
+        ],
+        "avoid_reasons": [
+          "too_crowded",
+          "long_queue",
+          "booking_required",
+          "too_expensive"
+        ],
+        "risk_flags": [
+          "too_crowded",
+          "long_queue",
+          "booking_required"
+        ],
+        "meal_type": "",
+        "transit_hub_nearby": true,
+        "parking_available": true
+      },
+      "cover_image_url": "https://example.com/mock/七宝老街.jpg",
+      "highlight_text": "七宝老街适合演出主题路线,可作为半日核心节点",
+      "highlight_text_tags": [
+        "演出",
+        "室内",
+        "文艺"
+      ],
+      "ugc_tip": "适合和附近餐饮节点组合,减少来回折返。"
+    },
+    {
+      "poi_id": "poi_053",
+      "name": "朱家角古镇",
+      "category": "market",
+      "tags": [
+        "市集",
+        "本地",
+        "小吃",
+        "高性价比"
+      ],
+      "location": {
+        "city": "上海",
+        "district": "松江区",
+        "address": "松江区示例路133号",
+        "lat": 31.196,
+        "lng": 121.533
+      },
+      "visit_info": {
+        "avg_visit_duration_min": 108,
+        "price_min": 20,
+        "price_max": 200,
+        "open_time": "09:30",
+        "close_time": "21:00",
+        "last_entry_time": "20:30",
+        "need_booking": false,
+        "suitable_time_slots": [
+          "morning",
+          "noon",
+          "afternoon"
+        ]
+      },
+      "quality": {
+        "rating": 4.7,
+        "review_count": 25367,
+        "popularity": 0.77,
+        "crowd_level": 0.31,
+        "queue_time_min": 5,
+        "peak_hours": [
+          "11:30-13:00",
+          "18:00-19:30"
+        ],
+        "live_crowd_level": 0.32,
+        "live_queue_time_min": 7
+      },
+      "suitability": {
+        "family": 0.47,
+        "couple": 0.63,
+        "friends": 0.77,
+        "solo": 0.56,
+        "elderly": 0.47,
+        "rainy_day": 0.09,
+        "budget_friendly": 0.6,
+        "photo_friendly": 0.5,
+        "food_nearby": 0.54,
+        "night_activity": 0.22
+      },
+      "planning_features": {
+        "indoor": false,
+        "walking_intensity": "medium",
+        "recommended_transport": [
+          "drive",
+          "taxi",
+          "bus"
+        ],
+        "nearby_poi_ids": [
+          "poi_054",
+          "poi_061"
+        ],
+        "avoid_reasons": [],
+        "risk_flags": [],
+        "meal_type": "",
+        "transit_hub_nearby": true,
+        "parking_available": true
+      },
+      "cover_image_url": "https://example.com/mock/朱家角古镇.jpg",
+      "highlight_text": "朱家角古镇适合市集主题路线,可作为餐饮衔接节点",
+      "highlight_text_tags": [
+        "市集",
+        "本地",
+        "小吃"
+      ],
+      "ugc_tip": "雨天可优先选择室内动线,户外部分作为备选。"
+    },
+    {
+      "poi_id": "poi_054",
+      "name": "广富林文化遗址",
+      "category": "museum",
+      "tags": [
+        "室内",
+        "展览",
+        "文艺",
+        "儿童友好"
+      ],
+      "location": {
+        "city": "上海",
+        "district": "青浦区",
+        "address": "青浦区示例路134号",
+        "lat": 31.233,
+        "lng": 121.574
+      },
+      "visit_info": {
+        "avg_visit_duration_min": 119,
+        "price_min": 0,
+        "price_max": 80,
+        "open_time": "09:30",
+        "close_time": "21:00",
+        "last_entry_time": "20:30",
+        "need_booking": false,
+        "suitable_time_slots": [
+          "morning",
+          "afternoon"
+        ]
+      },
+      "quality": {
+        "rating": 4.1,
+        "review_count": 27106,
+        "popularity": 0.84,
+        "crowd_level": 0.44,
+        "queue_time_min": 0,
+        "peak_hours": [
+          "15:00-17:00"
+        ],
+        "live_crowd_level": 0.48,
+        "live_queue_time_min": 0
+      },
+      "suitability": {
+        "family": 0.82,
+        "couple": 0.9,
+        "friends": 0.84,
+        "solo": 0.67,
+        "elderly": 0.82,
+        "rainy_day": 0.84,
+        "budget_friendly": 0.84,
+        "photo_friendly": 0.55,
+        "food_nearby": 0.58,
+        "night_activity": 0.28
+      },
+      "planning_features": {
+        "indoor": true,
+        "walking_intensity": "medium",
+        "recommended_transport": [
+          "drive",
+          "taxi",
+          "bus"
+        ],
+        "nearby_poi_ids": [
+          "poi_055",
+          "poi_062"
+        ],
+        "avoid_reasons": [],
+        "risk_flags": [],
+        "meal_type": "",
+        "transit_hub_nearby": true,
+        "parking_available": true
+      },
+      "cover_image_url": "https://example.com/mock/广富林文化遗址.jpg",
+      "highlight_text": "广富林文化遗址适合室内主题路线,可作为雨天备选节点",
+      "highlight_text_tags": [
+        "室内",
+        "展览",
+        "文艺"
+      ],
+      "ugc_tip": "拍照点集中在入口和主空间,无需全程深逛。"
+    },
+    {
+      "poi_id": "poi_055",
+      "name": "佘山国家森林公园",
+      "category": "landmark",
+      "tags": [
+        "经典",
+        "拍照",
+        "历史",
+        "商业化"
+      ],
+      "location": {
+        "city": "上海",
+        "district": "黄浦区",
+        "address": "黄浦区示例路135号",
+        "lat": 31.125,
+        "lng": 121.335
+      },
+      "visit_info": {
+        "avg_visit_duration_min": 130,
+        "price_min": 0,
+        "price_max": 80,
+        "open_time": "09:30",
+        "close_time": "21:00",
+        "last_entry_time": "20:30",
+        "need_booking": false,
+        "suitable_time_slots": [
+          "morning",
+          "afternoon",
+          "evening"
+        ]
+      },
+      "quality": {
+        "rating": 4.4,
+        "review_count": 28845,
+        "popularity": 0.91,
+        "crowd_level": 0.57,
+        "queue_time_min": 1,
+        "peak_hours": [
+          "19:00-21:30"
+        ],
+        "live_crowd_level": 0.49,
+        "live_queue_time_min": 0
+      },
+      "suitability": {
+        "family": 0.53,
+        "couple": 0.52,
+        "friends": 0.56,
+        "solo": 0.53,
+        "elderly": 0.53,
+        "rainy_day": 0.13,
+        "budget_friendly": 0.84,
+        "photo_friendly": 0.93,
+        "food_nearby": 0.62,
+        "night_activity": 0.34
+      },
+      "planning_features": {
+        "indoor": false,
+        "walking_intensity": "medium",
+        "recommended_transport": [
+          "metro",
+          "walk",
+          "taxi"
+        ],
+        "nearby_poi_ids": [
+          "poi_056",
+          "poi_063"
+        ],
+        "avoid_reasons": [],
+        "risk_flags": [],
+        "meal_type": "",
+        "transit_hub_nearby": false,
+        "parking_available": false
+      },
+      "cover_image_url": "https://example.com/mock/佘山国家森林公园.jpg",
+      "highlight_text": "佘山国家森林公园适合经典主题路线,可作为夜间收尾节点",
+      "highlight_text_tags": [
+        "经典",
+        "拍照",
+        "历史"
+      ],
+      "ugc_tip": "建议避开周末下午高峰,体验会更从容。"
+    },
+    {
+      "poi_id": "poi_056",
+      "name": "月湖雕塑公园",
+      "category": "cafe",
+      "tags": [
+        "咖啡",
+        "安静",
+        "轻食",
+        "小众"
+      ],
+      "location": {
+        "city": "上海",
+        "district": "徐汇区",
+        "address": "徐汇区示例路136号",
+        "lat": 31.162,
+        "lng": 121.376
+      },
+      "visit_info": {
+        "avg_visit_duration_min": 141,
+        "price_min": 30,
+        "price_max": 160,
+        "open_time": "09:30",
+        "close_time": "21:00",
+        "last_entry_time": "20:30",
+        "need_booking": true,
+        "suitable_time_slots": [
+          "afternoon",
+          "evening"
+        ]
+      },
+      "quality": {
+        "rating": 4.7,
+        "review_count": 30584,
+        "popularity": 0.42,
+        "crowd_level": 0.7,
+        "queue_time_min": 25,
+        "peak_hours": [
+          "10:00-12:00",
+          "14:00-16:00"
+        ],
+        "live_crowd_level": 0.65,
+        "live_queue_time_min": 21
+      },
+      "suitability": {
+        "family": 0.56,
+        "couple": 0.57,
+        "friends": 0.63,
+        "solo": 0.94,
+        "elderly": 0.56,
+        "rainy_day": 0.9,
+        "budget_friendly": 0.68,
+        "photo_friendly": 0.45,
+        "food_nearby": 1.0,
+        "night_activity": 0.12
+      },
+      "planning_features": {
+        "indoor": true,
+        "walking_intensity": "low",
+        "recommended_transport": [
+          "metro",
+          "bike",
+          "walk"
+        ],
+        "nearby_poi_ids": [
+          "poi_057",
+          "poi_064"
+        ],
+        "avoid_reasons": [
+          "long_queue",
+          "booking_required"
+        ],
+        "risk_flags": [
+          "long_queue",
+          "booking_required"
+        ],
+        "meal_type": "cafe",
+        "transit_hub_nearby": true,
+        "parking_available": true
+      },
+      "cover_image_url": "https://example.com/mock/月湖雕塑公园.jpg",
+      "highlight_text": "月湖雕塑公园适合咖啡主题路线,可作为半日核心节点",
+      "highlight_text_tags": [
+        "咖啡",
+        "安静",
+        "轻食"
+      ],
+      "ugc_tip": "如果时间紧,只保留核心区域也能形成完整体验。"
+    },
+    {
+      "poi_id": "poi_057",
+      "name": "上海野生动物园",
+      "category": "restaurant",
+      "tags": [
+        "本帮菜",
+        "室内",
+        "聚餐",
+        "亲子"
+      ],
+      "location": {
+        "city": "上海",
+        "district": "静安区",
+        "address": "静安区示例路137号",
+        "lat": 31.199,
+        "lng": 121.417
+      },
+      "visit_info": {
+        "avg_visit_duration_min": 152,
+        "price_min": 60,
+        "price_max": 220,
+        "open_time": "11:00",
+        "close_time": "21:30",
+        "last_entry_time": "21:00",
+        "need_booking": false,
+        "suitable_time_slots": [
+          "noon",
+          "evening"
+        ]
+      },
+      "quality": {
+        "rating": 4.1,
+        "review_count": 32323,
+        "popularity": 0.49,
+        "crowd_level": 0.83,
+        "queue_time_min": 32,
+        "peak_hours": [
+          "11:30-13:00",
+          "18:00-19:30"
+        ],
+        "live_crowd_level": 0.81,
+        "live_queue_time_min": 29
+      },
+      "suitability": {
+        "family": 0.91,
+        "couple": 0.62,
+        "friends": 0.7,
+        "solo": 0.5,
+        "elderly": 0.91,
+        "rainy_day": 0.93,
+        "budget_friendly": 0.56,
+        "photo_friendly": 0.5,
+        "food_nearby": 1.0,
+        "night_activity": 0.18
+      },
+      "planning_features": {
+        "indoor": true,
+        "walking_intensity": "low",
+        "recommended_transport": [
+          "metro",
+          "walk",
+          "taxi"
+        ],
+        "nearby_poi_ids": [
+          "poi_058",
+          "poi_065"
+        ],
+        "avoid_reasons": [
+          "too_crowded",
+          "long_queue"
+        ],
+        "risk_flags": [
+          "too_crowded",
+          "long_queue"
+        ],
+        "meal_type": "light_meal",
+        "transit_hub_nearby": true,
+        "parking_available": false
+      },
+      "cover_image_url": "https://example.com/mock/上海野生动物园.jpg",
+      "highlight_text": "上海野生动物园适合本帮菜主题路线,可作为餐饮衔接节点",
+      "highlight_text_tags": [
+        "本帮菜",
+        "室内",
+        "聚餐"
+      ],
+      "ugc_tip": "适合和附近餐饮节点组合,减少来回折返。"
+    },
+    {
+      "poi_id": "poi_058",
+      "name": "迪士尼小镇",
+      "category": "shopping",
+      "tags": [
+        "购物",
+        "室内",
+        "现代",
+        "免费"
+      ],
+      "location": {
+        "city": "上海",
+        "district": "浦东新区",
+        "address": "浦东新区示例路138号",
+        "lat": 31.236,
+        "lng": 121.458
+      },
+      "visit_info": {
+        "avg_visit_duration_min": 163,
+        "price_min": 0,
+        "price_max": 320,
+        "open_time": "09:30",
+        "close_time": "21:00",
+        "last_entry_time": "20:30",
+        "need_booking": false,
+        "suitable_time_slots": [
+          "afternoon",
+          "evening",
+          "night"
+        ]
+      },
+      "quality": {
+        "rating": 4.4,
+        "review_count": 34062,
+        "popularity": 0.56,
+        "crowd_level": 0.28,
+        "queue_time_min": 4,
+        "peak_hours": [
+          "15:00-17:00"
+        ],
+        "live_crowd_level": 0.29,
+        "live_queue_time_min": 2
+      },
+      "suitability": {
+        "family": 0.62,
+        "couple": 0.67,
+        "friends": 0.77,
+        "solo": 0.61,
+        "elderly": 0.62,
+        "rainy_day": 0.96,
+        "budget_friendly": 0.36,
+        "photo_friendly": 0.55,
+        "food_nearby": 0.74,
+        "night_activity": 0.24
+      },
+      "planning_features": {
+        "indoor": true,
+        "walking_intensity": "medium",
+        "recommended_transport": [
+          "metro",
+          "taxi",
+          "drive"
+        ],
+        "nearby_poi_ids": [
+          "poi_059",
+          "poi_066"
+        ],
+        "avoid_reasons": [
+          "too_expensive"
+        ],
+        "risk_flags": [],
+        "meal_type": "",
+        "transit_hub_nearby": true,
+        "parking_available": true
+      },
+      "cover_image_url": "https://example.com/mock/迪士尼小镇.jpg",
+      "highlight_text": "迪士尼小镇适合购物主题路线,可作为雨天备选节点",
+      "highlight_text_tags": [
+        "购物",
+        "室内",
+        "现代"
+      ],
+      "ugc_tip": "雨天可优先选择室内动线,户外部分作为备选。"
+    },
+    {
+      "poi_id": "poi_059",
+      "name": "比斯特上海购物村",
+      "category": "gallery",
+      "tags": [
+        "艺术",
+        "拍照",
+        "文艺",
+        "预约"
+      ],
+      "location": {
+        "city": "上海",
+        "district": "长宁区",
+        "address": "长宁区示例路139号",
+        "lat": 31.128,
+        "lng": 121.499
+      },
+      "visit_info": {
+        "avg_visit_duration_min": 174,
+        "price_min": 0,
+        "price_max": 160,
+        "open_time": "09:30",
+        "close_time": "21:00",
+        "last_entry_time": "20:30",
+        "need_booking": false,
+        "suitable_time_slots": [
+          "afternoon",
+          "evening"
+        ]
+      },
+      "quality": {
+        "rating": 4.7,
+        "review_count": 35801,
+        "popularity": 0.63,
+        "crowd_level": 0.41,
+        "queue_time_min": 5,
+        "peak_hours": [
+          "19:00-21:30"
+        ],
+        "live_crowd_level": 0.45,
+        "live_queue_time_min": 4
+      },
+      "suitability": {
+        "family": 0.43,
+        "couple": 0.73,
+        "friends": 0.84,
+        "solo": 0.72,
+        "elderly": 0.43,
+        "rainy_day": 0.74,
+        "budget_friendly": 0.68,
+        "photo_friendly": 0.93,
+        "food_nearby": 0.78,
+        "night_activity": 0.3
+      },
+      "planning_features": {
+        "indoor": true,
+        "walking_intensity": "low",
+        "recommended_transport": [
+          "metro",
+          "bike",
+          "taxi"
+        ],
+        "nearby_poi_ids": [
+          "poi_060",
+          "poi_067"
+        ],
+        "avoid_reasons": [],
+        "risk_flags": [],
+        "meal_type": "",
+        "transit_hub_nearby": true,
+        "parking_available": false
+      },
+      "cover_image_url": "https://example.com/mock/比斯特上海购物村.jpg",
+      "highlight_text": "比斯特上海购物村适合艺术主题路线,可作为夜间收尾节点",
+      "highlight_text_tags": [
+        "艺术",
+        "拍照",
+        "文艺"
+      ],
+      "ugc_tip": "拍照点集中在入口和主空间,无需全程深逛。"
+    },
+    {
+      "poi_id": "poi_060",
+      "name": "虹桥天地",
+      "category": "night_view",
+      "tags": [
+        "夜景",
+        "拍照",
+        "亲水"
+      ],
+      "location": {
+        "city": "上海",
+        "district": "虹口区",
+        "address": "虹口区示例路140号",
+        "lat": 31.165,
+        "lng": 121.54
+      },
+      "visit_info": {
+        "avg_visit_duration_min": 55,
+        "price_min": 0,
+        "price_max": 180,
+        "open_time": "17:00",
+        "close_time": "23:30",
+        "last_entry_time": "22:30",
+        "need_booking": true,
+        "suitable_time_slots": [
+          "evening",
+          "night"
+        ]
+      },
+      "quality": {
+        "rating": 4.1,
+        "review_count": 37540,
+        "popularity": 0.7,
+        "crowd_level": 0.54,
+        "queue_time_min": 22,
+        "peak_hours": [
+          "10:00-12:00",
+          "14:00-16:00"
+        ],
+        "live_crowd_level": 0.46,
+        "live_queue_time_min": 22
+      },
+      "suitability": {
+        "family": 0.46,
+        "couple": 0.78,
+        "friends": 0.56,
+        "solo": 0.58,
+        "elderly": 0.46,
+        "rainy_day": 0.23,
+        "budget_friendly": 0.64,
+        "photo_friendly": 0.78,
+        "food_nearby": 0.52,
+        "night_activity": 1.0
+      },
+      "planning_features": {
+        "indoor": false,
+        "walking_intensity": "medium",
+        "recommended_transport": [
+          "metro",
+          "bus",
+          "taxi"
+        ],
+        "nearby_poi_ids": [
+          "poi_061",
+          "poi_068"
+        ],
+        "avoid_reasons": [
+          "long_queue",
+          "booking_required"
+        ],
+        "risk_flags": [
+          "booking_required"
+        ],
+        "meal_type": "",
+        "transit_hub_nearby": false,
+        "parking_available": false
+      },
+      "cover_image_url": "https://example.com/mock/虹桥天地.jpg",
+      "highlight_text": "虹桥天地适合夜景主题路线,可作为半日核心节点",
+      "highlight_text_tags": [
+        "夜景",
+        "拍照",
+        "亲水"
+      ],
+      "ugc_tip": "建议避开周末下午高峰,体验会更从容。"
+    },
+    {
+      "poi_id": "poi_061",
+      "name": "瑞虹天地月亮湾",
+      "category": "theater",
+      "tags": [
+        "演出",
+        "室内",
+        "文艺",
+        "高性价比"
+      ],
+      "location": {
+        "city": "上海",
+        "district": "杨浦区",
+        "address": "杨浦区示例路141号",
+        "lat": 31.202,
+        "lng": 121.581
+      },
+      "visit_info": {
+        "avg_visit_duration_min": 66,
+        "price_min": 120,
+        "price_max": 500,
+        "open_time": "09:30",
+        "close_time": "21:00",
+        "last_entry_time": "20:30",
+        "need_booking": false,
+        "suitable_time_slots": [
+          "evening",
+          "night"
+        ]
+      },
+      "quality": {
+        "rating": 4.4,
+        "review_count": 39279,
+        "popularity": 0.77,
+        "crowd_level": 0.67,
+        "queue_time_min": 29,
+        "peak_hours": [
+          "11:30-13:00",
+          "18:00-19:30"
+        ],
+        "live_crowd_level": 0.62,
+        "live_queue_time_min": 30
+      },
+      "suitability": {
+        "family": 0.49,
+        "couple": 0.83,
+        "friends": 0.63,
+        "solo": 0.69,
+        "elderly": 0.49,
+        "rainy_day": 0.8,
+        "budget_friendly": 0.0,
+        "photo_friendly": 0.5,
+        "food_nearby": 0.56,
+        "night_activity": 0.14
+      },
+      "planning_features": {
+        "indoor": true,
+        "walking_intensity": "low",
+        "recommended_transport": [
+          "metro",
+          "bike",
+          "bus"
+        ],
+        "nearby_poi_ids": [
+          "poi_062",
+          "poi_069"
+        ],
+        "avoid_reasons": [
+          "long_queue",
+          "too_expensive"
+        ],
+        "risk_flags": [
+          "long_queue"
+        ],
+        "meal_type": "",
+        "transit_hub_nearby": true,
+        "parking_available": false
+      },
+      "cover_image_url": "https://example.com/mock/瑞虹天地月亮湾.jpg",
+      "highlight_text": "瑞虹天地月亮湾适合演出主题路线,可作为餐饮衔接节点",
+      "highlight_text_tags": [
+        "演出",
+        "室内",
+        "文艺"
+      ],
+      "ugc_tip": "如果时间紧,只保留核心区域也能形成完整体验。"
+    },
+    {
+      "poi_id": "poi_062",
+      "name": "大学路街区",
+      "category": "market",
+      "tags": [
+        "市集",
+        "本地",
+        "小吃",
+        "儿童友好"
+      ],
+      "location": {
+        "city": "上海",
+        "district": "普陀区",
+        "address": "普陀区示例路142号",
+        "lat": 31.239,
+        "lng": 121.342
+      },
+      "visit_info": {
+        "avg_visit_duration_min": 77,
+        "price_min": 20,
+        "price_max": 200,
+        "open_time": "09:30",
+        "close_time": "21:00",
+        "last_entry_time": "20:30",
+        "need_booking": false,
+        "suitable_time_slots": [
+          "morning",
+          "noon",
+          "afternoon"
+        ]
+      },
+      "quality": {
+        "rating": 4.7,
+        "review_count": 41018,
+        "popularity": 0.84,
+        "crowd_level": 0.8,
+        "queue_time_min": 5,
+        "peak_hours": [
+          "15:00-17:00"
+        ],
+        "live_crowd_level": 0.78,
+        "live_queue_time_min": 7
+      },
+      "suitability": {
+        "family": 0.84,
+        "couple": 0.66,
+        "friends": 0.7,
+        "solo": 0.55,
+        "elderly": 0.84,
+        "rainy_day": 0.27,
+        "budget_friendly": 0.6,
+        "photo_friendly": 0.55,
+        "food_nearby": 0.6,
+        "night_activity": 0.2
+      },
+      "planning_features": {
+        "indoor": false,
+        "walking_intensity": "medium",
+        "recommended_transport": [
+          "metro",
+          "bus",
+          "taxi"
+        ],
+        "nearby_poi_ids": [
+          "poi_063",
+          "poi_070"
+        ],
+        "avoid_reasons": [
+          "too_crowded"
+        ],
+        "risk_flags": [
+          "too_crowded"
+        ],
+        "meal_type": "",
+        "transit_hub_nearby": true,
+        "parking_available": false
+      },
+      "cover_image_url": "https://example.com/mock/大学路街区.jpg",
+      "highlight_text": "大学路街区适合市集主题路线,可作为雨天备选节点",
+      "highlight_text_tags": [
+        "市集",
+        "本地",
+        "小吃"
+      ],
+      "ugc_tip": "适合和附近餐饮节点组合,减少来回折返。"
+    },
+    {
+      "poi_id": "poi_063",
+      "name": "五角场合生汇",
+      "category": "museum",
+      "tags": [
+        "室内",
+        "展览",
+        "文艺",
+        "商业化"
+      ],
+      "location": {
+        "city": "上海",
+        "district": "闵行区",
+        "address": "闵行区示例路143号",
+        "lat": 31.131,
+        "lng": 121.383
+      },
+      "visit_info": {
+        "avg_visit_duration_min": 88,
+        "price_min": 0,
+        "price_max": 80,
+        "open_time": "09:30",
+        "close_time": "21:00",
+        "last_entry_time": "20:30",
+        "need_booking": false,
+        "suitable_time_slots": [
+          "morning",
+          "afternoon"
+        ]
+      },
+      "quality": {
+        "rating": 4.1,
+        "review_count": 42757,
+        "popularity": 0.91,
+        "crowd_level": 0.25,
+        "queue_time_min": 3,
+        "peak_hours": [
+          "19:00-21:30"
+        ],
+        "live_crowd_level": 0.26,
+        "live_queue_time_min": 0
+      },
+      "suitability": {
+        "family": 0.55,
+        "couple": 0.72,
+        "friends": 0.77,
+        "solo": 0.66,
+        "elderly": 0.55,
+        "rainy_day": 0.86,
+        "budget_friendly": 0.84,
+        "photo_friendly": 0.6,
+        "food_nearby": 0.64,
+        "night_activity": 0.26
+      },
+      "planning_features": {
+        "indoor": true,
+        "walking_intensity": "medium",
+        "recommended_transport": [
+          "metro",
+          "drive",
+          "taxi"
+        ],
+        "nearby_poi_ids": [
+          "poi_064",
+          "poi_071"
+        ],
+        "avoid_reasons": [],
+        "risk_flags": [],
+        "meal_type": "",
+        "transit_hub_nearby": true,
+        "parking_available": true
+      },
+      "cover_image_url": "https://example.com/mock/五角场合生汇.jpg",
+      "highlight_text": "五角场合生汇适合室内主题路线,可作为夜间收尾节点",
+      "highlight_text_tags": [
+        "室内",
+        "展览",
+        "文艺"
+      ],
+      "ugc_tip": "雨天可优先选择室内动线,户外部分作为备选。"
+    },
+    {
+      "poi_id": "poi_064",
+      "name": "豫园湖心亭茶楼",
+      "category": "landmark",
+      "tags": [
+        "经典",
+        "拍照",
+        "历史",
+        "小众"
+      ],
+      "location": {
+        "city": "上海",
+        "district": "松江区",
+        "address": "松江区示例路144号",
+        "lat": 31.168,
+        "lng": 121.424
+      },
+      "visit_info": {
+        "avg_visit_duration_min": 99,
+        "price_min": 0,
+        "price_max": 80,
+        "open_time": "09:30",
+        "close_time": "21:00",
+        "last_entry_time": "20:30",
+        "need_booking": true,
+        "suitable_time_slots": [
+          "morning",
+          "afternoon",
+          "evening"
+        ]
+      },
+      "quality": {
+        "rating": 4.4,
+        "review_count": 44496,
+        "popularity": 0.42,
+        "crowd_level": 0.38,
+        "queue_time_min": 19,
+        "peak_hours": [
+          "10:00-12:00",
+          "14:00-16:00"
+        ],
+        "live_crowd_level": 0.42,
+        "live_queue_time_min": 14
+      },
+      "suitability": {
+        "family": 0.58,
+        "couple": 0.55,
+        "friends": 0.84,
+        "solo": 0.52,
+        "elderly": 0.58,
+        "rainy_day": 0.31,
+        "budget_friendly": 0.84,
+        "photo_friendly": 0.78,
+        "food_nearby": 0.68,
+        "night_activity": 0.32
+      },
+      "planning_features": {
+        "indoor": false,
+        "walking_intensity": "medium",
+        "recommended_transport": [
+          "drive",
+          "taxi",
+          "bus"
+        ],
+        "nearby_poi_ids": [
+          "poi_065",
+          "poi_072"
+        ],
+        "avoid_reasons": [
+          "booking_required"
+        ],
+        "risk_flags": [
+          "booking_required"
+        ],
+        "meal_type": "",
+        "transit_hub_nearby": true,
+        "parking_available": true
+      },
+      "cover_image_url": "https://example.com/mock/豫园湖心亭茶楼.jpg",
+      "highlight_text": "豫园湖心亭茶楼适合经典主题路线,可作为半日核心节点",
+      "highlight_text_tags": [
+        "经典",
+        "拍照",
+        "历史"
+      ],
+      "ugc_tip": "拍照点集中在入口和主空间,无需全程深逛。"
+    },
+    {
+      "poi_id": "poi_065",
+      "name": "光明邨大酒家",
+      "category": "cafe",
+      "tags": [
+        "咖啡",
+        "安静",
+        "轻食",
+        "亲子"
+      ],
+      "location": {
+        "city": "上海",
+        "district": "青浦区",
+        "address": "青浦区示例路145号",
+        "lat": 31.205,
+        "lng": 121.465
+      },
+      "visit_info": {
+        "avg_visit_duration_min": 110,
+        "price_min": 30,
+        "price_max": 160,
+        "open_time": "09:30",
+        "close_time": "21:00",
+        "last_entry_time": "20:30",
+        "need_booking": false,
+        "suitable_time_slots": [
+          "afternoon",
+          "evening"
+        ]
+      },
+      "quality": {
+        "rating": 4.7,
+        "review_count": 46235,
+        "popularity": 0.49,
+        "crowd_level": 0.51,
+        "queue_time_min": 5,
+        "peak_hours": [
+          "11:30-13:00",
+          "18:00-19:30"
+        ],
+        "live_crowd_level": 0.43,
+        "live_queue_time_min": 1
+      },
+      "suitability": {
+        "family": 0.93,
+        "couple": 0.6,
+        "friends": 0.56,
+        "solo": 0.93,
+        "elderly": 0.93,
+        "rainy_day": 0.92,
+        "budget_friendly": 0.68,
+        "photo_friendly": 0.5,
+        "food_nearby": 1.0,
+        "night_activity": 0.38
+      },
+      "planning_features": {
+        "indoor": true,
+        "walking_intensity": "low",
+        "recommended_transport": [
+          "drive",
+          "taxi",
+          "bus"
+        ],
+        "nearby_poi_ids": [
+          "poi_066",
+          "poi_073"
+        ],
+        "avoid_reasons": [],
+        "risk_flags": [],
+        "meal_type": "cafe",
+        "transit_hub_nearby": false,
+        "parking_available": true
+      },
+      "cover_image_url": "https://example.com/mock/光明邨大酒家.jpg",
+      "highlight_text": "光明邨大酒家适合咖啡主题路线,可作为餐饮衔接节点",
+      "highlight_text_tags": [
+        "咖啡",
+        "安静",
+        "轻食"
+      ],
+      "ugc_tip": "建议避开周末下午高峰,体验会更从容。"
+    },
+    {
+      "poi_id": "poi_066",
+      "name": "鲜得来排骨年糕",
+      "category": "restaurant",
+      "tags": [
+        "本帮菜",
+        "室内",
+        "聚餐",
+        "免费"
+      ],
+      "location": {
+        "city": "上海",
+        "district": "黄浦区",
+        "address": "黄浦区示例路146号",
+        "lat": 31.242,
+        "lng": 121.506
+      },
+      "visit_info": {
+        "avg_visit_duration_min": 121,
+        "price_min": 60,
+        "price_max": 220,
+        "open_time": "11:00",
+        "close_time": "21:30",
+        "last_entry_time": "21:00",
+        "need_booking": false,
+        "suitable_time_slots": [
+          "noon",
+          "evening"
+        ]
+      },
+      "quality": {
+        "rating": 4.1,
+        "review_count": 47974,
+        "popularity": 0.56,
+        "crowd_level": 0.64,
+        "queue_time_min": 0,
+        "peak_hours": [
+          "15:00-17:00"
+        ],
+        "live_crowd_level": 0.59,
+        "live_queue_time_min": 0
+      },
+      "suitability": {
+        "family": 0.42,
+        "couple": 0.65,
+        "friends": 0.63,
+        "solo": 0.49,
+        "elderly": 0.42,
+        "rainy_day": 0.95,
+        "budget_friendly": 0.56,
+        "photo_friendly": 0.55,
+        "food_nearby": 1.0,
+        "night_activity": 0.16
+      },
+      "planning_features": {
+        "indoor": true,
+        "walking_intensity": "low",
+        "recommended_transport": [
+          "metro",
+          "walk",
+          "taxi"
+        ],
+        "nearby_poi_ids": [
+          "poi_067",
+          "poi_074"
+        ],
+        "avoid_reasons": [],
+        "risk_flags": [],
+        "meal_type": "fine_dining",
+        "transit_hub_nearby": true,
+        "parking_available": false
+      },
+      "cover_image_url": "https://example.com/mock/鲜得来排骨年糕.jpg",
+      "highlight_text": "鲜得来排骨年糕适合本帮菜主题路线,可作为雨天备选节点",
+      "highlight_text_tags": [
+        "本帮菜",
+        "室内",
+        "聚餐"
+      ],
+      "ugc_tip": "如果时间紧,只保留核心区域也能形成完整体验。"
+    },
+    {
+      "poi_id": "poi_067",
+      "name": "德兴馆",
+      "category": "shopping",
+      "tags": [
+        "购物",
+        "室内",
+        "现代",
+        "预约"
+      ],
+      "location": {
+        "city": "上海",
+        "district": "徐汇区",
+        "address": "徐汇区示例路147号",
+        "lat": 31.134,
+        "lng": 121.547
+      },
+      "visit_info": {
+        "avg_visit_duration_min": 132,
+        "price_min": 0,
+        "price_max": 320,
+        "open_time": "09:30",
+        "close_time": "21:00",
+        "last_entry_time": "20:30",
+        "need_booking": false,
+        "suitable_time_slots": [
+          "afternoon",
+          "evening",
+          "night"
+        ]
+      },
+      "quality": {
+        "rating": 4.4,
+        "review_count": 49713,
+        "popularity": 0.63,
+        "crowd_level": 0.77,
+        "queue_time_min": 9,
+        "peak_hours": [
+          "19:00-21:30"
+        ],
+        "live_crowd_level": 0.75,
+        "live_queue_time_min": 7
+      },
+      "suitability": {
+        "family": 0.45,
+        "couple": 0.7,
+        "friends": 0.7,
+        "solo": 0.6,
+        "elderly": 0.45,
+        "rainy_day": 0.73,
+        "budget_friendly": 0.36,
+        "photo_friendly": 0.6,
+        "food_nearby": 0.8,
+        "night_activity": 0.22
+      },
+      "planning_features": {
+        "indoor": true,
+        "walking_intensity": "medium",
+        "recommended_transport": [
+          "metro",
+          "bike",
+          "walk"
+        ],
+        "nearby_poi_ids": [
+          "poi_068",
+          "poi_075"
+        ],
+        "avoid_reasons": [
+          "too_crowded",
+          "too_expensive"
+        ],
+        "risk_flags": [],
+        "meal_type": "",
+        "transit_hub_nearby": true,
+        "parking_available": false
+      },
+      "cover_image_url": "https://example.com/mock/德兴馆.jpg",
+      "highlight_text": "德兴馆适合购物主题路线,可作为夜间收尾节点",
+      "highlight_text_tags": [
+        "购物",
+        "室内",
+        "现代"
+      ],
+      "ugc_tip": "适合和附近餐饮节点组合,减少来回折返。"
+    },
+    {
+      "poi_id": "poi_068",
+      "name": "绿波廊",
+      "category": "gallery",
+      "tags": [
+        "艺术",
+        "拍照",
+        "文艺",
+        "夜景"
+      ],
+      "location": {
+        "city": "上海",
+        "district": "静安区",
+        "address": "静安区示例路148号",
+        "lat": 31.171,
+        "lng": 121.588
+      },
+      "visit_info": {
+        "avg_visit_duration_min": 143,
+        "price_min": 0,
+        "price_max": 160,
+        "open_time": "09:30",
+        "close_time": "21:00",
+        "last_entry_time": "20:30",
+        "need_booking": true,
+        "suitable_time_slots": [
+          "afternoon",
+          "evening"
+        ]
+      },
+      "quality": {
+        "rating": 4.7,
+        "review_count": 51452,
+        "popularity": 0.7,
+        "crowd_level": 0.22,
+        "queue_time_min": 16,
+        "peak_hours": [
+          "10:00-12:00",
+          "14:00-16:00"
+        ],
+        "live_crowd_level": 0.23,
+        "live_queue_time_min": 15
+      },
+      "suitability": {
+        "family": 0.48,
+        "couple": 0.76,
+        "friends": 0.77,
+        "solo": 0.71,
+        "elderly": 0.48,
+        "rainy_day": 0.76,
+        "budget_friendly": 0.68,
+        "photo_friendly": 0.78,
+        "food_nearby": 0.54,
+        "night_activity": 0.98
+      },
+      "planning_features": {
+        "indoor": true,
+        "walking_intensity": "low",
+        "recommended_transport": [
+          "metro",
+          "walk",
+          "taxi"
+        ],
+        "nearby_poi_ids": [
+          "poi_069",
+          "poi_076"
+        ],
+        "avoid_reasons": [
+          "booking_required"
+        ],
+        "risk_flags": [
+          "booking_required"
+        ],
+        "meal_type": "",
+        "transit_hub_nearby": true,
+        "parking_available": false
+      },
+      "cover_image_url": "https://example.com/mock/绿波廊.jpg",
+      "highlight_text": "绿波廊适合艺术主题路线,可作为半日核心节点",
+      "highlight_text_tags": [
+        "艺术",
+        "拍照",
+        "文艺"
+      ],
+      "ugc_tip": "雨天可优先选择室内动线,户外部分作为备选。"
+    },
+    {
+      "poi_id": "poi_069",
+      "name": "大壶春",
+      "category": "night_view",
+      "tags": [
+        "夜景",
+        "拍照",
+        "亲水",
+        "高性价比"
+      ],
+      "location": {
+        "city": "上海",
+        "district": "浦东新区",
+        "address": "浦东新区示例路149号",
+        "lat": 31.208,
+        "lng": 121.349
+      },
+      "visit_info": {
+        "avg_visit_duration_min": 154,
+        "price_min": 0,
+        "price_max": 180,
+        "open_time": "17:00",
+        "close_time": "23:30",
+        "last_entry_time": "22:30",
+        "need_booking": false,
+        "suitable_time_slots": [
+          "evening",
+          "night"
+        ]
+      },
+      "quality": {
+        "rating": 4.1,
+        "review_count": 53191,
+        "popularity": 0.77,
+        "crowd_level": 0.35,
+        "queue_time_min": 3,
+        "peak_hours": [
+          "11:30-13:00",
+          "18:00-19:30"
+        ],
+        "live_crowd_level": 0.39,
+        "live_queue_time_min": 3
+      },
+      "suitability": {
+        "family": 0.51,
+        "couple": 0.81,
+        "friends": 0.84,
+        "solo": 0.57,
+        "elderly": 0.51,
+        "rainy_day": 0.41,
+        "budget_friendly": 0.64,
+        "photo_friendly": 0.83,
+        "food_nearby": 0.58,
+        "night_activity": 1.0
+      },
+      "planning_features": {
+        "indoor": false,
+        "walking_intensity": "medium",
+        "recommended_transport": [
+          "metro",
+          "taxi",
+          "drive"
+        ],
+        "nearby_poi_ids": [
+          "poi_070",
+          "poi_077"
+        ],
+        "avoid_reasons": [],
+        "risk_flags": [],
+        "meal_type": "",
+        "transit_hub_nearby": true,
+        "parking_available": true
+      },
+      "cover_image_url": "https://example.com/mock/大壶春.jpg",
+      "highlight_text": "大壶春适合夜景主题路线,可作为餐饮衔接节点",
+      "highlight_text_tags": [
+        "夜景",
+        "拍照",
+        "亲水"
+      ],
+      "ugc_tip": "拍照点集中在入口和主空间,无需全程深逛。"
+    },
+    {
+      "poi_id": "poi_070",
+      "name": "南翔馒头店",
+      "category": "theater",
+      "tags": [
+        "演出",
+        "室内",
+        "文艺",
+        "儿童友好"
+      ],
+      "location": {
+        "city": "上海",
+        "district": "长宁区",
+        "address": "长宁区示例路150号",
+        "lat": 31.245,
+        "lng": 121.39
+      },
+      "visit_info": {
+        "avg_visit_duration_min": 165,
+        "price_min": 120,
+        "price_max": 500,
+        "open_time": "09:30",
+        "close_time": "21:00",
+        "last_entry_time": "20:30",
+        "need_booking": false,
+        "suitable_time_slots": [
+          "evening",
+          "night"
+        ]
+      },
+      "quality": {
+        "rating": 4.4,
+        "review_count": 54930,
+        "popularity": 0.84,
+        "crowd_level": 0.48,
+        "queue_time_min": 4,
+        "peak_hours": [
+          "15:00-17:00"
+        ],
+        "live_crowd_level": 0.4,
+        "live_queue_time_min": 5
+      },
+      "suitability": {
+        "family": 0.86,
+        "couple": 0.86,
+        "friends": 0.56,
+        "solo": 0.68,
+        "elderly": 0.86,
+        "rainy_day": 0.82,
+        "budget_friendly": 0.0,
+        "photo_friendly": 0.55,
+        "food_nearby": 0.62,
+        "night_activity": 0.12
+      },
+      "planning_features": {
+        "indoor": true,
+        "walking_intensity": "low",
+        "recommended_transport": [
+          "metro",
+          "bike",
+          "taxi"
+        ],
+        "nearby_poi_ids": [
+          "poi_071",
+          "poi_078"
+        ],
+        "avoid_reasons": [
+          "too_expensive"
+        ],
+        "risk_flags": [],
+        "meal_type": "",
+        "transit_hub_nearby": false,
+        "parking_available": false
+      },
+      "cover_image_url": "https://example.com/mock/南翔馒头店.jpg",
+      "highlight_text": "南翔馒头店适合演出主题路线,可作为雨天备选节点",
+      "highlight_text_tags": [
+        "演出",
+        "室内",
+        "文艺"
+      ],
+      "ugc_tip": "建议避开周末下午高峰,体验会更从容。"
+    },
+    {
+      "poi_id": "poi_071",
+      "name": "阿娘面馆",
+      "category": "market",
+      "tags": [
+        "市集",
+        "本地",
+        "小吃",
+        "商业化"
+      ],
+      "location": {
+        "city": "上海",
+        "district": "虹口区",
+        "address": "虹口区示例路151号",
+        "lat": 31.137,
+        "lng": 121.431
+      },
+      "visit_info": {
+        "avg_visit_duration_min": 46,
+        "price_min": 20,
+        "price_max": 200,
+        "open_time": "09:30",
+        "close_time": "21:00",
+        "last_entry_time": "20:30",
+        "need_booking": false,
+        "suitable_time_slots": [
+          "morning",
+          "noon",
+          "afternoon"
+        ]
+      },
+      "quality": {
+        "rating": 4.7,
+        "review_count": 56669,
+        "popularity": 0.91,
+        "crowd_level": 0.61,
+        "queue_time_min": 5,
+        "peak_hours": [
+          "19:00-21:30"
+        ],
+        "live_crowd_level": 0.56,
+        "live_queue_time_min": 7
+      },
+      "suitability": {
+        "family": 0.57,
+        "couple": 0.69,
+        "friends": 0.63,
+        "solo": 0.54,
+        "elderly": 0.57,
+        "rainy_day": 0.1,
+        "budget_friendly": 0.6,
+        "photo_friendly": 0.6,
+        "food_nearby": 0.66,
+        "night_activity": 0.18
+      },
+      "planning_features": {
+        "indoor": false,
+        "walking_intensity": "medium",
+        "recommended_transport": [
+          "metro",
+          "bus",
+          "taxi"
+        ],
+        "nearby_poi_ids": [
+          "poi_072",
+          "poi_079"
+        ],
+        "avoid_reasons": [],
+        "risk_flags": [],
+        "meal_type": "",
+        "transit_hub_nearby": true,
+        "parking_available": false
+      },
+      "cover_image_url": "https://example.com/mock/阿娘面馆.jpg",
+      "highlight_text": "阿娘面馆适合市集主题路线,可作为夜间收尾节点",
+      "highlight_text_tags": [
+        "市集",
+        "本地",
+        "小吃"
+      ],
+      "ugc_tip": "如果时间紧,只保留核心区域也能形成完整体验。"
+    },
+    {
+      "poi_id": "poi_072",
+      "name": "人和馆",
+      "category": "museum",
+      "tags": [
+        "室内",
+        "展览",
+        "文艺",
+        "小众"
+      ],
+      "location": {
+        "city": "上海",
+        "district": "杨浦区",
+        "address": "杨浦区示例路152号",
+        "lat": 31.174,
+        "lng": 121.472
+      },
+      "visit_info": {
+        "avg_visit_duration_min": 57,
+        "price_min": 0,
+        "price_max": 80,
+        "open_time": "09:30",
+        "close_time": "21:00",
+        "last_entry_time": "20:30",
+        "need_booking": true,
+        "suitable_time_slots": [
+          "morning",
+          "afternoon"
+        ]
+      },
+      "quality": {
+        "rating": 4.1,
+        "review_count": 58408,
+        "popularity": 0.42,
+        "crowd_level": 0.74,
+        "queue_time_min": 13,
+        "peak_hours": [
+          "10:00-12:00",
+          "14:00-16:00"
+        ],
+        "live_crowd_level": 0.72,
+        "live_queue_time_min": 7
+      },
+      "suitability": {
+        "family": 0.6,
+        "couple": 0.75,
+        "friends": 0.7,
+        "solo": 0.65,
+        "elderly": 0.6,
+        "rainy_day": 0.88,
+        "budget_friendly": 0.84,
+        "photo_friendly": 0.45,
+        "food_nearby": 0.7,
+        "night_activity": 0.24
+      },
+      "planning_features": {
+        "indoor": true,
+        "walking_intensity": "medium",
+        "recommended_transport": [
+          "metro",
+          "bike",
+          "bus"
+        ],
+        "nearby_poi_ids": [
+          "poi_073",
+          "poi_080"
+        ],
+        "avoid_reasons": [
+          "too_crowded",
+          "booking_required"
+        ],
+        "risk_flags": [
+          "booking_required"
+        ],
+        "meal_type": "",
+        "transit_hub_nearby": true,
+        "parking_available": true
+      },
+      "cover_image_url": "https://example.com/mock/人和馆.jpg",
+      "highlight_text": "人和馆适合室内主题路线,可作为半日核心节点",
+      "highlight_text_tags": [
+        "室内",
+        "展览",
+        "文艺"
+      ],
+      "ugc_tip": "适合和附近餐饮节点组合,减少来回折返。"
+    },
+    {
+      "poi_id": "poi_073",
+      "name": "Seesaw咖啡静安店",
+      "category": "landmark",
+      "tags": [
+        "经典",
+        "拍照",
+        "历史",
+        "亲子"
+      ],
+      "location": {
+        "city": "上海",
+        "district": "普陀区",
+        "address": "普陀区示例路153号",
+        "lat": 31.211,
+        "lng": 121.513
+      },
+      "visit_info": {
+        "avg_visit_duration_min": 68,
+        "price_min": 0,
+        "price_max": 80,
+        "open_time": "09:30",
+        "close_time": "21:00",
+        "last_entry_time": "20:30",
+        "need_booking": false,
+        "suitable_time_slots": [
+          "morning",
+          "afternoon",
+          "evening"
+        ]
+      },
+      "quality": {
+        "rating": 4.4,
+        "review_count": 60147,
+        "popularity": 0.49,
+        "crowd_level": 0.87,
+        "queue_time_min": 20,
+        "peak_hours": [
+          "11:30-13:00",
+          "18:00-19:30"
+        ],
+        "live_crowd_level": 0.88,
+        "live_queue_time_min": 15
+      },
+      "suitability": {
+        "family": 0.95,
+        "couple": 0.58,
+        "friends": 0.77,
+        "solo": 0.51,
+        "elderly": 0.95,
+        "rainy_day": 0.14,
+        "budget_friendly": 0.84,
+        "photo_friendly": 0.83,
+        "food_nearby": 0.74,
+        "night_activity": 0.3
+      },
+      "planning_features": {
+        "indoor": false,
+        "walking_intensity": "medium",
+        "recommended_transport": [
+          "metro",
+          "bus",
+          "taxi"
+        ],
+        "nearby_poi_ids": [
+          "poi_074",
+          "poi_001"
+        ],
+        "avoid_reasons": [
+          "too_crowded"
+        ],
+        "risk_flags": [
+          "too_crowded"
+        ],
+        "meal_type": "",
+        "transit_hub_nearby": true,
+        "parking_available": false
+      },
+      "cover_image_url": "https://example.com/mock/seesaw咖啡静安店.jpg",
+      "highlight_text": "Seesaw咖啡静安店适合经典主题路线,可作为餐饮衔接节点",
+      "highlight_text_tags": [
+        "经典",
+        "拍照",
+        "历史"
+      ],
+      "ugc_tip": "雨天可优先选择室内动线,户外部分作为备选。"
+    },
+    {
+      "poi_id": "poi_074",
+      "name": "Manner外滩店",
+      "category": "cafe",
+      "tags": [
+        "咖啡",
+        "安静",
+        "轻食",
+        "免费"
+      ],
+      "location": {
+        "city": "上海",
+        "district": "闵行区",
+        "address": "闵行区示例路154号",
+        "lat": 31.248,
+        "lng": 121.554
+      },
+      "visit_info": {
+        "avg_visit_duration_min": 79,
+        "price_min": 30,
+        "price_max": 160,
+        "open_time": "09:30",
+        "close_time": "21:00",
+        "last_entry_time": "20:30",
+        "need_booking": false,
+        "suitable_time_slots": [
+          "afternoon",
+          "evening"
+        ]
+      },
+      "quality": {
+        "rating": 4.7,
+        "review_count": 61886,
+        "popularity": 0.56,
+        "crowd_level": 0.32,
+        "queue_time_min": 2,
+        "peak_hours": [
+          "15:00-17:00"
+        ],
+        "live_crowd_level": 0.36,
+        "live_queue_time_min": 0
+      },
+      "suitability": {
+        "family": 0.44,
+        "couple": 0.63,
+        "friends": 0.84,
+        "solo": 0.92,
+        "elderly": 0.44,
+        "rainy_day": 0.94,
+        "budget_friendly": 0.68,
+        "photo_friendly": 0.55,
+        "food_nearby": 1.0,
+        "night_activity": 0.36
+      },
+      "planning_features": {
+        "indoor": true,
+        "walking_intensity": "low",
+        "recommended_transport": [
+          "metro",
+          "drive",
+          "taxi"
+        ],
+        "nearby_poi_ids": [
+          "poi_075",
+          "poi_002"
+        ],
+        "avoid_reasons": [],
+        "risk_flags": [],
+        "meal_type": "cafe",
+        "transit_hub_nearby": true,
+        "parking_available": true
+      },
+      "cover_image_url": "https://example.com/mock/manner外滩店.jpg",
+      "highlight_text": "Manner外滩店适合咖啡主题路线,可作为雨天备选节点",
+      "highlight_text_tags": [
+        "咖啡",
+        "安静",
+        "轻食"
+      ],
+      "ugc_tip": "拍照点集中在入口和主空间,无需全程深逛。"
+    },
+    {
+      "poi_id": "poi_075",
+      "name": "Metal Hands永康路店",
+      "category": "restaurant",
+      "tags": [
+        "本帮菜",
+        "室内",
+        "聚餐",
+        "预约"
+      ],
+      "location": {
+        "city": "上海",
+        "district": "松江区",
+        "address": "松江区示例路155号",
+        "lat": 31.14,
+        "lng": 121.595
+      },
+      "visit_info": {
+        "avg_visit_duration_min": 90,
+        "price_min": 60,
+        "price_max": 220,
+        "open_time": "11:00",
+        "close_time": "21:30",
+        "last_entry_time": "21:00",
+        "need_booking": false,
+        "suitable_time_slots": [
+          "noon",
+          "evening"
+        ]
+      },
+      "quality": {
+        "rating": 4.1,
+        "review_count": 63625,
+        "popularity": 0.63,
+        "crowd_level": 0.45,
+        "queue_time_min": 3,
+        "peak_hours": [
+          "19:00-21:30"
+        ],
+        "live_crowd_level": 0.37,
+        "live_queue_time_min": 0
+      },
+      "suitability": {
+        "family": 0.47,
+        "couple": 0.68,
+        "friends": 0.56,
+        "solo": 0.48,
+        "elderly": 0.47,
+        "rainy_day": 0.72,
+        "budget_friendly": 0.56,
+        "photo_friendly": 0.6,
+        "food_nearby": 0.95,
+        "night_activity": 0.14
+      },
+      "planning_features": {
+        "indoor": true,
+        "walking_intensity": "low",
+        "recommended_transport": [
+          "drive",
+          "taxi",
+          "bus"
+        ],
+        "nearby_poi_ids": [
+          "poi_076",
+          "poi_003"
+        ],
+        "avoid_reasons": [],
+        "risk_flags": [],
+        "meal_type": "fast_food",
+        "transit_hub_nearby": false,
+        "parking_available": true
+      },
+      "cover_image_url": "https://example.com/mock/metal-hands永康路店.jpg",
+      "highlight_text": "Metal Hands永康路店适合本帮菜主题路线,可作为夜间收尾节点",
+      "highlight_text_tags": [
+        "本帮菜",
+        "室内",
+        "聚餐"
+      ],
+      "ugc_tip": "建议避开周末下午高峰,体验会更从容。"
+    },
+    {
+      "poi_id": "poi_076",
+      "name": "衡山和集",
+      "category": "shopping",
+      "tags": [
+        "购物",
+        "室内",
+        "现代",
+        "夜景"
+      ],
+      "location": {
+        "city": "上海",
+        "district": "青浦区",
+        "address": "青浦区示例路156号",
+        "lat": 31.177,
+        "lng": 121.356
+      },
+      "visit_info": {
+        "avg_visit_duration_min": 101,
+        "price_min": 0,
+        "price_max": 320,
+        "open_time": "09:30",
+        "close_time": "21:00",
+        "last_entry_time": "20:30",
+        "need_booking": true,
+        "suitable_time_slots": [
+          "afternoon",
+          "evening",
+          "night"
+        ]
+      },
+      "quality": {
+        "rating": 4.4,
+        "review_count": 65364,
+        "popularity": 0.7,
+        "crowd_level": 0.58,
+        "queue_time_min": 10,
+        "peak_hours": [
+          "10:00-12:00",
+          "14:00-16:00"
+        ],
+        "live_crowd_level": 0.53,
+        "live_queue_time_min": 8
+      },
+      "suitability": {
+        "family": 0.5,
+        "couple": 0.74,
+        "friends": 0.63,
+        "solo": 0.59,
+        "elderly": 0.5,
+        "rainy_day": 0.75,
+        "budget_friendly": 0.36,
+        "photo_friendly": 0.78,
+        "food_nearby": 0.56,
+        "night_activity": 0.9
+      },
+      "planning_features": {
+        "indoor": true,
+        "walking_intensity": "medium",
+        "recommended_transport": [
+          "drive",
+          "taxi",
+          "bus"
+        ],
+        "nearby_poi_ids": [
+          "poi_077",
+          "poi_004"
+        ],
+        "avoid_reasons": [
+          "booking_required",
+          "too_expensive"
+        ],
+        "risk_flags": [
+          "booking_required"
+        ],
+        "meal_type": "",
+        "transit_hub_nearby": true,
+        "parking_available": true
+      },
+      "cover_image_url": "https://example.com/mock/衡山和集.jpg",
+      "highlight_text": "衡山和集适合购物主题路线,可作为半日核心节点",
+      "highlight_text_tags": [
+        "购物",
+        "室内",
+        "现代"
+      ],
+      "ugc_tip": "如果时间紧,只保留核心区域也能形成完整体验。"
+    },
+    {
+      "poi_id": "poi_077",
+      "name": "永康路街区",
+      "category": "gallery",
+      "tags": [
+        "艺术",
+        "拍照",
+        "文艺",
+        "高性价比"
+      ],
+      "location": {
+        "city": "上海",
+        "district": "黄浦区",
+        "address": "黄浦区示例路157号",
+        "lat": 31.214,
+        "lng": 121.397
+      },
+      "visit_info": {
+        "avg_visit_duration_min": 112,
+        "price_min": 0,
+        "price_max": 160,
+        "open_time": "09:30",
+        "close_time": "21:00",
+        "last_entry_time": "20:30",
+        "need_booking": false,
+        "suitable_time_slots": [
+          "afternoon",
+          "evening"
+        ]
+      },
+      "quality": {
+        "rating": 4.7,
+        "review_count": 67103,
+        "popularity": 0.77,
+        "crowd_level": 0.71,
+        "queue_time_min": 17,
+        "peak_hours": [
+          "11:30-13:00",
+          "18:00-19:30"
+        ],
+        "live_crowd_level": 0.69,
+        "live_queue_time_min": 16
+      },
+      "suitability": {
+        "family": 0.53,
+        "couple": 0.79,
+        "friends": 0.7,
+        "solo": 0.7,
+        "elderly": 0.53,
+        "rainy_day": 0.78,
+        "budget_friendly": 0.68,
+        "photo_friendly": 0.83,
+        "food_nearby": 0.6,
+        "night_activity": 0.26
+      },
+      "planning_features": {
+        "indoor": true,
+        "walking_intensity": "low",
+        "recommended_transport": [
+          "metro",
+          "walk",
+          "taxi"
+        ],
+        "nearby_poi_ids": [
+          "poi_078",
+          "poi_005"
+        ],
+        "avoid_reasons": [],
+        "risk_flags": [],
+        "meal_type": "",
+        "transit_hub_nearby": true,
+        "parking_available": false
+      },
+      "cover_image_url": "https://example.com/mock/永康路街区.jpg",
+      "highlight_text": "永康路街区适合艺术主题路线,可作为餐饮衔接节点",
+      "highlight_text_tags": [
+        "艺术",
+        "拍照",
+        "文艺"
+      ],
+      "ugc_tip": "适合和附近餐饮节点组合,减少来回折返。"
+    },
+    {
+      "poi_id": "poi_078",
+      "name": "安福路话剧街区",
+      "category": "night_view",
+      "tags": [
+        "夜景",
+        "拍照",
+        "亲水",
+        "儿童友好"
+      ],
+      "location": {
+        "city": "上海",
+        "district": "徐汇区",
+        "address": "徐汇区示例路158号",
+        "lat": 31.251,
+        "lng": 121.438
+      },
+      "visit_info": {
+        "avg_visit_duration_min": 123,
+        "price_min": 0,
+        "price_max": 180,
+        "open_time": "17:00",
+        "close_time": "23:30",
+        "last_entry_time": "22:30",
+        "need_booking": false,
+        "suitable_time_slots": [
+          "evening",
+          "night"
+        ]
+      },
+      "quality": {
+        "rating": 4.1,
+        "review_count": 68842,
+        "popularity": 0.84,
+        "crowd_level": 0.84,
+        "queue_time_min": 24,
+        "peak_hours": [
+          "15:00-17:00"
+        ],
+        "live_crowd_level": 0.85,
+        "live_queue_time_min": 24
+      },
+      "suitability": {
+        "family": 0.88,
+        "couple": 0.84,
+        "friends": 0.77,
+        "solo": 0.56,
+        "elderly": 0.88,
+        "rainy_day": 0.24,
+        "budget_friendly": 0.64,
+        "photo_friendly": 0.88,
+        "food_nearby": 0.64,
+        "night_activity": 1.0
+      },
+      "planning_features": {
+        "indoor": false,
+        "walking_intensity": "medium",
+        "recommended_transport": [
+          "metro",
+          "bike",
+          "walk"
+        ],
+        "nearby_poi_ids": [
+          "poi_079",
+          "poi_006"
+        ],
+        "avoid_reasons": [
+          "too_crowded",
+          "long_queue"
+        ],
+        "risk_flags": [
+          "too_crowded",
+          "long_queue"
+        ],
+        "meal_type": "",
+        "transit_hub_nearby": true,
+        "parking_available": false
+      },
+      "cover_image_url": "https://example.com/mock/安福路话剧街区.jpg",
+      "highlight_text": "安福路话剧街区适合夜景主题路线,可作为雨天备选节点",
+      "highlight_text_tags": [
+        "夜景",
+        "拍照",
+        "亲水"
+      ],
+      "ugc_tip": "雨天可优先选择室内动线,户外部分作为备选。"
+    },
+    {
+      "poi_id": "poi_079",
+      "name": "上海大剧院",
+      "category": "theater",
+      "tags": [
+        "演出",
+        "室内",
+        "文艺",
+        "商业化"
+      ],
+      "location": {
+        "city": "上海",
+        "district": "静安区",
+        "address": "静安区示例路159号",
+        "lat": 31.143,
+        "lng": 121.479
+      },
+      "visit_info": {
+        "avg_visit_duration_min": 134,
+        "price_min": 120,
+        "price_max": 500,
+        "open_time": "09:30",
+        "close_time": "21:00",
+        "last_entry_time": "20:30",
+        "need_booking": false,
+        "suitable_time_slots": [
+          "evening",
+          "night"
+        ]
+      },
+      "quality": {
+        "rating": 4.4,
+        "review_count": 2581,
+        "popularity": 0.91,
+        "crowd_level": 0.29,
+        "queue_time_min": 1,
+        "peak_hours": [
+          "19:00-21:30"
+        ],
+        "live_crowd_level": 0.33,
+        "live_queue_time_min": 2
+      },
+      "suitability": {
+        "family": 0.59,
+        "couple": 0.89,
+        "friends": 0.84,
+        "solo": 0.67,
+        "elderly": 0.59,
+        "rainy_day": 0.84,
+        "budget_friendly": 0.0,
+        "photo_friendly": 0.6,
+        "food_nearby": 0.68,
+        "night_activity": 0.38
+      },
+      "planning_features": {
+        "indoor": true,
+        "walking_intensity": "low",
+        "recommended_transport": [
+          "metro",
+          "walk",
+          "taxi"
+        ],
+        "nearby_poi_ids": [
+          "poi_080",
+          "poi_007"
+        ],
+        "avoid_reasons": [
+          "too_expensive"
+        ],
+        "risk_flags": [],
+        "meal_type": "",
+        "transit_hub_nearby": true,
+        "parking_available": false
+      },
+      "cover_image_url": "https://example.com/mock/上海大剧院.jpg",
+      "highlight_text": "上海大剧院适合演出主题路线,可作为夜间收尾节点",
+      "highlight_text_tags": [
+        "演出",
+        "室内",
+        "文艺"
+      ],
+      "ugc_tip": "拍照点集中在入口和主空间,无需全程深逛。"
+    },
+    {
+      "poi_id": "poi_080",
+      "name": "上音歌剧院",
+      "category": "market",
+      "tags": [
+        "市集",
+        "本地",
+        "小吃",
+        "小众"
+      ],
+      "location": {
+        "city": "上海",
+        "district": "浦东新区",
+        "address": "浦东新区示例路160号",
+        "lat": 31.18,
+        "lng": 121.52
+      },
+      "visit_info": {
+        "avg_visit_duration_min": 145,
+        "price_min": 20,
+        "price_max": 200,
+        "open_time": "09:30",
+        "close_time": "21:00",
+        "last_entry_time": "20:30",
+        "need_booking": true,
+        "suitable_time_slots": [
+          "morning",
+          "noon",
+          "afternoon"
+        ]
+      },
+      "quality": {
+        "rating": 4.7,
+        "review_count": 4320,
+        "popularity": 0.42,
+        "crowd_level": 0.42,
+        "queue_time_min": 7,
+        "peak_hours": [
+          "10:00-12:00",
+          "14:00-16:00"
+        ],
+        "live_crowd_level": 0.34,
+        "live_queue_time_min": 9
+      },
+      "suitability": {
+        "family": 0.62,
+        "couple": 0.51,
+        "friends": 0.56,
+        "solo": 0.53,
+        "elderly": 0.62,
+        "rainy_day": 0.28,
+        "budget_friendly": 0.6,
+        "photo_friendly": 0.45,
+        "food_nearby": 0.72,
+        "night_activity": 0.16
+      },
+      "planning_features": {
+        "indoor": false,
+        "walking_intensity": "medium",
+        "recommended_transport": [
+          "metro",
+          "taxi",
+          "drive"
+        ],
+        "nearby_poi_ids": [
+          "poi_001",
+          "poi_008"
+        ],
+        "avoid_reasons": [
+          "booking_required"
+        ],
+        "risk_flags": [
+          "booking_required"
+        ],
+        "meal_type": "",
+        "transit_hub_nearby": false,
+        "parking_available": true
+      },
+      "cover_image_url": "https://example.com/mock/上音歌剧院.jpg",
+      "highlight_text": "上音歌剧院适合市集主题路线,可作为半日核心节点",
+      "highlight_text_tags": [
+        "市集",
+        "本地",
+        "小吃"
+      ],
+      "ugc_tip": "建议避开周末下午高峰,体验会更从容。"
+    }
+  ]
+}
