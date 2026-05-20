@@ -55,7 +55,7 @@
 
 ---
 
-## 2026-05-21 - `待提交` - `sync(agent): align request profile with frontend onboarding and route strategy`
+## 2026-05-21 - `f536727` - `feat(agent): sync intent parsing with route strategy`
 
 负责人：Agent / 后端编排 / A 同学
 
