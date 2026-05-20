@@ -44,11 +44,20 @@ export interface Route {
   replan_reason?: string | null;
 }
 
+export interface UserProfile {
+  user_id?: string;
+  preferences?: string[];
+  avoid_tags?: string[];
+  [key: string]: unknown;
+}
+
 export interface ChatResponse {
   session_id: string;
   message: string;
   need_clarification: boolean;
   clarifying_question?: string | null;
+  intent?: Record<string, unknown> | null;
+  user_profile?: UserProfile | null;
   routes: Route[];
   agent_trace: AgentTraceStep[];
 }
