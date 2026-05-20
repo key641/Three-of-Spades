@@ -56,7 +56,7 @@ class AgentOrchestrator:
             strategy_weights.model_dump(),
         )
 
-        pois = self.poi_service.search(intent)
+        pois = self.poi_service.search(intent, user_profile=user_profile)
         trace.append(AgentTraceStep(step="search_pois", label="召回候选 POI", status="done"))
         logger.info(
             "step done session_id=%s step=search_pois count=%s pois=%s",
@@ -300,6 +300,9 @@ class AgentOrchestrator:
             "start_time": "HH:MM string",
             "duration_hours": "integer",
             "budget_per_person": "integer, CNY",
+            "start_location_name": "string or null, route start place name when mentioned",
+            "start_lat": "number or null, route start latitude when known",
+            "start_lng": "number or null, route start longitude when known",
             "preferences": "array of short Chinese strings",
             "avoid_tags": "array of short Chinese strings",
             "scenario": "short snake_case string",
@@ -352,6 +355,12 @@ class AgentOrchestrator:
             else:
                 normalized[key] = str(normalized[key])
 
+        if normalized.get("start_location_name") is not None:
+            normalized["start_location_name"] = str(normalized["start_location_name"])
+
+        for key in ("start_lat", "start_lng"):
+            normalized[key] = self._coerce_optional_float(normalized.get(key))
+
         for key in ("people_count", "duration_hours", "budget_per_person"):
             normalized[key] = self._coerce_int(normalized.get(key), defaults[key])
             if normalized[key] <= 0:
@@ -384,6 +393,17 @@ class AgentOrchestrator:
                 if char in value:
                     return number
         return default
+
+    def _coerce_optional_float(self, value: object) -> float | None:
+        if value is None or value == "":
+            return None
+        if isinstance(value, int | float):
+            return float(value)
+        if isinstance(value, str):
+            match = re.search(r"-?\d+(?:\.\d+)?", value)
+            if match:
+                return float(match.group(0))
+        return None
 
     def _coerce_string_list(self, value: object) -> list[str]:
         if value is None:

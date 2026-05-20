@@ -1,4 +1,4 @@
-import { Clock, Coins, Timer } from "lucide-react";
+import { Clock, Coins, MapPinned, Timer } from "lucide-react";
 import type { Route } from "../api/types";
 import { ActionBar } from "./ActionBar";
 import { RouteTimeline } from "./RouteTimeline";
@@ -22,6 +22,7 @@ export function RouteCard({ route }: RouteCardProps) {
         <span><Clock size={16} />{route.total_duration_minutes} 分钟</span>
         <span><Coins size={16} />人均 {route.total_cost_per_person}</span>
         <span><Timer size={16} />排队 {route.total_queue_minutes} 分钟</span>
+        <span><MapPinned size={16} />路上 {route.total_travel_minutes ?? 0} 分钟</span>
       </div>
 
       <RouteTimeline stops={route.stops} />
@@ -36,4 +37,3 @@ export function RouteCard({ route }: RouteCardProps) {
     </article>
   );
 }
-
