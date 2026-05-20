@@ -12,5 +12,6 @@ class StrategyWeights(BaseModel):
 class UserProfile(BaseModel):
     user_id: str
     tags: list[str] = Field(default_factory=list)
+    preferences: list[str] = Field(default_factory=list)
+    avoid_tags: list[str] = Field(default_factory=list)
     preference_weights: dict[str, float] = Field(default_factory=dict)
-

@@ -5,7 +5,7 @@ import type { ChatResponse } from "./types";
 // ============================================================
 // Mock 开关：后端未启动时设为 true，可直接预览所有 UI 流程
 // ============================================================
-const USE_MOCK = true;
+const USE_MOCK = import.meta.env.VITE_USE_MOCK_CHAT !== "false";
 
 // 模拟网络延迟
 function delay(ms: number) {

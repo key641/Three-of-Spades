@@ -14,3 +14,4 @@ class Intent(BaseModel):
     avoid_tags: list[str] = Field(default_factory=list)
     scenario: str = "friends_citywalk"
     need_clarification: bool = False
+    city_from_message: bool = False
