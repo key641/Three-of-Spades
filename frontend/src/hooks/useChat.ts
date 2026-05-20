@@ -1,24 +1,53 @@
 import { useState } from "react";
 import { sendChatMessage } from "../api/chatApi";
 import type { ChatResponse } from "../api/types";
+import type { OnboardingProfile } from "./useOnboarding";
 
-export function useChat() {
+export interface ChatMessage {
+  role: "user" | "assistant";
+  content: string;
+  timestamp: number;
+}
+
+export function useChat(profile?: OnboardingProfile) {
+  const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [response, setResponse] = useState<ChatResponse | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   async function send(message: string) {
+    const userMsg: ChatMessage = { role: "user", content: message, timestamp: Date.now() };
+    setMessages((prev) => [...prev, userMsg]);
     setLoading(true);
     setError(null);
     try {
-      setResponse(await sendChatMessage(message));
+      const res = await sendChatMessage(message, profile);
+      setResponse(res);
+      const assistantMsg: ChatMessage = {
+        role: "assistant",
+        content: res.message,
+        timestamp: Date.now(),
+      };
+      setMessages((prev) => [...prev, assistantMsg]);
     } catch (requestError) {
-      setError(requestError instanceof Error ? requestError.message : "请求失败");
+      setError(requestError instanceof Error ? requestError.message : "请求失败，请检查后端是否启动");
     } finally {
       setLoading(false);
     }
   }
 
-  return { response, loading, error, send };
-}
+  /** 在本地直接插入一条消息（用于欢迎语，不走网络） */
+  function inject(role: "user" | "assistant", content: string) {
+    const msg: ChatMessage = { role, content, timestamp: Date.now() };
+    setMessages((prev) => [...prev, msg]);
+  }
 
+  /** 清空对话历史（重置 profile 后调用） */
+  function reset() {
+    setMessages([]);
+    setResponse(null);
+    setError(null);
+  }
+
+  return { messages, response, loading, error, send, inject, reset };
+}
