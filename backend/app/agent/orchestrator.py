@@ -3,6 +3,7 @@ import logging
 import re
 
 from app.agent.memory import SessionMemory
+from app.agent.intent_enhancer import enhance_intent_from_message
 from app.agent.prompts import SYSTEM_PROMPT
 from app.llm.provider import get_llm_client
 from app.schemas.chat import AgentTraceStep, ChatRequest, ChatResponse
@@ -42,9 +43,11 @@ class AgentOrchestrator:
             return await self._handle_direct_llm_chat(request, trace)
 
         intent = await self._parse_intent(request.message, trace)
+        intent = enhance_intent_from_message(intent, request.message)
+        intent = self.profile_service.merge_request_into_intent(intent, request)
         logger.info("chat intent session_id=%s intent=%s", request.session_id, intent.model_dump())
 
-        user_profile = self.profile_service.get_profile(request.user_id)
+        user_profile = self.profile_service.get_profile(request.user_id, request)
         trace.append(AgentTraceStep(step="get_user_profile", label="读取用户画像", status="done"))
         logger.info("step done session_id=%s step=get_user_profile profile=%s", request.session_id, user_profile.model_dump())
 

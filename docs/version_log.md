@@ -55,6 +55,237 @@
 
 ---
 
+## 2026-05-21 - `待提交` - `sync(agent): align request profile with frontend onboarding and route strategy`
+
+负责人：Agent / 后端编排 / A 同学
+
+### 更新概览
+
+本次同步 A 侧对接了 C 的 onboarding 画像字段和 B 的路线策略输入要求。后端 `/api/chat` 现在可以接收前端传来的城市、场景、偏好、避开标签、预算档位和偏好权重，并在 Agent 编排时合并到 `Intent`、`UserProfile` 和 `StrategyWeights` 中。同时前端 mock/真实后端连接改为环境变量配置。
+
+另外新增了 Agent 意图规则增强层：LLM 解析成功或 fallback 后，都会再从用户原话中确定性提取城市、时长、人数、预算、开始时间、偏好标签和避开标签，保证“北京一日游”这类核心话术能稳定进入 B 的路线策略接口。
+
+### 主要变更
+
+- `ChatRequest` 新增 onboarding 字段：
+  - `city`
+  - `scenarios`
+  - `scenario`
+  - `preferences`
+  - `avoid_tags`
+  - `budget_level`
+  - `preference_weights`
+
+- `UserProfile` 新增前端兼容字段：
+  - `preferences`
+  - `avoid_tags`
+
+- `ProfileService` 新增 A/B/C 对齐逻辑：
+  - 支持从 `ChatRequest` 构造 `UserProfile`。
+  - 当前端未传画像时，会按 `user_id` 从 `data/seed/user_profiles.json` 读取 seed 用户画像。
+  - 支持把请求中的城市、场景、偏好、避开标签、预算档位合并进 LLM 解析出的 `Intent`。
+  - `budget_level` 当前映射为：`low -> 100`、`mid -> 300`、`high -> 600`。
+  - 构造 `StrategyWeights` 时会保留前端传来的更高权重，不再把 onboarding boost 降回默认值。
+
+- 前端联调配置：
+  - `frontend/src/api/chatApi.ts` 不再硬编码 `USE_MOCK = true`。
+  - 新增 `VITE_USE_MOCK_CHAT`，默认不配置或不等于 `false` 时使用 mock。
+  - 设置 `VITE_USE_MOCK_CHAT=false` 时，请求 `VITE_API_BASE_URL` 指向的真实后端。
+  - 新增 `frontend/.env.example`。
+
+- `AgentOrchestrator` 同步：
+  - 解析 intent 后先合并前端 onboarding 字段。
+  - 解析 intent 后会先经过 `intent_enhancer` 规则增强，纠偏 LLM 或 fallback 的缺失字段。
+  - 获取用户画像时传入完整 `ChatRequest`。
+  - POI 召回和路线规划会使用合并后的 intent/profile/weights。
+
+- 新增 `intent_enhancer`：
+  - 支持城市提取：北京、上海、广州、深圳、成都、杭州、南京、武汉、西安、苏州、重庆等。
+  - 支持时长提取：一日游/一天、半日游/半天、N 天、N 小时。
+  - 支持人数、预算、开始时间提取。
+  - 支持偏好标准化：少排队、吃好、更省钱、少走路、citywalk、拍照、亲子友好、室内、安静。
+  - 支持避开标签标准化：人流密集、排队久、太贵、商业街、辣、步行多。
+  - 本轮消息显式提到城市时，会标记 `city_from_message=true`，避免被 onboarding 默认城市覆盖。
+  - 会清理 `一日游`、`半日游` 等时长词，避免它们被当成偏好标签传给 B 策略。
+  - 当本轮消息已提取到城市、时长或偏好信息时，会把 `need_clarification` 纠正为 `false`。
+
+- 新增测试：
+  - `backend/app/tests/test_profile_request_sync.py`
+  - 覆盖 ChatRequest 接收前端字段、ProfileService 构造 profile、合并 intent、保留前端权重 boost。
+  - `backend/app/tests/test_intent_enhancer.py`
+  - `backend/app/tests/test_orchestrator_intent_flow.py`
+  - 覆盖“北京一日游”“2 人 / 人均 200 / 少排队 / 吃好”“今晚上海半天 citywalk”等话术。
+  - 覆盖本轮显式城市优先于 onboarding 城市，以及 `一日游` 不进入 preferences。
+
+### 涉及文件
+
+- `backend/app/agent/orchestrator.py`
+- `backend/app/agent/intent_enhancer.py`
+- `backend/app/schemas/chat.py`
+- `backend/app/schemas/user.py`
+- `backend/app/services/profile_service.py`
+- `backend/app/tests/test_profile_request_sync.py`
+- `backend/app/tests/test_intent_enhancer.py`
+- `backend/app/tests/test_orchestrator_intent_flow.py`
+- `frontend/src/api/chatApi.ts`
+- `frontend/.env.example`
+- `docs/api_contract.md`
+
+### 协作影响
+
+| 角色 | 影响 | 需要关注 |
+| --- | --- | --- |
+| A 同学：Agent / 后端 | `/api/chat` 已开始消费前端 onboarding 字段，也支持 seed 用户画像 fallback，并新增规则增强层。 | 后续 prompt 和 memory 逻辑要继续使用增强且合并后的 `Intent`；本轮用户显式城市应优先于历史画像城市。 |
+| B 同学：POI / 路线策略 | POI 召回现在能拿到前端偏好和权重。 | 策略调参时可以假设 `user_profile.tags/preferences/preference_weights` 会来自前端画像。 |
+| C 同学：前端 / UI | 前端传出的 `preferences/avoid_tags/preference_weights` 不再被后端静默丢弃。 | 联调真实后端时在 `frontend/.env` 设置 `VITE_USE_MOCK_CHAT=false` 和 `VITE_API_BASE_URL=http://localhost:8000`。 |
+
+### 风险与注意事项
+
+- 当前 `ProfileService` 只做了 seed 用户画像的 MVP 映射，复杂字段如历史行为、默认出发点还没有全部进入 `Intent`。
+- `intent_enhancer` 是规则增强层，不替代 LLM；同义词表需要随着 B 的策略标签持续维护。
+- `budget_level` 到具体金额的映射是 MVP 约定，后续如产品口径变化需要同步前后端。
+- 真实反馈闭环 `/api/feedback` 还没有和前端本地画像更新打通。
+- 评分值域和前端展示仍需继续统一：后端真实路线当前按 0-100 输出，前端 mock 仍偏 10 分制。
+
+### 建议验证
+
+```bash
+cd backend
+$env:PYTHONDONTWRITEBYTECODE='1'
+.\.venv\Scripts\python.exe -m unittest app.tests.test_profile_request_sync
+```
+
+```bash
+cd backend
+$env:PYTHONDONTWRITEBYTECODE='1'
+.\.venv\Scripts\python.exe -m unittest app.tests.test_intent_enhancer app.tests.test_orchestrator_intent_flow
+```
+
+```bash
+cd frontend
+npm.cmd run build
+```
+
+## 2026-05-21 - `9544b8e` - `Merge branch 'LYNN' into keyki`
+
+负责人：路线策略 / POI 数据 / B 同学
+
+### 更新概览
+
+本次合入主要完成了路线策略和 POI 数据层的大升级：POI 从写死样例切换为读取 `data/seed/pois.json`，路线生成从简单排序升级为多目标规划，并补充了距离、交通、路段原因、总路程等字段。前端类型同步了新增字段，为后续展示更完整的路线解释做准备。
+
+本次合入共变更 `12` 个文件，新增约 `14559` 行，删除约 `208` 行，主要增量来自 `pois.json` 和 `user_profiles.json` 两份 seed 数据。
+
+### 主要变更
+
+- POI 召回改为数据驱动：
+  - `POIService` 不再使用代码内写死的 sample POI。
+  - 现在从 `data/seed/pois.json` 读取 POI 数据。
+  - 新增预算、偏好、避开标签、距离、用户画像权重等召回和排序逻辑。
+
+- 路线生成逻辑大幅增强：
+  - `RouteService` 支持多种路线目标：综合最优、少排队、更省钱、少走路、吃好优先、拍照 Citywalk、室内雨天。
+  - 会根据用户偏好和策略权重自动选择 3 个路线目标。
+  - 路线生成会考虑总时长窗口、点位访问时长、排队时间、路段交通时间。
+  - 单条路线最多选 5 个 stop，短路线会尝试补足到 3 个 stop。
+
+- 评分体系升级：
+  - `ScoringService` 从固定评分改为可解释评分。
+  - 评分维度包括品质、排队、预算、距离、偏好。
+  - 总分会结合 `StrategyWeights`，并对当前路线目标做轻微加权。
+
+- 接口字段扩展：
+  - `Intent` 新增起点信息字段：`start_location_name`、`start_lat`、`start_lng`。
+  - `RouteStop` 新增路段字段：`travel_minutes_from_previous`、`distance_km_from_previous`、`transport_mode_from_previous`、`reason`。
+  - `Route` 新增汇总字段：`total_travel_minutes`、`total_distance_km`。
+  - 前端 `frontend/src/api/types.ts` 已同步这些字段。
+
+- Agent 编排同步：
+  - `AgentOrchestrator` 调用 POI 召回时会传入 `user_profile`。
+  - LLM intent schema 和结果归一化逻辑支持起点名称与经纬度。
+
+- 测试补充：
+  - 新增 `backend/app/tests/test_poi_service.py`。
+  - 扩展 `backend/app/tests/test_route_plan.py`，覆盖空候选、短时长、预算优先、少排队、吃好优先、起点路段字段等场景。
+
+### 涉及文件
+
+- Agent 与 schema：
+  - `backend/app/agent/orchestrator.py`
+  - `backend/app/schemas/intent.py`
+  - `backend/app/schemas/route.py`
+
+- 路线与 POI 服务：
+  - `backend/app/services/poi_service.py`
+  - `backend/app/services/route_service.py`
+  - `backend/app/services/scoring_service.py`
+
+- 测试：
+  - `backend/app/tests/test_poi_service.py`
+  - `backend/app/tests/test_route_plan.py`
+
+- 数据：
+  - `data/seed/pois.json`
+  - `data/seed/user_profiles.json`
+
+- 前端类型与展示：
+  - `frontend/src/api/types.ts`
+  - `frontend/src/components/RouteCard.tsx`
+
+### 协作影响
+
+| 角色 | 影响 | 需要关注 |
+| --- | --- | --- |
+| A 同学：Agent / 后端 | `Intent` 支持起点名称和经纬度，Agent 的 structured output 可以开始抽取起点信息。 | prompt 和解析逻辑要尽量稳定输出 `start_location_name`、`start_lat`、`start_lng`；如果不知道经纬度，应返回 `null`，不要乱填。 |
+| A 同学：Agent / 后端 | POI 召回现在依赖 `user_profile` 参与排序。 | 真实用户画像里的 `tags` 和 `preference_weights` 会影响结果，需要确认画像字段和前端 onboarding 字段如何映射。 |
+| A 同学：Agent / 后端 | 路线结果字段增加，Agent 总结路线时可以引用交通时间、距离和每站推荐理由。 | 如果后续 LLM 生成自然语言解释，需要避免和 `Route.summary`、`RouteStop.reason` 重复或矛盾。 |
+| B 同学：POI / 路线策略 | POI 数据结构更复杂，召回逻辑依赖 `location`、`visit_info`、`quality`、`suitability`、`planning_features` 等字段。 | 继续扩数据时要保持 JSON 字段完整；缺字段虽然有 fallback，但会影响排序和展示质量。 |
+| B 同学：POI / 路线策略 | 路线目标从 3 类扩展到 7 类。 | 后续调参时要重点看不同目标是否真的有差异，避免三条路线点位高度重复。 |
+| B 同学：POI / 路线策略 | 新增测试覆盖核心策略行为。 | 当前本地环境没有安装 `pytest` 时跑不了测试，需要在后端依赖或协作说明里补齐测试安装方式。 |
+| C 同学：前端 / UI | 前端类型已同步路段交通、距离、交通方式、站点 reason、总路程等字段。 | `RouteCard.tsx` 目前只同步了类型，尚未完整展示 `total_travel_minutes`、`total_distance_km` 和 `RouteStop.reason`。 |
+| C 同学：前端 / UI | `RouteCard.tsx` 新增了 `MapPinned` import。 | 当前 `MapPinned` 尚未使用，后续可以用于展示总路程；如果不展示，应删除未使用 import。 |
+| C 同学：前端 / UI | 后端真实响应更丰富，前端 mock 数据可能落后。 | 如果继续使用 `USE_MOCK = true`，需要同步 mock routes 字段，否则联调和演示看到的数据形态会不一致。 |
+
+### 风险与注意事项
+
+- `docs/api_contract.md` 尚未同步本次新增字段，包括 `Intent.start_*`、`RouteStop.travel_*`、`RouteStop.reason`、`Route.total_travel_minutes`、`Route.total_distance_km`。
+- `frontend/src/components/RouteCard.tsx` 目前引入了 `MapPinned` 但没有使用。前端构建能通过，但后续应删除或补展示。
+- `pytest` 当前本地后端虚拟环境里不可用，新增测试没有实际跑通。
+- 后端 `compileall` 因写入 `__pycache__` 权限问题失败；已通过 `PYTHONDONTWRITEBYTECODE=1` 的核心模块 import 检查。
+- seed 数据增量很大，后续合并时 `data/seed/pois.json` 和 `data/seed/user_profiles.json` 可能成为冲突高发文件。
+- 路线评分和召回排序现在依赖很多中文标签和别名匹配，后续新增标签时需要注意同义词覆盖。
+
+### 建议验证
+
+- 前端构建：
+
+```bash
+cd frontend
+npm.cmd run build
+```
+
+- 后端 import 检查：
+
+```bash
+cd backend
+$env:PYTHONDONTWRITEBYTECODE='1'
+.\.venv\Scripts\python.exe -c "from app.agent.orchestrator import AgentOrchestrator; from app.services.poi_service import POIService; from app.services.route_service import RouteService; from app.services.scoring_service import ScoringService; print('imports ok')"
+```
+
+- 后端测试，需先确保安装 `pytest`：
+
+```bash
+cd backend
+.\.venv\Scripts\python.exe -m pytest app\tests
+```
+
+### 后续建议
+
+- 更新 `docs/api_contract.md`，补齐本次新增的请求和响应字段。
+- 前端展示 `total_travel_minutes`、`total_distance_km` 和 `RouteStop.reason`，让 B 侧策略解释真正被用户看到。
+- 将 `frontend/src/api/chatApi.ts` 的 mock route 数据同步到新字段，或尽快切换真实后端联调。
+- 在 `backend/requirements.txt` 中确认是否需要加入 `pytest`，保证队友能跑新增测试。
+
 ## 2026-05-20 - `0e75842` - `feat(frontend): mobile-first UI — onboarding, mock chat, replan & feedback flow`
 
 负责人：前端 / C 同学
