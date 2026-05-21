@@ -14,9 +14,6 @@ class POICandidate:
     poi: POI
     search_text: str
     risk_text: str
-    rainy_day_score: float
-    friends_score: float
-    budget_score: float
 
 
 class POIService:
@@ -74,40 +71,79 @@ class POIService:
         price_min = self._to_int(visit_info.get("price_min"), 0)
         price_max = self._to_int(visit_info.get("price_max"), price_min)
         avg_price = round((price_min + price_max) / 2)
+        open_time = str(visit_info.get("open_time", "00:00"))
+        close_time = str(visit_info.get("close_time", "23:59"))
 
         poi = POI(
             id=str(raw.get("poi_id", "")),
             name=str(raw.get("name", "")),
             city=str(location.get("city", "")),
+            district=str(location.get("district", "")),
+            address=str(location.get("address", "")),
             category=str(raw.get("category", "")),
             lat=self._to_float(location.get("lat"), 0),
             lng=self._to_float(location.get("lng"), 0),
             avg_price=avg_price,
+            price_min=price_min,
+            price_max=price_max,
             rating=self._to_float(quality.get("rating"), 0),
+            review_count=self._to_int(quality.get("review_count"), 0),
+            popularity=self._to_float(quality.get("popularity"), 0),
+            crowd_level=self._to_float(quality.get("crowd_level"), 0),
             queue_minutes=self._to_int(quality.get("live_queue_time_min") or quality.get("queue_time_min"), 0),
+            live_crowd_level=self._to_float(quality.get("live_crowd_level"), 0),
             visit_duration_minutes=self._to_int(visit_info.get("avg_visit_duration_min"), 60),
-            open_hours=f"{visit_info.get('open_time', '00:00')}-{visit_info.get('close_time', '23:59')}",
+            open_time=open_time,
+            close_time=close_time,
+            last_entry_time=str(visit_info.get("last_entry_time", close_time)),
+            open_hours=f"{open_time}-{close_time}",
+            need_booking=bool(visit_info.get("need_booking", False)),
+            suitable_time_slots=self._as_string_list(visit_info.get("suitable_time_slots")),
             tags=tags + [tag for tag in highlight_tags if tag not in tags],
             negative_tags=negative_tags,
             family_friendly=self._to_float(suitability.get("family"), 0),
+            couple_friendly=self._to_float(suitability.get("couple"), 0),
+            friends_friendly=self._to_float(suitability.get("friends"), 0),
+            solo_friendly=self._to_float(suitability.get("solo"), 0),
+            elderly_friendly=self._to_float(suitability.get("elderly"), 0),
+            rainy_day_score=self._to_float(suitability.get("rainy_day"), 0),
+            budget_friendly=self._to_float(suitability.get("budget_friendly"), 0),
+            photo_friendly=self._to_float(suitability.get("photo_friendly"), 0),
+            food_nearby=self._to_float(suitability.get("food_nearby"), 0),
+            night_activity=self._to_float(suitability.get("night_activity"), 0),
             indoor=bool(planning.get("indoor", False)),
+            walking_intensity=str(planning.get("walking_intensity", "medium")),
+            recommended_transport=self._as_string_list(planning.get("recommended_transport")),
+            nearby_poi_ids=self._as_string_list(planning.get("nearby_poi_ids")),
+            risk_flags=risk_flags,
+            avoid_reasons=avoid_reasons,
+            meal_type=str(planning.get("meal_type", "non_meal")),
+            transit_hub_nearby=bool(planning.get("transit_hub_nearby", False)),
+            parking_available=bool(planning.get("parking_available", False)),
+            cover_image_url=str(raw.get("cover_image_url", "")),
+            highlight_text=str(raw.get("highlight_text", "")),
+            highlight_text_tags=highlight_tags,
+            ugc_tip=str(raw.get("ugc_tip", "")),
         )
         searchable_parts = [
             poi.name,
+            poi.district,
+            poi.address,
             poi.category,
-            raw.get("highlight_text", ""),
-            raw.get("ugc_tip", ""),
-            planning.get("meal_type", ""),
+            poi.highlight_text,
+            poi.ugc_tip,
+            poi.meal_type,
+            poi.walking_intensity,
+            *poi.highlight_text_tags,
+            *poi.suitable_time_slots,
+            *poi.recommended_transport,
             *poi.tags,
         ]
-        risk_parts = [*poi.negative_tags, *self._as_string_list(raw.get("negative_tags"))]
+        risk_parts = [*poi.negative_tags, *poi.risk_flags, *poi.avoid_reasons, *self._as_string_list(raw.get("negative_tags"))]
         return POICandidate(
             poi=poi,
             search_text=" ".join(str(part) for part in searchable_parts if part),
             risk_text=" ".join(str(part) for part in risk_parts if part),
-            rainy_day_score=self._to_float(suitability.get("rainy_day"), 0),
-            friends_score=self._to_float(suitability.get("friends"), 0),
-            budget_score=self._to_float(suitability.get("budget_friendly"), 0),
         )
 
     def _matches_budget(self, poi: POI, intent: Intent) -> bool:
@@ -142,15 +178,21 @@ class POIService:
         distance_score = 1 if distance_km is None else max(0, 1 - min(distance_km, 20) / 20)
         budget_score = max(0, 1 - min(poi.avg_price, intent.budget_per_person) / max(intent.budget_per_person, 1))
         if poi.avg_price <= intent.budget_per_person:
-            budget_score = max(budget_score, candidate.budget_score)
-        queue_score = max(0, 1 - min(poi.queue_minutes, 90) / 90)
-        quality_score = min(max((poi.rating - 3) / 2, 0), 1)
+            budget_score = max(budget_score, poi.budget_friendly)
+        queue_score = max(
+            0,
+            1
+            - min(poi.queue_minutes, 90) / 120
+            - min(max(poi.live_crowd_level, poi.crowd_level), 1) * 0.25,
+        )
+        quality_score = self._quality_score(poi)
 
         intent_terms = self._normalize_terms(intent.preferences)
         profile_terms = self._normalize_terms(user_profile.tags if user_profile else [])
         preference_score = self._match_ratio(intent_terms, candidate.search_text)
         profile_score = self._match_ratio(profile_terms, candidate.search_text)
         scenario_score = self._scenario_score(candidate, intent)
+        time_score = self._time_score(poi, intent)
 
         score = (
             quality_score * quality_weight
@@ -160,22 +202,29 @@ class POIService:
             + preference_score * preference_weight
             + profile_score * 0.2
             + scenario_score * 0.1
+            + time_score * 0.12
         )
         if distance_km is not None:
             score += distance_score * 0.45
         if self._has_term(intent_terms + profile_terms, "少排队"):
             score += queue_score * 0.25
-        if self._has_term(intent_terms + profile_terms, "吃好") and poi.category == "restaurant":
-            score += quality_score * 0.25
+        if self._has_term(intent_terms + profile_terms, "吃好"):
+            score += self._meal_score(poi, ["吃好"]) * 0.4
+        if self._has_term(intent_terms + profile_terms, "咖啡"):
+            score += self._meal_score(poi, ["咖啡"]) * 0.4
+        if self._has_term(intent_terms + profile_terms, "轻食") or self._has_term(intent_terms + profile_terms, "小吃"):
+            score += self._meal_score(poi, ["轻食"]) * 0.35
         if self._has_term(intent_terms + profile_terms, "citywalk"):
             score += self._term_bonus(candidate, ["citywalk", "拍照", "街区", "散步", "landmark"]) * 0.2
         if self._has_term(intent_terms + profile_terms, "室内") or self._has_term(intent_terms + profile_terms, "雨天"):
-            score += (1 if poi.indoor else candidate.rainy_day_score) * 0.2
+            score += (1 if poi.indoor else poi.rainy_day_score) * 0.25
+        if self._has_term(intent_terms + profile_terms, "少走路") or self._has_term(intent_terms + profile_terms, "轻松"):
+            score += self._walking_score(poi) * 0.3
         return score
 
     def _scenario_score(self, candidate: POICandidate, intent: Intent) -> float:
         if intent.scenario == "friends_citywalk":
-            return max(candidate.friends_score, self._term_bonus(candidate, ["朋友", "拍照", "citywalk", "夜景", "咖啡"]))
+            return max(candidate.poi.friends_friendly, self._term_bonus(candidate, ["朋友", "拍照", "citywalk", "夜景", "咖啡"]))
         return 0
 
     def _distance_from_intent(self, poi: POI, intent: Intent) -> float | None:
@@ -205,13 +254,18 @@ class POIService:
     def _term_matches(self, term: str, text: str) -> bool:
         aliases = {
             "少排队": ["少排队", "别排队", "不排队", "排队可接受", "queue"],
-            "吃好": ["吃好", "美食", "餐厅", "聚餐", "菜", "restaurant"],
+            "吃好": ["吃好", "美食", "餐厅", "聚餐", "菜", "restaurant", "local_food", "fine_dining"],
+            "咖啡": ["咖啡", "下午茶", "休息", "cafe"],
+            "轻食": ["轻食", "小吃", "light_meal", "fast_food", "market"],
+            "小吃": ["小吃", "轻食", "light_meal", "fast_food", "market"],
             "更省钱": ["省钱", "便宜", "免费", "budget"],
-            "少走路": ["少走路", "轻松", "交通", "metro"],
+            "少走路": ["少走路", "轻松", "交通", "metro", "low"],
+            "轻松": ["少走路", "轻松", "low", "metro"],
             "citywalk": ["citywalk", "街区", "散步", "漫步", "拍照", "landmark"],
             "室内": ["室内", "雨天", "museum", "gallery", "theater", "cafe", "shopping"],
             "雨天": ["雨天", "室内", "museum", "gallery", "theater", "cafe", "shopping"],
             "拍照": ["拍照", "夜景", "出片", "photo"],
+            "晚上": ["晚上", "夜景", "夜游", "evening", "night", "night_view"],
             "人流密集": ["人流密集", "拥挤", "人多", "long_queue"],
             "排队久": ["排队久", "long_queue", "排队"],
             "太贵": ["太贵", "高价", "贵"],
@@ -232,6 +286,90 @@ class POIService:
             return float(value)
         except (TypeError, ValueError):
             return default
+
+    def _quality_score(self, poi: POI) -> float:
+        rating_score = min(max((poi.rating - 3) / 2, 0), 1)
+        review_score = min(poi.review_count / 8000, 1)
+        popularity_score = min(max(poi.popularity, 0), 1)
+        return rating_score * 0.55 + review_score * 0.2 + popularity_score * 0.25
+
+    def _meal_score(self, poi: POI, terms: list[str]) -> float:
+        meal_type = poi.meal_type
+        if any(term in {"吃好", "餐厅", "聚餐", "美食"} for term in terms):
+            if poi.category == "restaurant" or meal_type in {"local_food", "fine_dining"}:
+                return 1
+            if meal_type in {"light_meal", "cafe", "fast_food"}:
+                return 0.65
+        if any(term in {"咖啡", "下午茶", "休息"} for term in terms):
+            return 1 if meal_type == "cafe" or poi.category == "cafe" else 0
+        if any(term in {"轻食", "小吃"} for term in terms):
+            return 1 if meal_type in {"light_meal", "fast_food"} or poi.category == "market" else 0
+        return 0
+
+    def _walking_score(self, poi: POI) -> float:
+        return {"low": 1, "medium": 0.55, "high": 0.1}.get(poi.walking_intensity, 0.45)
+
+    def _time_score(self, poi: POI, intent: Intent) -> float:
+        start_minutes = self._parse_time(intent.start_time)
+        if start_minutes is None:
+            return 0.5
+
+        score = 0.4
+        if self._is_within_time_window(start_minutes, poi.open_time, poi.close_time):
+            score += 0.25
+        if self._is_before_last_entry(start_minutes, poi.last_entry_time, poi.open_time, poi.close_time):
+            score += 0.2
+
+        slot = self._time_slot(start_minutes)
+        if slot in poi.suitable_time_slots:
+            score += 0.25
+        if slot in {"evening", "night"}:
+            score += poi.night_activity * 0.25
+        return min(score, 1)
+
+    def _parse_time(self, value: str) -> int | None:
+        parts = value.split(":")
+        if len(parts) < 2:
+            return None
+        try:
+            return int(parts[0]) * 60 + int(parts[1])
+        except ValueError:
+            return None
+
+    def _time_slot(self, minutes: int) -> str:
+        hour = minutes // 60
+        if 5 <= hour < 11:
+            return "morning"
+        if 11 <= hour < 17:
+            return "afternoon"
+        if 17 <= hour < 21:
+            return "evening"
+        return "night"
+
+    def _is_within_time_window(self, minutes: int, open_time: str, close_time: str) -> bool:
+        open_minutes = self._parse_time(open_time)
+        close_minutes = self._parse_time(close_time)
+        if open_minutes is None or close_minutes is None:
+            return False
+        return self._minutes_in_range(minutes, open_minutes, close_minutes)
+
+    def _is_before_last_entry(self, minutes: int, last_entry_time: str, open_time: str, close_time: str) -> bool:
+        last_entry_minutes = self._parse_time(last_entry_time)
+        open_minutes = self._parse_time(open_time)
+        close_minutes = self._parse_time(close_time)
+        if last_entry_minutes is None or open_minutes is None or close_minutes is None:
+            return False
+        if close_minutes < open_minutes and last_entry_minutes < open_minutes:
+            last_entry_minutes += 24 * 60
+        check_minutes = minutes
+        if close_minutes < open_minutes and minutes < open_minutes:
+            check_minutes += 24 * 60
+        return check_minutes <= last_entry_minutes
+
+    def _minutes_in_range(self, minutes: int, start: int, end: int) -> bool:
+        if end >= start:
+            return start <= minutes <= end
+        return minutes >= start or minutes <= end
 
     def _as_string_list(self, value: object) -> list[str]:
         if not isinstance(value, list):
