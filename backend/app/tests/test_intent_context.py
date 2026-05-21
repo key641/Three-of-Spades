@@ -1,6 +1,7 @@
 import unittest
 
 from app.agent.intent_context import apply_session_context, is_adjustment_message
+from app.agent.message_router import MessageIntentType, MessageRoute, TurnType
 from app.agent.schemas import SessionState
 from app.schemas.intent import Intent
 
@@ -69,6 +70,35 @@ class IntentContextTest(unittest.TestCase):
         self.assertEqual(intent.duration_hours, 8)
         self.assertEqual(intent.preferences, ["更省钱", "少排队", "少走路", "安静"])
         self.assertEqual(intent.avoid_tags, ["排队久", "步行多"])
+
+    def test_add_constraint_preserves_previous_trip_shape_and_scenario(self) -> None:
+        state = SessionState(
+            session_id="s1",
+            last_intent=Intent(
+                city="上海",
+                people_count=2,
+                duration_hours=8,
+                start_time="09:00",
+                preferences=["拍照"],
+                scenario="friends_citywalk",
+            ),
+        )
+        parsed = Intent(city="北京", preferences=["吃好"], scenario="foodie_tour")
+        route = MessageRoute(
+            intent_type=MessageIntentType.MODIFY_PLAN,
+            turn_type=TurnType.ADD_CONSTRAINT,
+            inherit_previous=True,
+            preserve_scenario=True,
+        )
+
+        intent = apply_session_context(parsed, "我还要吃饭", state, route)
+
+        self.assertEqual(intent.city, "上海")
+        self.assertEqual(intent.people_count, 2)
+        self.assertEqual(intent.duration_hours, 8)
+        self.assertEqual(intent.start_time, "09:00")
+        self.assertEqual(intent.scenario, "friends_citywalk")
+        self.assertEqual(intent.preferences, ["拍照", "吃好"])
 
 
 if __name__ == "__main__":

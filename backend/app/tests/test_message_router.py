@@ -2,8 +2,9 @@ import asyncio
 import unittest
 from unittest.mock import AsyncMock
 
-from app.agent.message_router import MessageIntentType, MessageRouter
+from app.agent.message_router import MessageIntentType, MessageRouter, TurnType
 from app.agent.schemas import SessionState
+from app.schemas.intent import Intent
 
 
 class MessageRouterTest(unittest.TestCase):
@@ -45,6 +46,21 @@ class MessageRouterTest(unittest.TestCase):
 
             self.assertEqual(result.intent_type, MessageIntentType.ROUTE_DETAIL_QUESTION)
             self.assertTrue(result.references_previous_route)
+
+        asyncio.run(run_case())
+
+    def test_router_falls_back_to_add_constraint_for_followup_food_request(self) -> None:
+        async def run_case() -> None:
+            llm_client = AsyncMock()
+            llm_client.complete = AsyncMock(side_effect=RuntimeError("llm down"))
+            state = SessionState(session_id="s1", last_intent=Intent(city="上海", preferences=["拍照"]))
+
+            result = await MessageRouter(llm_client).classify("我还要吃饭", state)
+
+            self.assertEqual(result.intent_type, MessageIntentType.MODIFY_PLAN)
+            self.assertEqual(result.turn_type, TurnType.ADD_CONSTRAINT)
+            self.assertTrue(result.inherit_previous)
+            self.assertTrue(result.preserve_scenario)
 
         asyncio.run(run_case())
 

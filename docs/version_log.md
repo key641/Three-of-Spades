@@ -81,6 +81,16 @@
 
 - `docs/api_contract.md` 补充 `RouteStop` 新字段说明。
 
+- `AgentOrchestrator` 路线总结提示词增强：
+  - 要求聊天回复文本优先使用 `total_distance_km`、`total_travel_minutes`、`highlight_text`、`ugc_tip`、`reason`、`transport_mode_from_previous`、`distance_km_from_previous` 等结构化字段。
+  - LLM 不可用时，`message` 会明确提示“LLM 总结不可用”，再展示路线引擎生成的结构化结果，不再伪装成正常 LLM 总结。
+  - `AgentTrace` 折叠状态会标出 fallback/error 数量，前端可以同时看到路线输出和系统运行问题。
+
+- `MessageRouter` 新增结构化轮次类型：
+  - `MessageRoute` 增加 `turn_type`、`inherit_previous`、`preserve_scenario`。
+  - “我还要吃饭 / 加一个餐厅 / 也想拍照”这类追问会归为 `add_constraint`，默认继承上一轮路线意图。
+  - `apply_session_context` 对 `add_constraint` 保留上一轮城市、人数、时长、开始时间和主场景，只合并新增偏好，避免“上海两人拍照一日游 + 吃饭”被覆盖成纯美食路线。
+
 ### 涉及文件
 
 - `backend/app/agent/route_detail_handler.py`

@@ -1,4 +1,5 @@
 from app.agent.schemas import SessionState
+from app.agent.message_router import MessageRoute, TurnType
 from app.schemas.intent import Intent
 
 
@@ -41,8 +42,16 @@ def is_adjustment_message(message: str) -> bool:
     return any(term in message for term in ADJUSTMENT_TERMS)
 
 
-def apply_session_context(intent: Intent, message: str, state: SessionState) -> Intent:
-    if not state.last_intent or not is_adjustment_message(message):
+def apply_session_context(intent: Intent, message: str, state: SessionState, route: MessageRoute | None = None) -> Intent:
+    should_inherit = bool(
+        state.last_intent
+        and (
+            is_adjustment_message(message)
+            or route
+            and route.inherit_previous
+        )
+    )
+    if not should_inherit:
         return intent
 
     base = state.last_intent.model_dump()
@@ -57,9 +66,15 @@ def apply_session_context(intent: Intent, message: str, state: SessionState) -> 
         merged["city"] = intent.city
         merged["city_from_message"] = True
 
-    for key in ("budget_per_person", "people_count", "start_time", "duration_hours", "scenario"):
-        if current.get(key) != Intent().model_dump().get(key):
-            merged[key] = current[key]
+    is_add_constraint = bool(route and route.turn_type == TurnType.ADD_CONSTRAINT)
+    if not is_add_constraint:
+        for key in ("budget_per_person", "people_count", "start_time", "duration_hours"):
+            if current.get(key) != Intent().model_dump().get(key):
+                merged[key] = current[key]
+
+    preserve_scenario = bool(is_add_constraint and route and route.preserve_scenario)
+    if not preserve_scenario and current.get("scenario") != Intent().model_dump().get("scenario"):
+        merged["scenario"] = current["scenario"]
 
     return Intent.model_validate(merged)
 

@@ -49,7 +49,8 @@ class AgentOrchestrator:
         trace.append(
             AgentTraceStep(
                 step="route_message",
-                label=f"消息路由：{message_route.intent_type.value}",
+                label=f"消息路由：{message_route.intent_type.value}"
+                + (f" / {message_route.turn_type.value}" if message_route.turn_type else ""),
                 status="done",
             )
         )
@@ -64,7 +65,7 @@ class AgentOrchestrator:
 
         intent = await self._parse_intent(request.message, trace)
         intent = enhance_intent_from_message(intent, request.message)
-        contextual_intent = apply_session_context(intent, request.message, session_state)
+        contextual_intent = apply_session_context(intent, request.message, session_state, message_route)
         if contextual_intent != intent:
             trace.append(AgentTraceStep(step="apply_session_context", label="继承上一轮出行上下文", status="done"))
         intent = contextual_intent
@@ -130,7 +131,7 @@ class AgentOrchestrator:
         )
 
     async def _summarize_route_result(self, intent: Intent, pois: list[POI], routes: list[Route], trace: list[AgentTraceStep]) -> str:
-        fallback_message = "我先按你们的需求生成了几条可执行路线，后续可以继续让我少排队、更省钱或换一家。"
+        fallback_message = self._build_route_summary_fallback(routes)
         logger.info("step start step=summarize_routes mode=llm pois=%s routes=%s", len(pois), len(routes))
 
         if not routes:
@@ -201,6 +202,11 @@ class AgentOrchestrator:
                             "你是路线规划 Agent 的结果总结器。"
                             "根据已召回的 POI 和已生成的路线，用中文给用户做一个简短总结。"
                             "只总结给定内容，不要编造不存在的地点或路线。"
+                            "当 routes 不为空时，优先把结构化路线字段写进用户可见文本："
+                            "用 total_distance_km 和 total_travel_minutes 说明整体距离和交通时间；"
+                            "用 stop.reason、highlight_text、ugc_tip 解释为什么推荐、有什么亮点和避坑；"
+                            "用 transport_mode_from_previous、distance_km_from_previous、travel_minutes_from_previous 说明站点之间怎么走。"
+                            "字段为空时跳过，不要编造。"
                             "如果 routes 为空，说明候选点不足，并建议用户换城市或补充偏好。"
                             "回复控制在 2 到 4 句话。"
                         ),
@@ -217,15 +223,89 @@ class AgentOrchestrator:
             logger.info("step done step=summarize_routes mode=llm content=%s", self._preview(content))
             return content or fallback_message
         except Exception as exc:
+            unavailable_message = (
+                f"LLM 总结不可用（{type(exc).__name__}），以下先展示路线引擎生成的结构化结果："
+                f"{fallback_message}"
+            )
             trace.append(
                 AgentTraceStep(
                     step="summarize_routes",
-                    label=f"LLM 总结失败，使用 fallback：{type(exc).__name__}",
+                    label=f"LLM 总结不可用，使用结构化路线结果：{type(exc).__name__}",
                     status="fallback",
                 )
             )
             logger.exception("step failed step=summarize_routes mode=llm fallback=true error=%s", type(exc).__name__)
-            return fallback_message
+            return unavailable_message
+
+    def _build_route_summary_fallback(self, routes: list[Route]) -> str:
+        if not routes:
+            return "我先按你们的需求生成了几条可执行路线，后续可以继续让我少排队、更省钱或换一家。"
+
+        route = routes[0]
+        parts = [f"我先推荐「{route.title}」"]
+        metrics: list[str] = []
+        if route.total_duration_minutes:
+            metrics.append(f"总时长约 {route.total_duration_minutes} 分钟")
+        if route.total_distance_km:
+            metrics.append(f"路程约 {route.total_distance_km:g} 公里")
+        if route.total_travel_minutes:
+            metrics.append(f"交通约 {route.total_travel_minutes} 分钟")
+        if route.total_cost_per_person:
+            metrics.append(f"人均约 {route.total_cost_per_person} 元")
+        if route.total_queue_minutes:
+            metrics.append(f"排队约 {route.total_queue_minutes} 分钟")
+        if metrics:
+            parts.append("，" + "，".join(metrics))
+        parts.append("。")
+
+        detail_lines: list[str] = []
+        for stop in route.stops:
+            stop_bits = [value for value in [stop.reason, stop.highlight_text, stop.ugc_tip] if value]
+            if stop_bits:
+                detail_lines.append(f"{stop.name}：" + "；".join(stop_bits))
+            if len(detail_lines) >= 1:
+                break
+
+        leg = next(
+            (
+                stop
+                for stop in route.stops
+                if stop.transport_mode_from_previous
+                or stop.distance_km_from_previous
+                or stop.travel_minutes_from_previous
+            ),
+            None,
+        )
+        if leg:
+            leg_bits: list[str] = []
+            if leg.transport_mode_from_previous:
+                leg_bits.append(f"建议{self._format_transport_mode(leg.transport_mode_from_previous)}")
+            if leg.travel_minutes_from_previous:
+                leg_bits.append(f"约 {leg.travel_minutes_from_previous} 分钟")
+            if leg.distance_km_from_previous:
+                leg_bits.append(f"约 {leg.distance_km_from_previous:g} 公里")
+            if leg_bits:
+                detail_lines.append(f"到{leg.name}这段" + "，".join(leg_bits))
+
+        if detail_lines:
+            parts.append(" ".join(detail_lines[:3]) + "。")
+        if route.reasons:
+            parts.append("推荐理由：" + "、".join(route.reasons[:3]) + "。")
+        return "".join(parts)
+
+    def _format_transport_mode(self, mode: str) -> str:
+        mode_labels = {
+            "walk": "步行",
+            "metro": "地铁",
+            "taxi": "打车",
+            "bike": "骑行",
+            "bus": "公交",
+            "drive": "自驾",
+        }
+        modes = [part for part in mode.split("/") if part]
+        if len(modes) > 1:
+            return "或".join(mode_labels.get(part, part) for part in modes)
+        return mode_labels.get(mode, mode)
 
     async def _handle_direct_llm_chat(self, request: ChatRequest, trace: list[AgentTraceStep]) -> ChatResponse:
         logger.info("chat direct_llm start session_id=%s reason=not_route_related", request.session_id)

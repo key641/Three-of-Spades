@@ -3,7 +3,7 @@ import json
 from unittest.mock import AsyncMock
 
 from app.agent.intent_enhancer import enhance_intent_from_message
-from app.agent.message_router import MessageIntentType, MessageRoute
+from app.agent.message_router import MessageIntentType, MessageRoute, TurnType
 from app.agent.orchestrator import AgentOrchestrator
 from app.schemas.chat import ChatRequest
 from app.schemas.route import Route, RouteScoreBreakdown, RouteStop
@@ -185,6 +185,65 @@ class OrchestratorIntentFlowTest(unittest.TestCase):
 
         asyncio.run(run_case())
 
+    def test_summarize_route_result_prompt_requires_visible_route_details(self) -> None:
+        async def run_case() -> None:
+            orchestrator = AgentOrchestrator()
+            orchestrator.llm_client.complete = AsyncMock(
+                return_value={"choices": [{"message": {"content": "route summary"}}]}
+            )
+
+            await orchestrator._summarize_route_result(
+                intent=enhance_intent_from_message(orchestrator._mock_parse_intent("上海一日游"), "上海一日游"),
+                pois=[],
+                routes=[build_route()],
+                trace=[],
+            )
+
+            messages = orchestrator.llm_client.complete.call_args.args[0]
+            system_prompt = messages[0]["content"]
+            for field in [
+                "highlight_text",
+                "ugc_tip",
+                "reason",
+                "transport_mode_from_previous",
+                "distance_km_from_previous",
+                "total_distance_km",
+            ]:
+                self.assertIn(field, system_prompt)
+
+        import asyncio
+
+        asyncio.run(run_case())
+
+    def test_summarize_route_result_fallback_includes_route_details(self) -> None:
+        async def run_case() -> None:
+            route = build_route()
+            orchestrator = AgentOrchestrator()
+            orchestrator.llm_client.complete = AsyncMock(side_effect=RuntimeError("llm unavailable"))
+
+            trace = []
+            message = await orchestrator._summarize_route_result(
+                intent=enhance_intent_from_message(orchestrator._mock_parse_intent("上海一日游"), "上海一日游"),
+                pois=[],
+                routes=[route],
+                trace=trace,
+            )
+
+            self.assertIn("LLM", message)
+            self.assertIn("不可用", message)
+            self.assertIn(route.title, message)
+            self.assertIn("2.4", message)
+            self.assertIn("18", message)
+            self.assertIn(route.stops[1].highlight_text, message)
+            self.assertIn(route.stops[1].ugc_tip, message)
+            self.assertIn(route.stops[1].reason, message)
+            self.assertEqual(trace[-1].step, "summarize_routes")
+            self.assertEqual(trace[-1].status, "fallback")
+
+        import asyncio
+
+        asyncio.run(run_case())
+
     def test_second_turn_adjustment_inherits_previous_intent(self) -> None:
         async def run_case() -> None:
             orchestrator = AgentOrchestrator()
@@ -311,6 +370,60 @@ class OrchestratorIntentFlowTest(unittest.TestCase):
             state = orchestrator.memory.get_state("s1")
             self.assertEqual(state.last_intent.city, "上海")
             self.assertEqual(state.last_intent.duration_hours, 8)
+
+        import asyncio
+
+        asyncio.run(run_case())
+
+    def test_add_food_followup_preserves_photo_citywalk_trip_context(self) -> None:
+        async def run_case() -> None:
+            orchestrator = AgentOrchestrator()
+            orchestrator.message_router.classify = AsyncMock(
+                side_effect=[
+                    MessageRoute(intent_type=MessageIntentType.NEW_PLAN, turn_type=TurnType.NEW_PLAN, confidence=1),
+                    MessageRoute(
+                        intent_type=MessageIntentType.MODIFY_PLAN,
+                        turn_type=TurnType.ADD_CONSTRAINT,
+                        confidence=1,
+                        inherit_previous=True,
+                        preserve_scenario=True,
+                    ),
+                ]
+            )
+            orchestrator.llm_client.complete = AsyncMock(
+                side_effect=[
+                    {
+                        "choices": [
+                            {
+                                "message": {
+                                    "content": '{"city":"上海","people_count":2,"start_time":"09:00","duration_hours":8,"budget_per_person":300,"start_location_name":null,"start_lat":null,"start_lng":null,"preferences":["拍照"],"avoid_tags":[],"scenario":"friends_citywalk","need_clarification":false}'
+                                }
+                            }
+                        ]
+                    },
+                    {"choices": [{"message": {"content": "已生成上海拍照一日游路线。"}}]},
+                    {
+                        "choices": [
+                            {
+                                "message": {
+                                    "content": '{"city":"北京","people_count":1,"start_time":"14:00","duration_hours":4,"budget_per_person":300,"start_location_name":null,"start_lat":null,"start_lng":null,"preferences":["吃好"],"avoid_tags":[],"scenario":"foodie_tour","need_clarification":false}'
+                                }
+                            }
+                        ]
+                    },
+                    {"choices": [{"message": {"content": "已加入吃饭节点重新规划。"}}]},
+                ]
+            )
+
+            await orchestrator.handle_message(ChatRequest(session_id="s1", user_id="user_001", message="我想两个人在上海一日游，喜欢拍照"))
+            await orchestrator.handle_message(ChatRequest(session_id="s1", user_id="user_001", message="我还要吃饭"))
+
+            state = orchestrator.memory.get_state("s1")
+            self.assertEqual(state.last_intent.city, "上海")
+            self.assertEqual(state.last_intent.people_count, 2)
+            self.assertEqual(state.last_intent.duration_hours, 8)
+            self.assertEqual(state.last_intent.scenario, "friends_citywalk")
+            self.assertEqual(state.last_intent.preferences, ["拍照", "吃好"])
 
         import asyncio
 

@@ -1,4 +1,4 @@
-import { CheckCircle, Loader } from "lucide-react";
+import { AlertTriangle, CheckCircle, Loader } from "lucide-react";
 import { useState } from "react";
 import type { AgentTraceStep } from "../api/types";
 import { STEP_ICONS } from "../utils/traceIcons";
@@ -10,6 +10,8 @@ interface AgentTraceProps {
 
 export function AgentTrace({ steps, loading = false }: AgentTraceProps) {
   const [expanded, setExpanded] = useState(false);
+  const issueCount = steps.filter((step) => step.status === "fallback" || step.status === "error").length;
+  const hasIssue = issueCount > 0;
 
   // 没有数据且不在加载时，不渲染
   if (!loading && steps.length === 0) return null;
@@ -30,8 +32,12 @@ export function AgentTrace({ steps, loading = false }: AgentTraceProps) {
           </>
         ) : (
           <>
-            <CheckCircle size={14} style={{ color: "var(--color-success)" }} />
-            <span>已完成 {steps.length} 步</span>
+            {hasIssue ? (
+              <AlertTriangle size={14} style={{ color: "#92400E" }} />
+            ) : (
+              <CheckCircle size={14} style={{ color: "var(--color-success)" }} />
+            )}
+            <span>{hasIssue ? `完成 ${steps.length} 步，${issueCount} 项需关注` : `已完成 ${steps.length} 步`}</span>
             <span style={{ marginLeft: "auto" }}>{expanded ? "▲" : "▼"}</span>
           </>
         )}
