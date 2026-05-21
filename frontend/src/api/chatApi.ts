@@ -210,23 +210,30 @@ function buildMockResponse(message: string): ChatResponse {
 export async function sendChatMessage(
   message: string,
   profile?: OnboardingProfile,
+  includeProfile = true,
 ): Promise<ChatResponse> {
   if (USE_MOCK) {
     await delay(1200); // 模拟 1.2s 延迟，让 loading 动效可见
     return buildMockResponse(message);
   }
 
+  const profilePayload = includeProfile
+    ? {
+        city:         profile?.city,
+        scenarios:    profile?.scenarios ?? [],
+        preferences:  profile?.preferences ?? [],
+        avoid_tags:   profile?.avoid_tags ?? [],
+        budget_level: profile?.budget_level ?? "mid",
+        preference_weights: profile?.preference_weights,
+      }
+    : {};
+
   return postJson<ChatResponse>("/api/chat", {
     session_id: "session_demo",
     user_id:    profile?.user_id ?? "user_demo",
     message,
     event_type: "user_message",
-    // 完整画像字段，供后端个性化策略使用
-    city:         profile?.city,
-    scenarios:    profile?.scenarios ?? [],
-    preferences:  profile?.preferences ?? [],
-    avoid_tags:   profile?.avoid_tags ?? [],
-    budget_level: profile?.budget_level ?? "mid",
-    preference_weights: profile?.preference_weights,
+    // 完整画像字段只在会话首轮发送，后续由后端 session memory 接管当前上下文。
+    ...profilePayload,
   });
 }

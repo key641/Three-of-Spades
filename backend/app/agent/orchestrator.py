@@ -3,8 +3,11 @@ import logging
 import re
 
 from app.agent.memory import SessionMemory
+from app.agent.intent_context import apply_session_context
 from app.agent.intent_enhancer import enhance_intent_from_message
+from app.agent.message_router import MessageIntentType, MessageRouter
 from app.agent.prompts import SYSTEM_PROMPT
+from app.agent.route_detail_handler import RouteDetailHandler
 from app.llm.provider import get_llm_client
 from app.schemas.chat import AgentTraceStep, ChatRequest, ChatResponse
 from app.schemas.intent import Intent
@@ -25,6 +28,8 @@ class AgentOrchestrator:
     def __init__(self) -> None:
         self.memory = SessionMemory()
         self.llm_client = get_llm_client()
+        self.message_router = MessageRouter(self.llm_client)
+        self.route_detail_handler = RouteDetailHandler()
         self.profile_service = ProfileService()
         self.poi_service = POIService()
         self.route_service = RouteService()
@@ -39,12 +44,34 @@ class AgentOrchestrator:
             self._preview(request.message),
         )
 
-        if not self._looks_route_related(request.message):
+        session_state = self.memory.get_state(request.session_id)
+        message_route = await self.message_router.classify(request.message, session_state)
+        trace.append(
+            AgentTraceStep(
+                step="route_message",
+                label=f"消息路由：{message_route.intent_type.value}",
+                status="done",
+            )
+        )
+
+        if message_route.intent_type == MessageIntentType.ROUTE_DETAIL_QUESTION:
+            response = self.route_detail_handler.answer(request.message, request.session_id, session_state)
+            response.agent_trace = [*trace, *response.agent_trace]
+            return response
+
+        if message_route.intent_type == MessageIntentType.GENERAL_CHAT:
             return await self._handle_direct_llm_chat(request, trace)
 
         intent = await self._parse_intent(request.message, trace)
         intent = enhance_intent_from_message(intent, request.message)
-        intent = self.profile_service.merge_request_into_intent(intent, request)
+        contextual_intent = apply_session_context(intent, request.message, session_state)
+        if contextual_intent != intent:
+            trace.append(AgentTraceStep(step="apply_session_context", label="继承上一轮出行上下文", status="done"))
+        intent = contextual_intent
+        merge_request = request
+        if session_state.last_intent and not intent.city_from_message:
+            merge_request = request.model_copy(update={"city": None})
+        intent = self.profile_service.merge_request_into_intent(intent, merge_request)
         logger.info("chat intent session_id=%s intent=%s", request.session_id, intent.model_dump())
 
         user_profile = self.profile_service.get_profile(request.user_id, request)
@@ -81,7 +108,14 @@ class AgentOrchestrator:
 
         message = await self._summarize_route_result(intent, pois, routes, trace)
 
-        self.memory.save_current_routes(request.session_id, routes)
+        self.memory.save_turn_result(
+            session_id=request.session_id,
+            user_message=request.message,
+            assistant_message=message,
+            intent=intent,
+            user_profile=user_profile,
+            routes=routes,
+        )
         logger.info("chat done session_id=%s trace=%s", request.session_id, [step.model_dump() for step in trace])
 
         return ChatResponse(

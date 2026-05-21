@@ -55,6 +55,96 @@
 
 ---
 
+## 2026-05-21 - `44326eb` - `feat(agent): route message intent before planning`
+
+负责人：Agent / 后端编排 / A 同学
+
+### 更新概览
+
+本次将 `/api/chat` 的主流程从“先用关键词判断是否路线相关”升级为“先做消息路由，再分发到对应 handler”。词表仍作为兜底，但不再承担主要决策职责。新增 `route_detail_question` 分支后，用户追问“刚刚那俩地之间怎么过去”时，Agent 会读取上一轮 `SessionState.current_routes` 回答路线段交通，而不是误走普通聊天或重新规划路线。
+
+同时前端真实后端联调时不再每轮重复发送 onboarding 画像字段。会话首轮发送完整画像，后续只发送消息和会话信息，让后端 session memory 维护当前上下文，避免默认画像城市覆盖用户在对话中明确切换的城市。
+
+### 主要变更
+
+- 新增 `MessageRouter`：
+  - 优先使用 LLM 输出结构化分类：`new_plan`、`modify_plan`、`route_detail_question`、`general_chat`。
+  - LLM 路由失败时保留轻量 fallback，识别路线详情追问和基础路线相关消息。
+  - `AgentOrchestrator` 每轮先执行 `route_message` trace，再按分类分发。
+
+- 新增 `RouteDetailHandler`：
+  - 当用户询问上一轮路线细节时，直接读取 `SessionState.current_routes`。
+  - 当前 MVP 支持回答相邻站点之间的交通方式、预计时间和距离。
+  - 如果没有可引用路线，会返回追问提示，要求先生成路线。
+
+- `AgentOrchestrator` 分发逻辑调整：
+  - `route_detail_question`：走 `RouteDetailHandler`，不调用 `POIService` / `RouteService`。
+  - `general_chat`：继续走直接 LLM 对话。
+  - `new_plan` / `modify_plan`：继续沿用现有 intent 解析、POI 召回、路线生成和总结链路。
+
+- 前端画像发送策略调整：
+  - `useChat` 使用 `hasSentProfile` 记录当前会话是否已发送画像。
+  - `sendChatMessage` 新增 `includeProfile` 参数。
+  - 首轮发送完整 onboarding 画像；后续轮次不再重复发送 `city/preferences/avoid_tags/budget_level/preference_weights`。
+
+- 多轮上下文城市保护：
+  - 当 session 中已有上一轮 intent，且当前消息没有显式城市时，后端不会再让 request 中的 onboarding `city` 覆盖当前会话城市。
+  - 补充“改一下 / 刚刚的方案 / 打车 / 不走路”等续改表达。
+
+### 涉及文件
+
+- `backend/app/agent/message_router.py`
+- `backend/app/agent/route_detail_handler.py`
+- `backend/app/agent/orchestrator.py`
+- `backend/app/agent/intent_context.py`
+- `backend/app/agent/memory.py`
+- `backend/app/agent/schemas.py`
+- `backend/app/tests/test_message_router.py`
+- `backend/app/tests/test_route_detail_handler.py`
+- `backend/app/tests/test_orchestrator_intent_flow.py`
+- `backend/app/tests/test_intent_context.py`
+- `backend/app/tests/test_session_state.py`
+- `frontend/src/api/chatApi.ts`
+- `frontend/src/hooks/useChat.ts`
+- `docs/api_contract.md`
+- `docs/version_log.md`
+
+### 协作影响
+
+| 角色 | 影响 | 需要关注 |
+| --- | --- | --- |
+| A 同学：Agent / 后端 | `/api/chat` 现在先经过消息路由，再决定是否规划、修改、回答路线细节或普通聊天。 | 后续新增意图类型时优先扩展 `MessageRouter` 和 handler，不要继续扩大 `_looks_route_related` 词表。 |
+| A 同学：Agent / 后端 | 路线细节追问会复用 `SessionState.current_routes`。 | 当前只回答相邻 stop 交通；后续可扩展指定 route_id、指定第几个 stop、费用/排队/营业时间等 detail type。 |
+| B 同学：POI / 路线策略 | 本次不修改 POI 召回、路线生成、评分算法。 | 用户追问路线细节时不会重新调用 `RouteService.generate_routes`，减少无意义重规划。 |
+| C 同学：前端 / UI | 前端真实后端请求只在首轮发送完整画像，后续依赖后端 session memory。 | 如果用户点击“重置画像/重开会话”，需要同步调用 `reset()`，让下一轮重新发送画像。 |
+
+### 风险与注意事项
+
+- `MessageRouter` 目前是 MVP 路由器，LLM 失败时仍有少量关键词兜底。
+- `RouteDetailHandler` 当前默认使用第一条路线和相邻站点，尚未支持用户指定“第二条路线 / 第二站到第三站”。
+- 如果后端进程重启，内存态 `SessionState.current_routes` 会丢失，路线详情追问会要求先生成路线。
+- 前端仍固定使用 `session_id: "session_demo"`，多用户或多标签页并行联调时会共享同一个后端内存会话。
+
+### 建议验证
+
+```bash
+cd backend
+.\.venv\Scripts\python.exe -m unittest discover -s app\tests
+```
+
+```bash
+cd frontend
+npm.cmd run build
+```
+
+手动联调建议：
+
+- 先生成一条上海路线。
+- 继续输入“就你刚刚生成的方案，那俩地之间怎么过去”。
+- 期望 Agent 直接回答上一轮路线中相邻站点之间的交通方式、预计时间和距离，不再反问地点名，也不重新生成路线。
+
+---
+
 ## 2026-05-21 - `f536727` - `feat(agent): sync intent parsing with route strategy`
 
 负责人：Agent / 后端编排 / A 同学
@@ -98,6 +188,24 @@
   - 解析 intent 后会先经过 `intent_enhancer` 规则增强，纠偏 LLM 或 fallback 的缺失字段。
   - 获取用户画像时传入完整 `ChatRequest`。
   - POI 召回和路线规划会使用合并后的 intent/profile/weights。
+  - 每轮结束后保存结构化 `SessionState`，包括最近消息、上一轮 intent、当前 routes 和 user_profile。
+
+- 新增框架友好的 Agent 状态边界：
+  - `ChatTurn`：保存单条对话消息。
+  - `SessionState`：保存跨轮会话状态。
+  - `AgentState`：描述单轮 agent 编排过程中的状态快照。
+  - `SessionMemory` 从只保存 routes 升级为保存完整 `SessionState`，同时保留 `save_current_routes/get_current_routes` 兼容旧调用。
+
+- 新增第二轮调整指令上下文继承：
+  - 新增 `intent_context`，识别“预算低一点”“别排队”“不想排队”“少走路”“不要太累”“换一家”“换成杭州吧”等调整指令。
+  - 当本轮是调整指令且没有显式新城市时，会继承 `SessionState.last_intent`。
+  - 支持把本轮新增偏好合并进上一轮 intent，例如“预算低一点，别排队”会继承上一轮城市/时长，并新增 `更省钱`、`少排队`、`排队久`。
+  - 支持连续多轮叠加约束，例如“上海一日游” -> “预算低一点，别排队” -> “再少走路一点，安静些”。
+  - “少走路/不要太累”现在会同时进入 `preferences=少走路` 和 `avoid_tags=步行多`。
+  - “不想排队”现在会被识别为调整指令，避免第二轮漏继承上一轮城市后被 onboarding 城市覆盖。
+  - “再/继续/更/一点/一些”这类短跟进表达会被识别为调整消息，用于继承上一轮上下文。
+  - “换成/换到/改成 + 城市”会及时切换到本轮显式城市，同时继承上一轮未被明确改写的时长、偏好和避开标签。
+  - 如果本轮明确说了新城市，例如“我想在北京一日游”，则不会继承旧城市。
 
 - 新增 `intent_enhancer`：
   - 支持城市提取：北京、上海、广州、深圳、成都、杭州、南京、武汉、西安、苏州、重庆等。
@@ -114,19 +222,31 @@
   - 覆盖 ChatRequest 接收前端字段、ProfileService 构造 profile、合并 intent、保留前端权重 boost。
   - `backend/app/tests/test_intent_enhancer.py`
   - `backend/app/tests/test_orchestrator_intent_flow.py`
+  - `backend/app/tests/test_session_state.py`
+  - `backend/app/tests/test_intent_context.py`
   - 覆盖“北京一日游”“2 人 / 人均 200 / 少排队 / 吃好”“今晚上海半天 citywalk”等话术。
   - 覆盖本轮显式城市优先于 onboarding 城市，以及 `一日游` 不进入 preferences。
+  - 覆盖结构化 session state 保存和 orchestrator 写入会话状态。
+  - 覆盖第二轮“预算低一点，别排队”继承上一轮“上海一日游”上下文。
+  - 覆盖第三轮继续叠加“少走路、安静、步行多”等约束。
+  - 覆盖 onboarding 城市为北京、上一轮为上海时，第二轮“不想排队”仍继承上海。
+  - 覆盖 onboarding 城市为北京、上一轮为上海时，第二轮“换成杭州吧”会切换到杭州，并保留上一轮一日游和少排队约束。
 
 ### 涉及文件
 
 - `backend/app/agent/orchestrator.py`
 - `backend/app/agent/intent_enhancer.py`
+- `backend/app/agent/intent_context.py`
+- `backend/app/agent/memory.py`
+- `backend/app/agent/schemas.py`
 - `backend/app/schemas/chat.py`
 - `backend/app/schemas/user.py`
 - `backend/app/services/profile_service.py`
 - `backend/app/tests/test_profile_request_sync.py`
 - `backend/app/tests/test_intent_enhancer.py`
 - `backend/app/tests/test_orchestrator_intent_flow.py`
+- `backend/app/tests/test_session_state.py`
+- `backend/app/tests/test_intent_context.py`
 - `frontend/src/api/chatApi.ts`
 - `frontend/.env.example`
 - `docs/api_contract.md`
@@ -136,6 +256,8 @@
 | 角色 | 影响 | 需要关注 |
 | --- | --- | --- |
 | A 同学：Agent / 后端 | `/api/chat` 已开始消费前端 onboarding 字段，也支持 seed 用户画像 fallback，并新增规则增强层。 | 后续 prompt 和 memory 逻辑要继续使用增强且合并后的 `Intent`；本轮用户显式城市应优先于历史画像城市。 |
+| A 同学：Agent / 后端 | `SessionMemory` 已升级为结构化状态存储。 | 下一步支持真正多轮时，应优先复用 `SessionState.last_intent/current_routes/recent_messages`，不要再新增散落的 dict。 |
+| A 同学：Agent / 后端 | 第二轮调整指令已能继承上一轮 intent。 | 目前是重新生成路线，不是基于 `current_routes` 做局部替换；“换一家”后续还需要接 replan/replace 逻辑。 |
 | B 同学：POI / 路线策略 | POI 召回现在能拿到前端偏好和权重。 | 策略调参时可以假设 `user_profile.tags/preferences/preference_weights` 会来自前端画像。 |
 | C 同学：前端 / UI | 前端传出的 `preferences/avoid_tags/preference_weights` 不再被后端静默丢弃。 | 联调真实后端时在 `frontend/.env` 设置 `VITE_USE_MOCK_CHAT=false` 和 `VITE_API_BASE_URL=http://localhost:8000`。 |
 
@@ -143,6 +265,7 @@
 
 - 当前 `ProfileService` 只做了 seed 用户画像的 MVP 映射，复杂字段如历史行为、默认出发点还没有全部进入 `Intent`。
 - `intent_enhancer` 是规则增强层，不替代 LLM；同义词表需要随着 B 的策略标签持续维护。
+- 第二轮上下文继承目前只覆盖偏好/约束调整；路线局部编辑、已完成 POI、指定 route_id 还没接入。
 - `budget_level` 到具体金额的映射是 MVP 约定，后续如产品口径变化需要同步前后端。
 - 真实反馈闭环 `/api/feedback` 还没有和前端本地画像更新打通。
 - 评分值域和前端展示仍需继续统一：后端真实路线当前按 0-100 输出，前端 mock 仍偏 10 分制。
@@ -159,6 +282,18 @@ $env:PYTHONDONTWRITEBYTECODE='1'
 cd backend
 $env:PYTHONDONTWRITEBYTECODE='1'
 .\.venv\Scripts\python.exe -m unittest app.tests.test_intent_enhancer app.tests.test_orchestrator_intent_flow
+```
+
+```bash
+cd backend
+$env:PYTHONDONTWRITEBYTECODE='1'
+.\.venv\Scripts\python.exe -m unittest app.tests.test_session_state
+```
+
+```bash
+cd backend
+$env:PYTHONDONTWRITEBYTECODE='1'
+.\.venv\Scripts\python.exe -m unittest app.tests.test_intent_context
 ```
 
 ```bash

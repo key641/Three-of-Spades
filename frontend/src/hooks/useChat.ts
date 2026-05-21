@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useRef, useState } from "react";
 import { sendChatMessage } from "../api/chatApi";
 import type { ChatResponse } from "../api/types";
 import type { OnboardingProfile } from "./useOnboarding";
@@ -14,6 +14,7 @@ export function useChat(profile?: OnboardingProfile) {
   const [response, setResponse] = useState<ChatResponse | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const hasSentProfile = useRef(false);
 
   async function send(message: string) {
     const userMsg: ChatMessage = { role: "user", content: message, timestamp: Date.now() };
@@ -21,7 +22,9 @@ export function useChat(profile?: OnboardingProfile) {
     setLoading(true);
     setError(null);
     try {
-      const res = await sendChatMessage(message, profile);
+      const includeProfile = !hasSentProfile.current;
+      const res = await sendChatMessage(message, profile, includeProfile);
+      hasSentProfile.current = true;
       setResponse(res);
       const assistantMsg: ChatMessage = {
         role: "assistant",
@@ -47,6 +50,7 @@ export function useChat(profile?: OnboardingProfile) {
     setMessages([]);
     setResponse(null);
     setError(null);
+    hasSentProfile.current = false;
   }
 
   return { messages, response, loading, error, send, inject, reset };

@@ -43,7 +43,8 @@ VITE_USE_MOCK_CHAT=false
 
 - `message` 是必填字段。
 - `city`、`scenarios`、`preferences`、`avoid_tags`、`budget_level`、`preference_weights` 来自前端 onboarding，可选。
-- 后端会把 onboarding 字段合并进 LLM 解析出的 `Intent` 和 `UserProfile`。
+- 前端真实后端联调时建议只在会话首轮发送 onboarding 字段，后续轮次仅发送 `session_id`、`user_id`、`message`、`event_type`，由后端 session memory 维护当前出行上下文。
+- 后端会把首轮 onboarding 字段合并进 LLM 解析出的 `Intent` 和 `UserProfile`；如果当前 session 已有上一轮 intent，且用户本轮没有显式说城市，后端不会再用 onboarding `city` 覆盖当前会话城市。
 - `budget_level` 当前映射为：`low -> 100`、`mid -> 300`、`high -> 600`。
 
 ### Response
