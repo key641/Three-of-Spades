@@ -55,7 +55,7 @@
 
 ---
 
-## 2026-05-21 - `44326eb` - `feat(agent): route message intent before planning`
+## 2026-05-21 - `cac0a27` - `feat(agent): route message intent before planning`
 
 负责人：Agent / 后端编排 / A 同学
 
