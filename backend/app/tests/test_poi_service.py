@@ -22,6 +22,10 @@ def test_search_returns_enriched_poi_fields() -> None:
     assert poi.walking_intensity in {"low", "medium", "high"}
     assert poi.highlight_text
     assert poi.highlight_text_tags
+    assert poi.primary_category
+    assert poi.route_roles
+    assert poi.secondary_categories is not None
+    assert poi.experience_tags is not None
 
 
 def test_budget_keeps_expensive_pois_out_of_front_results() -> None:

@@ -9,6 +9,10 @@ class RouteStop(BaseModel):
     poi_id: str
     name: str
     category: str
+    primary_category: str = ""
+    secondary_categories: list[str] = Field(default_factory=list)
+    route_roles: list[str] = Field(default_factory=list)
+    experience_tags: list[str] = Field(default_factory=list)
     district: str = ""
     address: str = ""
     start_time: str

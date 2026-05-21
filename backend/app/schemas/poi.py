@@ -8,6 +8,10 @@ class POI(BaseModel):
     district: str = ""
     address: str = ""
     category: str
+    primary_category: str = ""
+    secondary_categories: list[str] = Field(default_factory=list)
+    route_roles: list[str] = Field(default_factory=list)
+    experience_tags: list[str] = Field(default_factory=list)
     lat: float
     lng: float
     avg_price: int

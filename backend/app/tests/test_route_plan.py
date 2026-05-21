@@ -16,10 +16,12 @@ def _plan(intent: Intent):
 def test_generate_route_candidates() -> None:
     response = _plan(Intent())
 
-    assert len(response.routes) > 3
+    assert len(response.routes) == 3
     assert "balanced" in {route.objective for route in response.routes}
+    assert len({route.objective for route in response.routes}) == len(response.routes)
     assert all(1 <= len(route.stops) <= 5 for route in response.routes)
-    assert all(route.score == 0 for route in response.routes)
+    assert all(0 < route.score <= 100 for route in response.routes)
+    assert all(route.score_breakdown.preference > 0 for route in response.routes)
 
 
 def test_empty_candidates_return_empty_routes() -> None:
@@ -85,12 +87,12 @@ def test_photo_citywalk_preference_generates_photo_candidates() -> None:
     )
 
 
-def test_same_objective_candidates_are_not_identical() -> None:
+def test_returns_one_top_route_per_objective() -> None:
     response = _plan(Intent())
 
-    for objective in {route.objective for route in response.routes}:
-        sequences = [tuple(stop.poi_id for stop in route.stops) for route in response.routes if route.objective == objective]
-        assert len(sequences) == len(set(sequences))
+    assert all(route.route_id == f"route_{route.objective}_best" for route in response.routes)
+    assert all("推荐" in route.title for route in response.routes)
+    assert all("优势是" in route.summary for route in response.routes)
 
 
 def test_route_stop_contains_enriched_poi_fields() -> None:
@@ -101,9 +103,44 @@ def test_route_stop_contains_enriched_poi_fields() -> None:
     assert first_stop.open_hours
     assert first_stop.last_entry_time
     assert first_stop.walking_intensity
+    assert first_stop.primary_category
+    assert first_stop.route_roles
+    assert first_stop.experience_tags is not None
     assert first_stop.cover_image_url
     assert first_stop.highlight_text
     assert first_stop.travel_minutes_from_previous is not None
     assert first_stop.distance_km_from_previous is not None
     assert first_stop.transport_mode_from_previous is not None
     assert first_stop.reason
+
+
+def test_citywalk_food_route_avoids_duplicate_coffee_and_keeps_main_activity() -> None:
+    response = _plan(Intent(preferences=["citywalk", "吃好", "少排队"], avoid_tags=["人多"], budget_per_person=300))
+
+    for route in response.routes:
+        coffee_count = sum(1 for stop in route.stops if "coffee_break" in stop.route_roles)
+        assert coffee_count <= 1
+        assert any("main_activity" in stop.route_roles for stop in route.stops)
+        assert any("meal" in stop.route_roles or "rest_stop" in stop.route_roles for stop in route.stops)
+
+
+def test_coffee_crawl_can_repeat_coffee_roles() -> None:
+    response = _plan(Intent(preferences=["咖啡探店", "咖啡"]))
+    food_route = next(route for route in response.routes if route.objective == "food_first")
+
+    assert any("coffee_break" in stop.route_roles for stop in food_route.stops)
+
+
+def test_photo_citywalk_route_has_photo_or_main_activity_structure() -> None:
+    response = _plan(Intent(preferences=["citywalk", "拍照"]))
+    photo_route = next(route for route in response.routes if route.objective == "photo_citywalk")
+
+    assert any("photo_stop" in stop.route_roles for stop in photo_route.stops)
+    assert any("main_activity" in stop.route_roles for stop in photo_route.stops)
+
+
+def test_indoor_rainy_route_has_indoor_main_activity() -> None:
+    response = _plan(Intent(preferences=["室内", "雨天"]))
+    indoor_route = next(route for route in response.routes if route.objective == "indoor_rainy")
+
+    assert any(stop.indoor and "main_activity" in stop.route_roles for stop in indoor_route.stops)
