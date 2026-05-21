@@ -10,6 +10,20 @@ def test_search_loads_pois_from_json() -> None:
     assert all(poi.city == "上海" for poi in pois)
 
 
+def test_search_returns_enriched_poi_fields() -> None:
+    poi = POIService().search(Intent(city="上海"))[0]
+
+    assert poi.district
+    assert poi.address
+    assert poi.meal_type
+    assert poi.cover_image_url
+    assert "example.com/mock" not in poi.cover_image_url
+    assert poi.last_entry_time
+    assert poi.walking_intensity in {"low", "medium", "high"}
+    assert poi.highlight_text
+    assert poi.highlight_text_tags
+
+
 def test_budget_keeps_expensive_pois_out_of_front_results() -> None:
     pois = POIService().search(Intent(city="上海", budget_per_person=50), limit=10)
 
@@ -28,7 +42,35 @@ def test_food_preference_prioritizes_restaurants() -> None:
     pois = POIService().search(Intent(city="上海", preferences=["吃好"]), limit=5)
 
     assert pois
-    assert any(poi.category == "restaurant" for poi in pois[:3])
+    assert any(poi.category == "restaurant" or poi.meal_type in {"local_food", "fine_dining"} for poi in pois[:3])
+
+
+def test_coffee_preference_prioritizes_cafes() -> None:
+    pois = POIService().search(Intent(city="上海", preferences=["咖啡"]), limit=5)
+
+    assert pois
+    assert all(poi.category == "cafe" or poi.meal_type == "cafe" for poi in pois)
+
+
+def test_low_walking_preference_prioritizes_low_walking_intensity() -> None:
+    pois = POIService().search(Intent(city="上海", preferences=["少走路"]), limit=5)
+
+    assert pois
+    assert sum(1 for poi in pois if poi.walking_intensity == "low") >= 4
+
+
+def test_indoor_rainy_preference_prioritizes_indoor_or_rainy_pois() -> None:
+    pois = POIService().search(Intent(city="上海", preferences=["室内", "雨天"]), limit=5)
+
+    assert pois
+    assert all(poi.indoor or poi.rainy_day_score >= 0.7 for poi in pois)
+
+
+def test_evening_start_prioritizes_available_or_night_friendly_pois() -> None:
+    pois = POIService().search(Intent(city="上海", start_time="20:00"), limit=5)
+
+    assert pois
+    assert all(poi.last_entry_time >= "20:00" or poi.night_activity >= 0.7 for poi in pois)
 
 
 def test_avoid_tags_excludes_matching_pois() -> None:

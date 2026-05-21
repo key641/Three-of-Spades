@@ -548,3 +548,132 @@ npm run build
 - 联调真实后端前，把 `USE_MOCK` 改为环境变量或开发配置，不建议长期硬编码。
 - 明确 `score_breakdown` 的值域，建议统一为 0-1 或 0-10。
 - 如果第三周要展示“重规划前后变化”，需要补充响应结构，例如 `previous_route`、`updated_route`、`changed_stops`、`replan_reason`。
+
+## 2026-05-21 - `c5a4633` - `Complete mock POI seed fields`
+
+负责人：路线策略 / POI 数据 / B 同学
+
+### 更新概览
+
+本次提交对 `data/seed/pois.json` 做了一轮字段质量补全。POI seed 原本已经具备主要字段结构，但部分 mock 值不完整，例如 `last_entry_time` 为空、非餐饮 POI 的 `meal_type` 为空、封面图片仍使用 `example.com/mock/...` 占位链接。此次更新按字段设计统一补齐这些弱 mock 值，让 POI 召回、路线规划和前端展示有更稳定的数据基础。
+
+### 主要变更
+
+- POI seed 元信息更新：
+  - `schema_version` 从 `1.0.0` 更新为 `1.0.1`。
+  - `description` 改为说明当前数据已补齐路线召回和规划需要的 MVP 字段。
+
+- 补齐访问信息：
+  - 为所有缺失的 `visit_info.last_entry_time` 生成合理值。
+  - 全天开放类点位补为 `23:30`。
+  - 普通营业点位按 `close_time - 60 分钟` 推导最后入场时间。
+
+- 补齐规划特征：
+  - 为所有空的 `planning_features.meal_type` 补值。
+  - 非餐饮类统一为 `non_meal`。
+  - 餐饮、咖啡、集市类保留或映射为 `local_food`、`cafe`、`light_meal`、`fine_dining`、`fast_food` 等类型。
+
+- 替换弱 mock 图片链接：
+  - 将所有 `https://example.com/mock/...` 替换为按分类和 POI id 生成的稳定 mock 图片 URL。
+  - 解决前端展示时封面 URL 明显不可用的问题。
+
+- 保持原有字段契约：
+  - 未新增后端暂时不用的大字段。
+  - 未改变 `POIService` 当前读取的字段路径。
+  - `risk_flags` 和 `avoid_reasons` 允许为空数组，表示无明显风险或避雷原因。
+
+### 涉及文件
+
+- `data/seed/pois.json`
+
+### 协作影响
+
+| 角色 | 影响 | 需要关注 |
+| --- | --- | --- |
+| A 同学：Agent / 后端 | Agent 编排逻辑无接口变化。 | 如果后续让 Agent 解释 POI，可更放心引用营业、餐饮类型和封面字段。 |
+| B 同学：POI / 路线策略 | POI 召回和路线规划的数据质量更稳定，`meal_type`、`last_entry_time`、封面 URL 不再为空或明显占位。 | 后续扩充 POI 时应继续保持字段完整，尤其是 `visit_info`、`quality`、`suitability`、`planning_features`。 |
+| C 同学：前端 / UI | 前端展示 POI/路线时不再看到 `example.com/mock` 这类无效封面链接。 | 如果前端后续真正渲染封面，需要确认外链加载策略和图片兜底状态。 |
+
+### 风险与注意事项
+
+- 图片链接仍是 mock 图片服务，不是真实 POI 图片。
+- `meal_type=non_meal` 是为了消除空值的 MVP 约定，后续如果做更细餐饮推荐，需要再细化类型枚举。
+- `last_entry_time` 是根据营业结束时间推导的 mock 值，不代表真实景区或商户规则。
+- 本次只改 POI seed 数据，没有改接口、schema 或服务代码。
+
+### 建议验证
+
+```bash
+cd backend
+.venv/bin/python - <<'PY'
+from app.tests import test_poi_service, test_route_plan
+for module in [test_poi_service, test_route_plan]:
+    for name in dir(module):
+        if name.startswith("test_"):
+            getattr(module, name)()
+            print(f"PASS {module.__name__}.{name}")
+PY
+```
+
+```bash
+cd backend
+.venv/bin/python -m compileall app
+```
+
+## 2026-05-21 - `7d7291b` - `Merge remote-tracking branch 'origin/main' into LYNN`
+
+负责人：协作同步 / LYNN 分支
+
+### 更新概览
+
+本次提交是一次分支同步操作：将 `origin/main` 上其他成员的最新变动合并到本地 `LYNN` 分支，方便继续开发时能看到 A/C 同学近期提交的 Agent、前端、接口文档和版本日志更新。本次合并无冲突。
+
+### 主要变更
+
+- 同步了 `origin/main` 上的最新协作内容：
+  - A 侧 Agent intent 增强、画像字段同步和相关测试。
+  - C 侧移动端优先前端、onboarding、mock chat、反馈与重规划 UI。
+  - 文档侧 `docs/api_contract.md`、`docs/git_workflow.md`、`docs/version_log.md` 等更新。
+
+- 保留了 LYNN 分支上的 B 侧改动：
+  - POI 召回实现。
+  - 路线生成增强。
+  - POI seed 字段补全。
+
+### 涉及文件
+
+- 本次是 merge commit，涉及文件来自 `origin/main` 已有提交。
+- 主要覆盖后端 Agent、前端 UI、接口文档和协作日志相关文件。
+
+### 协作影响
+
+| 角色 | 影响 | 需要关注 |
+| --- | --- | --- |
+| A 同学：Agent / 后端 | LYNN 分支已同步 A 侧最新 intent/profile 编排逻辑。 | 后续若继续改 Agent，应基于合并后的 `orchestrator.py`、`intent_enhancer.py` 和 profile 逻辑。 |
+| B 同学：POI / 路线策略 | B 侧 POI/路线改动已和 main 最新内容共存。 | 后续调试时要注意新 onboarding/profile 字段会影响 POI 召回和路线目标选择。 |
+| C 同学：前端 / UI | LYNN 分支已包含 C 侧最新前端页面和组件。 | 若要联调真实后端，需要继续确认 mock/真实请求开关和后端响应字段一致。 |
+
+### 风险与注意事项
+
+- 合并后本地 `LYNN` 分支领先 `origin/LYNN`，如果需要云端也看到这次同步，需要再 push。
+- `.gitignore` 仍有本地未提交改动，未包含在本次 merge commit 中。
+- 本次合并本身不代表功能验收，只是把其他成员变动同步到当前开发分支。
+
+### 建议验证
+
+```bash
+cd backend
+.venv/bin/python -m compileall app
+```
+
+```bash
+cd backend
+.venv/bin/python - <<'PY'
+from app.tests import test_poi_service, test_route_plan
+for module in [test_poi_service, test_route_plan]:
+    for name in dir(module):
+        if name.startswith("test_"):
+            getattr(module, name)()
+            print(f"PASS {module.__name__}.{name}")
+PY
+```
