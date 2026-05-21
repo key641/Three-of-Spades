@@ -61,6 +61,13 @@ class RouteDetailHandlerTest(unittest.TestCase):
         self.assertEqual(response.routes, state.current_routes)
         self.assertEqual(response.agent_trace[-1].step, "answer_route_detail")
 
+    def test_formats_new_transport_mode_pairs_from_route_service(self) -> None:
+        handler = RouteDetailHandler()
+
+        self.assertEqual(handler._format_transport_mode("metro/bike"), "地铁或骑行")
+        self.assertEqual(handler._format_transport_mode("drive/taxi"), "自驾或打车")
+        self.assertEqual(handler._format_transport_mode("metro/bus"), "地铁或公交")
+
     def test_asks_for_route_when_no_saved_routes_exist(self) -> None:
         response = RouteDetailHandler().answer("两个地点之间怎么过去", "s1", SessionState(session_id="s1"))
 

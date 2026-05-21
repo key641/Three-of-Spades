@@ -55,6 +55,75 @@
 
 ---
 
+## 2026-05-21 - `pending` - `fix(agent): adapt route explanations to enriched route fields`
+
+负责人：Agent / 后端编排 / A 同学
+
+### 更新概览
+
+本次针对 LYNN 合入后的 POI/RouteStop 丰富字段做 A 侧适配。Agent 现在能更准确解释新路线字段中的组合交通方式，并在没有候选路线时返回明确的“候选点不足”提示，不再误说已经生成路线。同时 `_summarize_route_result` 会把 B 侧新增的站点解释字段传给 LLM，便于后续生成更具体的路线总结。
+
+### 主要变更
+
+- `RouteDetailHandler` 扩展交通方式映射：
+  - 支持 `metro/bike`、`metro/bus`、`drive/taxi` 等组合交通。
+  - 支持单项 `metro`、`taxi`、`walk`、`bike`、`bus`、`drive` 的中文解释。
+
+- `AgentOrchestrator._summarize_route_result` 调整：
+  - 当 `routes=[]` 时直接返回候选点不足提示，包含当前城市名。
+  - LLM 总结输入新增 `total_travel_minutes`、`total_distance_km`。
+  - 每个 stop 传入 `district`、`address`、`travel_minutes_from_previous`、`distance_km_from_previous`、`transport_mode_from_previous`、`walking_intensity`、`recommended_transport`、`highlight_text`、`ugc_tip`、`reason`。
+
+- 新增 A 侧 demo case 脚本：
+  - `scripts/demo_cases.py` 直接调用 `AgentOrchestrator`。
+  - 覆盖上海路线生成、多轮调整、路线交通追问、北京/杭州城市意图识别。
+  - 当前用于区分 A 侧意图/上下文是否稳定，以及 B 侧数据是否覆盖对应城市。
+
+- `docs/api_contract.md` 补充 `RouteStop` 新字段说明。
+
+### 涉及文件
+
+- `backend/app/agent/route_detail_handler.py`
+- `backend/app/agent/orchestrator.py`
+- `backend/app/tests/test_route_detail_handler.py`
+- `backend/app/tests/test_orchestrator_intent_flow.py`
+- `backend/app/tests/test_demo_cases_script.py`
+- `scripts/demo_cases.py`
+- `scripts/README.md`
+- `docs/api_contract.md`
+- `docs/version_log.md`
+
+### 协作影响
+
+| 角色 | 影响 | 需要关注 |
+| --- | --- | --- |
+| A 同学：Agent / 后端 | 路线解释现在能消费 B 侧新增字段。 | 后续做更强路线解释时，优先使用结构化字段，不要让 LLM 编造交通和站点信息。 |
+| B 同学：POI / 路线策略 | `transport_mode_from_previous` 的组合值会被 Agent 翻译给用户。 | 推荐交通字段如果新增取值，需要同步 A/C 更新映射。 |
+| C 同学：前端 / UI | API 文档已补充 RouteStop 新字段。 | 前端可以逐步展示 `highlight_text`、`ugc_tip`、`reason`、`recommended_transport` 等字段。 |
+
+### 风险与注意事项
+
+- A 侧 demo case 当前显示上海路线可生成，北京/杭州城市能识别但 routes 为 0，说明 seed 数据主要覆盖上海。
+- 空路线提示只处理“候选不足”场景；如果后续有城市但被强约束过滤空，需要 B/A 再细化提示原因。
+
+### 建议验证
+
+```bash
+cd backend
+.\.venv\Scripts\python.exe -m unittest discover -s app\tests
+```
+
+```bash
+cd frontend
+npm.cmd run build
+```
+
+```bash
+.\backend\.venv\Scripts\python.exe scripts\demo_cases.py --verbose
+```
+
+---
+
 ## 2026-05-21 - `cac0a27` - `feat(agent): route message intent before planning`
 
 负责人：Agent / 后端编排 / A 同学

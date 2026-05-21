@@ -133,6 +133,10 @@ class AgentOrchestrator:
         fallback_message = "我先按你们的需求生成了几条可执行路线，后续可以继续让我少排队、更省钱或换一家。"
         logger.info("step start step=summarize_routes mode=llm pois=%s routes=%s", len(pois), len(routes))
 
+        if not routes:
+            trace.append(AgentTraceStep(step="summarize_routes", label="候选点不足，未生成路线", status="fallback"))
+            return f"当前在{intent.city}可用候选点不足，还没有生成可执行路线。你可以换一个城市，或者补充更具体的区域、景点类型和预算偏好，我再继续规划。"
+
         try:
             summary_input = {
                 "intent": intent.model_dump(),
@@ -158,15 +162,27 @@ class AgentOrchestrator:
                         "total_duration_minutes": route.total_duration_minutes,
                         "total_cost_per_person": route.total_cost_per_person,
                         "total_queue_minutes": route.total_queue_minutes,
+                        "total_travel_minutes": route.total_travel_minutes,
+                        "total_distance_km": route.total_distance_km,
                         "score": route.score,
                         "stops": [
                             {
                                 "name": stop.name,
                                 "category": stop.category,
+                                "district": stop.district,
+                                "address": stop.address,
                                 "start_time": stop.start_time,
                                 "end_time": stop.end_time,
                                 "estimated_cost": stop.estimated_cost,
                                 "queue_minutes": stop.queue_minutes,
+                                "travel_minutes_from_previous": stop.travel_minutes_from_previous,
+                                "distance_km_from_previous": stop.distance_km_from_previous,
+                                "transport_mode_from_previous": stop.transport_mode_from_previous,
+                                "walking_intensity": stop.walking_intensity,
+                                "recommended_transport": stop.recommended_transport,
+                                "highlight_text": stop.highlight_text,
+                                "ugc_tip": stop.ugc_tip,
+                                "reason": stop.reason,
                                 "tags": stop.tags,
                             }
                             for stop in route.stops

@@ -1,4 +1,5 @@
 import unittest
+import json
 from unittest.mock import AsyncMock
 
 from app.agent.intent_enhancer import enhance_intent_from_message
@@ -42,14 +43,21 @@ def build_route() -> Route:
                 poi_id="p2",
                 name="外滩观景平台",
                 category="scenic",
+                district="黄浦区",
+                address="中山东一路",
                 start_time="10:18",
                 end_time="11:00",
                 estimated_cost=0,
                 queue_minutes=5,
                 tags=["拍照"],
+                walking_intensity="low",
+                highlight_text="适合看江景",
+                ugc_tip="傍晚更出片",
+                recommended_transport=["metro", "bike"],
                 travel_minutes_from_previous=18,
                 distance_km_from_previous=2.4,
-                transport_mode_from_previous="metro/taxi",
+                transport_mode_from_previous="metro/bike",
+                reason="沿线交通方便",
             ),
         ],
         reasons=["测试"],
@@ -119,8 +127,59 @@ class OrchestratorIntentFlowTest(unittest.TestCase):
 
             self.assertIn("静安雕塑公园", response.message)
             self.assertIn("外滩观景平台", response.message)
-            self.assertIn("地铁或打车", response.message)
+            self.assertIn("地铁或骑行", response.message)
             orchestrator.route_service.generate_routes.assert_not_called()
+
+        import asyncio
+
+        asyncio.run(run_case())
+
+    def test_empty_routes_summary_does_not_claim_routes_were_generated(self) -> None:
+        async def run_case() -> None:
+            orchestrator = AgentOrchestrator()
+
+            message = await orchestrator._summarize_route_result(
+                intent=enhance_intent_from_message(orchestrator._mock_parse_intent("北京一日游"), "北京一日游"),
+                pois=[],
+                routes=[],
+                trace=[],
+            )
+
+            self.assertIn("北京", message)
+            self.assertIn("候选点不足", message)
+            self.assertNotIn("生成了几条可执行路线", message)
+
+        import asyncio
+
+        asyncio.run(run_case())
+
+    def test_summarize_route_result_passes_new_route_fields_to_llm(self) -> None:
+        async def run_case() -> None:
+            orchestrator = AgentOrchestrator()
+            orchestrator.llm_client.complete = AsyncMock(
+                return_value={"choices": [{"message": {"content": "路线总结"}}]}
+            )
+
+            await orchestrator._summarize_route_result(
+                intent=enhance_intent_from_message(orchestrator._mock_parse_intent("上海一日游"), "上海一日游"),
+                pois=[],
+                routes=[build_route()],
+                trace=[],
+            )
+
+            messages = orchestrator.llm_client.complete.call_args.args[0]
+            summary_input = json.loads(messages[1]["content"])
+            route = summary_input["routes"][0]
+            stop = route["stops"][1]
+            self.assertEqual(route["total_travel_minutes"], 18)
+            self.assertEqual(route["total_distance_km"], 2.4)
+            self.assertEqual(stop["district"], "黄浦区")
+            self.assertEqual(stop["address"], "中山东一路")
+            self.assertEqual(stop["walking_intensity"], "low")
+            self.assertEqual(stop["highlight_text"], "适合看江景")
+            self.assertEqual(stop["ugc_tip"], "傍晚更出片")
+            self.assertEqual(stop["recommended_transport"], ["metro", "bike"])
+            self.assertEqual(stop["reason"], "沿线交通方便")
 
         import asyncio
 

@@ -54,10 +54,24 @@ class RouteDetailHandler:
         return legs
 
     def _format_transport_mode(self, mode: str | None) -> str:
+        mode_labels = {
+            "walk": "步行",
+            "metro": "地铁",
+            "taxi": "打车",
+            "bike": "骑行",
+            "bus": "公交",
+            "drive": "自驾",
+        }
         if mode == "walk":
             return "步行"
         if mode == "metro/taxi":
             return "地铁或打车"
         if mode == "taxi/metro":
             return "打车或地铁"
+        if mode and "/" in mode:
+            labels = [mode_labels.get(part, part) for part in mode.split("/") if part]
+            if labels:
+                return "或".join(labels[:2])
+        if mode:
+            return mode_labels.get(mode, mode)
         return "按路线衔接交通"

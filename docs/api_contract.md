@@ -106,11 +106,22 @@ VITE_USE_MOCK_CHAT=false
           "poi_id": "poi_001",
           "name": "武康路街区",
           "category": "citywalk",
+          "district": "徐汇区",
+          "address": "武康路",
           "start_time": "14:10",
           "end_time": "15:30",
           "estimated_cost": 0,
           "queue_minutes": 0,
           "tags": ["拍照", "citywalk"],
+          "meal_type": "non_meal",
+          "open_hours": "全天",
+          "last_entry_time": "23:59",
+          "walking_intensity": "low",
+          "cover_image_url": "",
+          "highlight_text": "梧桐街区和历史建筑适合拍照",
+          "ugc_tip": "建议避开周末下午人流高峰",
+          "indoor": false,
+          "recommended_transport": ["metro", "walk"],
           "travel_minutes_from_previous": 10,
           "distance_km_from_previous": 1.2,
           "transport_mode_from_previous": "walk",
@@ -132,6 +143,8 @@ VITE_USE_MOCK_CHAT=false
 - `score` 使用 0-100 整数。
 - `score_breakdown` 使用 0-100 整数。
 - 前端如果展示为 10 分制，应自行除以 10；如果展示进度条，应直接按百分比使用。
+- `RouteStop.transport_mode_from_previous` 可能返回单一或组合交通方式，例如 `walk`、`metro/taxi`、`metro/bike`、`metro/bus`、`drive/taxi`。前端或 Agent 解释层需要映射为用户可读中文。
+- `RouteStop.reason`、`highlight_text`、`ugc_tip` 可用于路线解释；如果为空，前端应做兜底展示。
 
 ## POST /api/pois/search
 
