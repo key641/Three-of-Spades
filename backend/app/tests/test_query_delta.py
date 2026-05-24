@@ -56,6 +56,7 @@ class QueryDeltaTest(unittest.TestCase):
         self.assertIn("city", summary.kept)
         self.assertIn("people_count", summary.kept)
         self.assertIn("meal_stop", summary.added)
+        self.assertNotIn("meal_stop", summary.removed)
 
     def test_modify_city_delta_changes_only_city_and_keeps_previous_constraints(self) -> None:
         previous_intent = Intent(
@@ -92,6 +93,55 @@ class QueryDeltaTest(unittest.TestCase):
         self.assertEqual(trip_state.people_count, 2)
         self.assertEqual(trip_state.duration_hours, 8)
         self.assertEqual(summary.changed["city"], {"from": "上海", "to": "杭州"})
+
+    def test_explicit_people_and_negative_meal_override_inherited_state(self) -> None:
+        previous_intent = Intent(
+            city="上海",
+            people_count=1,
+            duration_hours=8,
+            start_time="09:00",
+            preferences=["网红打卡", "吃好"],
+            scenario="friends_citywalk",
+        )
+        previous_state = TripState.from_intent(previous_intent)
+        previous_state.must_include = ["meal_stop"]
+        state = SessionState(
+            session_id="s1",
+            last_intent=previous_intent,
+            trip_state=previous_state,
+        )
+        parsed_intent = Intent(
+            city="上海",
+            people_count=2,
+            duration_hours=4,
+            preferences=["吃饭", "朋友同行"],
+            scenario="friends_citywalk",
+        )
+        understanding = QueryUnderstanding(
+            turn_type="add_constraint",
+            inherit_previous=True,
+            preserve_scenario=True,
+        )
+        delta = IntentDelta(
+            modified_hard_constraints={"people_count": 2},
+            added_preferences=["朋友同行"],
+            removed_preferences=["吃好", "吃饭"],
+            removed_implicit_needs=["meal_stop"],
+            removed_must_include=["meal_stop"],
+        )
+
+        merged_intent, trip_state, summary = apply_query_delta(parsed_intent, state, understanding, delta)
+
+        self.assertEqual(merged_intent.people_count, 2)
+        self.assertEqual(merged_intent.duration_hours, 8)
+        self.assertIn("朋友同行", merged_intent.preferences)
+        self.assertNotIn("吃好", merged_intent.preferences)
+        self.assertNotIn("吃饭", merged_intent.preferences)
+        self.assertNotIn("meal_stop", trip_state.must_include)
+        self.assertNotIn("meal_stop", trip_state.implicit_needs)
+        self.assertEqual(summary.changed["people_count"], {"from": 1, "to": 2})
+        self.assertIn("meal_stop", summary.removed)
+        self.assertNotIn("meal_stop", summary.added)
 
 
 if __name__ == "__main__":

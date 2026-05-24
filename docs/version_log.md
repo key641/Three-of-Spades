@@ -55,6 +55,109 @@
 
 ---
 
+## 2026-05-24 - `pending` - `feat(agent): promote structured delta understanding`
+
+负责人：Agent / 后端编排 / A 同学，前端 trace 调试体验 / C 侧联调
+
+### 更新概览
+
+本次继续把多轮理解从“规则补丁”推进到更接近未来 Agent 架构的形态：多轮时优先让 LLM 根据上一轮 `TripState` 输出结构化 `QueryUnderstanding + IntentDelta`，后端只做 schema 校验、标签归一化和确定性 reducer 合并。规则不再承担主要语义理解，只在 LLM 断连、返回非法 JSON 或空 delta 时做保守兜底。
+
+前端侧同步增强了 Agent 思考过程：运行中仍可实时看到处理步骤，完成后默认折叠，但展开后能看到每一步的结构化 details，方便排查“哪一步理解错、哪一步合并错、是不是 fallback 导致”。
+
+### 主要变更
+
+- 多轮理解主路径升级：
+  - 新增 `_parse_query_delta()`，多轮时优先调用 LLM 输出 `QueryUnderstanding + IntentDelta`。
+  - 新增 `_llm_parse_query_delta()`，提示模型不要重写完整 Intent，而是比较用户本轮消息和上一轮 `TripState` 后输出 delta。
+  - 首轮仍由完整 `Intent` 初始化 `TripState`；多轮才进入 structured delta 主路径。
+  - `apply_query_delta` trace 新增 `source`，可区分 `llm_structured_delta`、`rule_fallback_delta`、`initial_intent_snapshot`。
+
+- Delta validator 和标签归一化：
+  - 新增 `_normalize_intent_delta()`，对 LLM 输出做字段过滤和归一化。
+  - 约束 LLM 只能输出系统支持的 canonical labels。
+  - `preferences` 支持归一：`吃饭/好吃/餐厅 -> 吃好`、`便宜/高性价比 -> 更省钱`、`出片/打卡/网红 -> 拍照`、`城市漫步/逛逛 -> citywalk` 等。
+  - `avoid_tags` 支持归一：`人多/拥挤 -> 人流密集`、`贵/高价 -> 太贵`、`走路多/太累 -> 步行多` 等。
+  - 前端 onboarding 画像、seed 用户画像、LLM intent 结果、多轮状态合并、delta 比较都接入同一套 canonical 规则。
+
+- 明确显式约束优先级：
+  - `add_constraint` 不再等于“所有硬约束都继承旧状态”。
+  - 本轮明确说出的城市、人数、时长、预算、开始时间可以覆盖旧状态。
+  - “有朋友和我一起 / 双人 / 两个人”会把 `people_count` 更新为 2。
+  - “不要吃饭 / 不安排吃饭”会移除 `吃好` 偏好和 `meal_stop`。
+  - `meal_stop` 从隐含建议升级为显式必须时，不再在 trace 中显示成“新增吃饭节点；移除吃饭节点”。
+
+- 前端 trace 调试体验增强：
+  - 完成后 Agent 思考过程默认折叠，不再占用大量空间。
+  - 桌面端不再隐藏 `.trace-toggle`，完成后仍能看到折叠入口。
+  - 展开后每个 step 会显示结构化 details chips，例如本轮类型、是否继承、delta 来源、保留/新增/修改/移除、候选点数量、路线标题等。
+  - 运行中仍保持实时展开，便于观察后台处理进度。
+
+- 测试补充：
+  - 覆盖 LLM structured delta 作为多轮状态更新主路径。
+  - 覆盖 LLM delta 失败时规则 fallback 仍能处理明确约束。
+  - 覆盖显式人数覆盖旧状态、否定吃饭移除 meal stop。
+  - 覆盖所有偏好和避开标签的 canonical 归一化。
+  - 覆盖前端画像字段进入后端 profile/intent 前会归一化。
+
+### 涉及文件
+
+- Agent 状态与理解：
+  - `backend/app/agent/orchestrator.py`
+  - `backend/app/agent/intent_context.py`
+  - `backend/app/agent/intent_enhancer.py`
+  - `backend/app/services/profile_service.py`
+
+- 后端测试：
+  - `backend/app/tests/test_orchestrator_intent_flow.py`
+  - `backend/app/tests/test_query_delta.py`
+  - `backend/app/tests/test_intent_enhancer.py`
+  - `backend/app/tests/test_profile_request_sync.py`
+
+- 前端 trace 展示：
+  - `frontend/src/components/AgentTrace.tsx`
+  - `frontend/src/styles/globals.css`
+
+- 文档：
+  - `docs/version_log.md`
+
+### 协作影响
+
+| 角色 | 影响 | 需要关注 |
+| --- | --- | --- |
+| A 同学：Agent / 后端 | 多轮状态更新主路径变为 LLM structured delta + deterministic reducer。 | 后续新增语义类型时优先扩展 `IntentDelta` schema 和 validator，不要继续把理解逻辑堆在 `_build_intent_delta` 规则里。 |
+| A 同学：Agent / 后端 | trace 能区分 `llm_structured_delta` 和 `rule_fallback_delta`。 | 排查状态 bug 时先看 `parse_query_delta` 和 `apply_query_delta.details.source`。 |
+| B 同学：POI / 路线策略 | A 侧会更稳定地产出 canonical 偏好、避开标签和 `meal_stop/rest_stop`。 | B 侧后续消费规划需求时，应直接对齐 canonical labels，不要再依赖用户原话。 |
+| C 同学：前端 / UI | Agent 思考过程完成后保留折叠入口，展开后能看到 details。 | 如果后续新增 trace details 字段，前端可以继续复用 details chips，不需要每个字段都定制组件。 |
+
+### 风险与注意事项
+
+- LLM structured delta 是主路径，但依赖模型网关稳定性；如果发生 `ConnectError`，系统会退回 `rule_fallback_delta`。
+- 规则 fallback 必须保持保守，避免 LLM 失败时用 fallback Intent 的默认值误改人数、时长、预算等硬状态。
+- canonical labels 目前仍是有限枚举；未来 B/C 如果新增策略标签，需要同步扩展 validator 的 allowed values。
+- 当前版本还没有把 `/api/chat/stream` 的 NDJSON 事件和 `AgentTraceStep.details` 完整写入 `docs/api_contract.md`，后续应补齐。
+
+### 建议验证
+
+```bash
+cd backend
+$env:PYTHONPATH='.'
+pytest app/tests -q
+```
+
+```bash
+cd frontend
+npm.cmd run build
+```
+
+手动联调建议：
+
+- 首轮输入“我一个人在上海玩一天，想拍照和吃饭”。
+- 第二轮输入“我不要吃饭，有朋友和我一起”。
+- 展开 Agent 思考过程，期望看到：`parse_query_delta` 成功时 source 为 `llm_structured_delta`；人数从 1 改为 2；移除 `吃好/meal_stop`；如果 LLM 断连，则 source 为 `rule_fallback_delta` 且前端能清楚展示 fallback 来源。
+
+---
+
 ## 2026-05-24 - `788bac6` - `feat(agent): add state tracing and streaming thinking UI`
 
 负责人：Agent / 后端编排 / A 同学，前端 trace 展示 / C 侧联调

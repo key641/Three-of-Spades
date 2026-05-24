@@ -446,6 +446,135 @@ class OrchestratorIntentFlowTest(unittest.TestCase):
 
         asyncio.run(run_case())
 
+    def test_followup_explicit_people_and_negative_meal_override_previous_state(self) -> None:
+        async def run_case() -> None:
+            orchestrator = AgentOrchestrator()
+            orchestrator.message_router.classify = AsyncMock(
+                side_effect=[
+                    MessageRoute(intent_type=MessageIntentType.NEW_PLAN, turn_type=TurnType.NEW_PLAN, confidence=1),
+                    MessageRoute(
+                        intent_type=MessageIntentType.MODIFY_PLAN,
+                        turn_type=TurnType.ADD_CONSTRAINT,
+                        confidence=1,
+                        inherit_previous=True,
+                        preserve_scenario=True,
+                    ),
+                ]
+            )
+            orchestrator.llm_client.complete = AsyncMock(
+                side_effect=[
+                    {
+                        "choices": [
+                            {
+                                "message": {
+                                    "content": '{"city":"上海","people_count":1,"start_time":"09:00","duration_hours":8,"budget_per_person":300,"start_location_name":null,"start_lat":null,"start_lng":null,"preferences":["网红打卡","吃好"],"avoid_tags":[],"scenario":"friends_citywalk","need_clarification":false}'
+                                }
+                            }
+                        ]
+                    },
+                    {"choices": [{"message": {"content": "已生成上海单人路线。"}}]},
+                    {
+                        "choices": [
+                            {
+                                "message": {
+                                    "content": '{"city":"上海","people_count":2,"start_time":"14:00","duration_hours":4,"budget_per_person":300,"start_location_name":null,"start_lat":null,"start_lng":null,"preferences":["吃饭","朋友同行"],"avoid_tags":[],"scenario":"friends_citywalk","need_clarification":false}'
+                                }
+                            }
+                        ]
+                    },
+                    {"choices": [{"message": {"content": "已按双人同行重新规划。"}}]},
+                ]
+            )
+
+            await orchestrator.handle_message(ChatRequest(session_id="s2", user_id="user_001", message="我一个人在上海玩一天，想网红打卡和吃饭"))
+            response = await orchestrator.handle_message(ChatRequest(session_id="s2", user_id="user_001", message="我不要吃饭，有朋友和我一起"))
+
+            state = orchestrator.memory.get_state("s2")
+            self.assertEqual(state.last_intent.people_count, 2)
+            self.assertEqual(state.last_intent.duration_hours, 8)
+            self.assertIn("朋友同行", state.last_intent.preferences)
+            self.assertNotIn("吃好", state.last_intent.preferences)
+            self.assertNotIn("吃饭", state.last_intent.preferences)
+            self.assertNotIn("meal_stop", state.trip_state.must_include)
+            self.assertNotIn("meal_stop", state.trip_state.implicit_needs)
+            delta_step = next(step for step in response.agent_trace if step.step == "apply_query_delta")
+            self.assertEqual(delta_step.details["changed"]["people_count"], {"from": 1, "to": 2})
+            self.assertIn("meal_stop", delta_step.details["removed"])
+            self.assertNotIn("meal_stop", delta_step.details["added"])
+            self.assertIn("人数从1改为2", response.message)
+            self.assertNotIn("新增了吃饭", response.message)
+            self.assertIn("移除了", response.message)
+            self.assertIn("吃饭节点", response.message)
+
+        import asyncio
+
+        asyncio.run(run_case())
+
+    def test_followup_uses_llm_structured_delta_as_primary_state_update(self) -> None:
+        async def run_case() -> None:
+            orchestrator = AgentOrchestrator()
+            orchestrator.message_router.classify = AsyncMock(
+                side_effect=[
+                    MessageRoute(intent_type=MessageIntentType.NEW_PLAN, turn_type=TurnType.NEW_PLAN, confidence=1),
+                    MessageRoute(
+                        intent_type=MessageIntentType.MODIFY_PLAN,
+                        turn_type=TurnType.ADD_CONSTRAINT,
+                        confidence=1,
+                        inherit_previous=True,
+                        preserve_scenario=True,
+                    ),
+                ]
+            )
+            orchestrator.llm_client.complete = AsyncMock(
+                side_effect=[
+                    {
+                        "choices": [
+                            {
+                                "message": {
+                                    "content": '{"city":"上海","people_count":1,"start_time":"09:00","duration_hours":8,"budget_per_person":300,"start_location_name":null,"start_lat":null,"start_lng":null,"preferences":["拍照","吃好"],"avoid_tags":[],"scenario":"friends_citywalk","need_clarification":false}'
+                                }
+                            }
+                        ]
+                    },
+                    {"choices": [{"message": {"content": "已生成上海双人路线。"}}]},
+                    {
+                        "choices": [
+                            {
+                                "message": {
+                                    "content": '{"city":"上海","people_count":1,"start_time":"14:00","duration_hours":4,"budget_per_person":300,"start_location_name":null,"start_lat":null,"start_lng":null,"preferences":["吃饭"],"avoid_tags":[],"scenario":"foodie_tour","need_clarification":false}'
+                                }
+                            }
+                        ]
+                    },
+                    {
+                        "choices": [
+                            {
+                                "message": {
+                                    "content": '{"understanding":{"turn_type":"add_constraint","inherit_previous":true,"preserve_scenario":true,"confidence":0.95,"reason":"明确说朋友同行且不吃饭"},"delta":{"modified_hard_constraints":{"people_count":2},"added_preferences":["朋友同行"],"removed_preferences":["吃好"],"removed_must_include":["meal_stop"],"removed_implicit_needs":["meal_stop"]}}'
+                                }
+                            }
+                        ]
+                    },
+                    {"choices": [{"message": {"content": "已按结构化 delta 重新规划。"}}]},
+                ]
+            )
+
+            await orchestrator.handle_message(ChatRequest(session_id="s3", user_id="user_001", message="我一个人在上海玩一天，想拍照和吃饭"))
+            response = await orchestrator.handle_message(ChatRequest(session_id="s3", user_id="user_001", message="我不要吃饭，有朋友和我一起"))
+
+            state = orchestrator.memory.get_state("s3")
+            self.assertEqual(state.last_intent.people_count, 2)
+            self.assertEqual(state.last_intent.duration_hours, 8)
+            self.assertEqual(state.last_intent.preferences, ["拍照", "朋友同行"])
+            self.assertNotIn("meal_stop", state.trip_state.must_include)
+            delta_step = next(step for step in response.agent_trace if step.step == "apply_query_delta")
+            self.assertEqual(delta_step.details["changed"]["people_count"], {"from": 1, "to": 2})
+            self.assertEqual(delta_step.details["source"], "llm_structured_delta")
+
+        import asyncio
+
+        asyncio.run(run_case())
+
     def test_adjustment_with_message_city_switches_from_previous_and_onboarding_city(self) -> None:
         async def run_case() -> None:
             orchestrator = AgentOrchestrator()

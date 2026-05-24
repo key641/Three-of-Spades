@@ -29,6 +29,16 @@ PREFERENCE_ALIASES: dict[str, list[str]] = {
     "安静": ["安静", "清净", "人少"],
 }
 
+PREFERENCE_CANONICAL_ALIASES: dict[str, str] = {
+    alias: normalized
+    for normalized, aliases in PREFERENCE_ALIASES.items()
+    for alias in aliases
+}
+
+NEGATIVE_PREFERENCE_ALIASES: dict[str, list[str]] = {
+    "吃好": ["不要吃饭", "不吃饭", "不用吃饭", "别吃饭", "不要餐厅", "不安排吃饭", "不用安排吃饭"],
+}
+
 AVOID_ALIASES: dict[str, list[str]] = {
     "人流密集": ["人多", "拥挤", "太挤", "人流密集"],
     "排队久": ["排队久", "排队太久", "别排队", "不排队", "不想排队"],
@@ -36,6 +46,12 @@ AVOID_ALIASES: dict[str, list[str]] = {
     "商业街": ["商业街", "商业化"],
     "辣": ["辣", "太辣"],
     "步行多": ["步行多", "走路多", "太累", "少走路", "别太累", "不要太累"],
+}
+
+AVOID_CANONICAL_ALIASES: dict[str, str] = {
+    alias: normalized
+    for normalized, aliases in AVOID_ALIASES.items()
+    for alias in aliases
 }
 
 START_TIME_HINTS: dict[str, str] = {
@@ -74,8 +90,13 @@ def enhance_intent_from_message(intent: Intent, message: str) -> Intent:
     if start_time:
         data["start_time"] = start_time
 
-    data["preferences"] = _remove_non_preferences(_unique([*intent.preferences, *_extract_terms(text, PREFERENCE_ALIASES)]))
-    data["avoid_tags"] = _unique([*intent.avoid_tags, *_extract_terms(text, AVOID_ALIASES)])
+    added_preferences = _extract_terms(text, PREFERENCE_ALIASES)
+    removed_preferences = _extract_terms(text, NEGATIVE_PREFERENCE_ALIASES)
+    data["preferences"] = _remove_values(
+        _remove_non_preferences(_unique([*_normalize_preferences(intent.preferences), *added_preferences])),
+        removed_preferences,
+    )
+    data["avoid_tags"] = _unique([*_normalize_avoid_tags(intent.avoid_tags), *_extract_terms(text, AVOID_ALIASES)])
 
     if city or duration_hours or data["preferences"] or data["avoid_tags"]:
         data["need_clarification"] = False
@@ -90,6 +111,39 @@ def enhance_intent_from_message(intent: Intent, message: str) -> Intent:
     return Intent.model_validate(data)
 
 
+def extract_explicit_trip_fields(message: str) -> dict[str, object]:
+    text = message.strip()
+    fields: dict[str, object] = {}
+    city = _extract_city(text)
+    if city:
+        fields["city"] = city
+    people_count = _extract_people_count(text)
+    if people_count:
+        fields["people_count"] = people_count
+    duration_hours = _extract_duration_hours(text)
+    if duration_hours:
+        fields["duration_hours"] = duration_hours
+    budget = _extract_budget(text)
+    if budget:
+        fields["budget_per_person"] = budget
+    start_time = _extract_start_time(text)
+    if start_time:
+        fields["start_time"] = start_time
+    return fields
+
+
+def extract_removed_preferences(message: str) -> list[str]:
+    return _extract_terms(message.strip(), NEGATIVE_PREFERENCE_ALIASES)
+
+
+def normalize_preferences(values: list[str]) -> list[str]:
+    return _unique(_normalize_preferences(values))
+
+
+def normalize_avoid_tags(values: list[str]) -> list[str]:
+    return _unique(_normalize_avoid_tags(values))
+
+
 def _extract_city(text: str) -> str | None:
     for city, aliases in CITY_ALIASES.items():
         if any(alias in text for alias in aliases):
@@ -98,6 +152,11 @@ def _extract_city(text: str) -> str | None:
 
 
 def _extract_people_count(text: str) -> int | None:
+    if any(term in text for term in ["双人", "两个人", "2个人", "2人", "有朋友和我一起", "朋友和我一起", "朋友跟我一起"]):
+        return 2
+    if any(term in text for term in ["单人", "一个人", "1个人", "1人", "我自己", "独自"]):
+        return 1
+
     match = re.search(r"(\d+)\s*(?:人|个人|位)", text)
     if match:
         return int(match.group(1))
@@ -171,3 +230,16 @@ def _unique(values: list[str]) -> list[str]:
 
 def _remove_non_preferences(values: list[str]) -> list[str]:
     return [value for value in values if value not in NON_PREFERENCE_TERMS]
+
+
+def _normalize_preferences(values: list[str]) -> list[str]:
+    return [PREFERENCE_CANONICAL_ALIASES.get(value, value) for value in values]
+
+
+def _normalize_avoid_tags(values: list[str]) -> list[str]:
+    return [AVOID_CANONICAL_ALIASES.get(value, value) for value in values]
+
+
+def _remove_values(values: list[str], removed_values: list[str]) -> list[str]:
+    removed = set(removed_values)
+    return [value for value in values if value not in removed]

@@ -6,7 +6,13 @@ from collections.abc import Awaitable, Callable
 
 from app.agent.memory import SessionMemory
 from app.agent.intent_context import apply_query_delta, apply_session_context
-from app.agent.intent_enhancer import enhance_intent_from_message
+from app.agent.intent_enhancer import (
+    enhance_intent_from_message,
+    extract_explicit_trip_fields,
+    extract_removed_preferences,
+    normalize_avoid_tags,
+    normalize_preferences,
+)
 from app.agent.message_router import MessageIntentType, MessageRouter
 from app.agent.prompts import SYSTEM_PROMPT
 from app.agent.route_detail_handler import RouteDetailHandler
@@ -105,15 +111,25 @@ class AgentOrchestrator:
         if session_state.last_intent and not intent.city_from_message:
             merge_request = request.model_copy(update={"city": None})
         intent = self.profile_service.merge_request_into_intent(intent, merge_request)
-        understanding = self._build_query_understanding(message_route, context_applied)
-        delta = self._build_intent_delta(intent, request.message, session_state, message_route)
+        fallback_understanding = self._build_query_understanding(message_route, context_applied)
+        fallback_delta = self._build_intent_delta(intent, request.message, session_state, message_route)
+        understanding, delta, delta_source = await self._parse_query_delta(
+            request.message,
+            session_state,
+            fallback_understanding,
+            fallback_delta,
+            trace,
+        )
+        await emit_pending_trace()
         intent, trip_state, state_summary = apply_query_delta(intent, session_state, understanding, delta)
+        delta_details = state_summary.model_dump()
+        delta_details["source"] = delta_source
         trace.append(
             AgentTraceStep(
                 step="apply_query_delta",
                 label=self._format_state_change_summary(state_summary),
                 status="done",
-                details=state_summary.model_dump(),
+                details=delta_details,
             )
         )
         await emit_pending_trace()
@@ -273,6 +289,155 @@ class AgentOrchestrator:
             "scenario": intent.scenario,
         }
 
+    async def _parse_query_delta(
+        self,
+        message: str,
+        session_state,
+        fallback_understanding: QueryUnderstanding,
+        fallback_delta: IntentDelta,
+        trace: list[AgentTraceStep],
+    ) -> tuple[QueryUnderstanding, IntentDelta, str]:
+        if not session_state.last_intent and not session_state.trip_state:
+            return fallback_understanding, fallback_delta, "initial_intent_snapshot"
+
+        try:
+            payload = await self._llm_parse_query_delta(message, session_state)
+            understanding = QueryUnderstanding.model_validate(payload.get("understanding", {}))
+            delta = IntentDelta.model_validate(payload.get("delta", {}))
+            delta = self._normalize_intent_delta(delta)
+            trace.append(
+                AgentTraceStep(
+                    step="parse_query_delta",
+                    label="LLM 解析本轮状态变更",
+                    status="done",
+                    details={
+                        "turn_type": understanding.turn_type,
+                        "inherit_previous": understanding.inherit_previous,
+                        "preserve_scenario": understanding.preserve_scenario,
+                        "confidence": understanding.confidence,
+                        "delta": delta.model_dump(),
+                    },
+                )
+            )
+            return understanding, delta, "llm_structured_delta"
+        except Exception as exc:
+            logger.exception("step failed step=parse_query_delta mode=llm fallback=true error=%s", type(exc).__name__)
+            trace.append(
+                AgentTraceStep(
+                    step="parse_query_delta",
+                    label=f"LLM 状态变更解析失败，使用规则兜底：{type(exc).__name__}",
+                    status="fallback",
+                    details={"delta": fallback_delta.model_dump()},
+                )
+            )
+            return fallback_understanding, fallback_delta, "rule_fallback_delta"
+
+    async def _llm_parse_query_delta(self, message: str, session_state) -> dict:
+        schema = {
+            "understanding": {
+                "turn_type": ["new_plan", "add_constraint", "modify_constraint", "remove_constraint", "route_detail", "general_chat"],
+                "inherit_previous": "boolean",
+                "preserve_scenario": "boolean",
+                "target_route_ref": "current or null",
+                "target_stop_ref": "string or null",
+                "question_type": "string or null",
+                "confidence": "0-1 number",
+                "reason": "short Chinese reason",
+            },
+            "delta": {
+                "added_hard_constraints": "object",
+                "modified_hard_constraints": "object; explicit user changes such as people_count=2",
+                "removed_hard_constraints": "array",
+                "added_preferences": "array using canonical labels",
+                "removed_preferences": "array using canonical labels",
+                "added_avoid_tags": "array using canonical labels",
+                "removed_avoid_tags": "array using canonical labels",
+                "added_implicit_needs": "array",
+                "removed_implicit_needs": "array",
+                "added_must_include": "array such as meal_stop/rest_stop",
+                "removed_must_include": "array such as meal_stop/rest_stop",
+            },
+        }
+        allowed = self._delta_allowed_values()
+        previous_state = session_state.trip_state.model_dump() if session_state.trip_state else None
+        response = await self.llm_client.complete(
+            [
+                {
+                    "role": "system",
+                    "content": (
+                        "你是路线规划 Agent 的状态变更解析器，只输出 JSON object。"
+                        "你的任务不是重写完整 Intent，而是比较用户本轮消息和上一轮 TripState，输出 QueryUnderstanding 和 IntentDelta。"
+                        "本轮用户明确说出的硬约束必须进入 modified_hard_constraints，例如人数、时长、预算、开始时间、城市。"
+                        "用户否定的偏好必须进入 removed_preferences 或 removed_must_include。"
+                        "不要发明标签；preferences/avoid_tags/must_include 只能使用允许值。"
+                        "如果只是隐含建议升级为显式必须，只写 added_must_include 和 removed_implicit_needs。"
+                    ),
+                },
+                {
+                    "role": "user",
+                    "content": json.dumps(
+                        {
+                            "message": message,
+                            "previous_trip_state": previous_state,
+                            "has_previous_intent": session_state.last_intent is not None,
+                            "schema": schema,
+                            "allowed_values": allowed,
+                        },
+                        ensure_ascii=False,
+                    ),
+                },
+            ],
+            json_mode=True,
+        )
+        content = response["choices"][0]["message"]["content"]
+        return self._load_json_object(content)
+
+    def _normalize_intent_delta(self, delta: IntentDelta) -> IntentDelta:
+        data = delta.model_dump()
+        data["added_preferences"] = self._filter_allowed_preferences(normalize_preferences(data["added_preferences"]))
+        data["removed_preferences"] = self._filter_allowed_preferences(normalize_preferences(data["removed_preferences"]))
+        data["added_avoid_tags"] = self._filter_allowed_avoid_tags(normalize_avoid_tags(data["added_avoid_tags"]))
+        data["removed_avoid_tags"] = self._filter_allowed_avoid_tags(normalize_avoid_tags(data["removed_avoid_tags"]))
+        data["added_implicit_needs"] = self._filter_allowed_needs(data["added_implicit_needs"])
+        data["removed_implicit_needs"] = self._filter_allowed_needs(data["removed_implicit_needs"])
+        data["added_must_include"] = self._filter_allowed_needs(data["added_must_include"])
+        data["removed_must_include"] = self._filter_allowed_needs(data["removed_must_include"])
+        data["added_hard_constraints"] = self._filter_hard_constraints(data["added_hard_constraints"])
+        data["modified_hard_constraints"] = self._filter_hard_constraints(data["modified_hard_constraints"])
+        return IntentDelta.model_validate(data)
+
+    def _delta_allowed_values(self) -> dict[str, list[str]]:
+        return {
+            "preferences": ["吃好", "少排队", "更省钱", "少走路", "citywalk", "拍照", "亲子友好", "室内", "安静", "朋友同行"],
+            "avoid_tags": ["人流密集", "排队久", "太贵", "商业街", "辣", "步行多"],
+            "needs": ["meal_stop", "rest_stop"],
+            "hard_constraints": ["city", "people_count", "start_time", "duration_hours", "budget_per_person", "scenario"],
+        }
+
+    def _filter_allowed_preferences(self, values: list[str]) -> list[str]:
+        allowed = set(self._delta_allowed_values()["preferences"])
+        return [value for value in values if value in allowed]
+
+    def _filter_allowed_avoid_tags(self, values: list[str]) -> list[str]:
+        allowed = set(self._delta_allowed_values()["avoid_tags"])
+        return [value for value in values if value in allowed]
+
+    def _filter_allowed_needs(self, values: list[str]) -> list[str]:
+        allowed = set(self._delta_allowed_values()["needs"])
+        return [value for value in values if value in allowed]
+
+    def _filter_hard_constraints(self, values: dict[str, object]) -> dict[str, object]:
+        allowed = set(self._delta_allowed_values()["hard_constraints"])
+        result: dict[str, object] = {}
+        for key, value in values.items():
+            if key not in allowed:
+                continue
+            if key in {"people_count", "duration_hours", "budget_per_person"}:
+                result[key] = self._coerce_int(value, 0)
+            elif key in {"city", "start_time", "scenario"} and value:
+                result[key] = str(value)
+        return result
+
     def _build_query_understanding(self, message_route, context_applied: bool) -> QueryUnderstanding:
         return QueryUnderstanding(
             turn_type=message_route.turn_type.value if message_route.turn_type else message_route.intent_type.value,
@@ -295,23 +460,46 @@ class AgentOrchestrator:
         if previous_state is None and session_state.last_intent:
             previous_state = TripState.from_intent(session_state.last_intent)
 
-        previous_preferences = set(previous_state.soft_preferences if previous_state else [])
-        previous_avoid_tags = set(previous_state.avoid_tags if previous_state else [])
+        explicit_fields = extract_explicit_trip_fields(message)
+        previous_preferences = set(normalize_preferences(previous_state.soft_preferences) if previous_state else [])
+        previous_avoid_tags = set(normalize_avoid_tags(previous_state.avoid_tags) if previous_state else [])
+        current_preferences = normalize_preferences(intent.preferences)
+        current_avoid_tags = normalize_avoid_tags(intent.avoid_tags)
+        removed_preferences = extract_removed_preferences(message)
         delta = IntentDelta(
-            added_preferences=[preference for preference in intent.preferences if preference not in previous_preferences],
-            added_avoid_tags=[avoid_tag for avoid_tag in intent.avoid_tags if avoid_tag not in previous_avoid_tags],
+            added_preferences=[
+                preference
+                for preference in current_preferences
+                if preference not in previous_preferences and preference not in removed_preferences
+            ],
+            removed_preferences=[preference for preference in removed_preferences if preference in previous_preferences or preference in current_preferences],
+            added_avoid_tags=[avoid_tag for avoid_tag in current_avoid_tags if avoid_tag not in previous_avoid_tags],
         )
 
         if previous_state and intent.city_from_message and intent.city != previous_state.city:
             delta.modified_hard_constraints["city"] = intent.city
+        if previous_state:
+            for field in ("people_count", "duration_hours", "start_time", "budget_per_person"):
+                if field in explicit_fields:
+                    value = explicit_fields[field]
+                    if getattr(previous_state, field) != value:
+                        delta.modified_hard_constraints[field] = value
 
-        if self._message_requests_meal_stop(message, delta.added_preferences, message_route):
+        if self._message_removes_meal_stop(message):
+            if "meal_stop" not in delta.removed_must_include:
+                delta.removed_must_include.append("meal_stop")
+            if "meal_stop" not in delta.removed_implicit_needs:
+                delta.removed_implicit_needs.append("meal_stop")
+        elif self._message_requests_meal_stop(message, delta.added_preferences, message_route):
             if "meal_stop" not in delta.added_must_include:
                 delta.added_must_include.append("meal_stop")
             if "meal_stop" not in delta.removed_implicit_needs:
                 delta.removed_implicit_needs.append("meal_stop")
 
         return delta
+
+    def _message_removes_meal_stop(self, message: str) -> bool:
+        return bool(extract_removed_preferences(message))
 
     def _message_requests_meal_stop(self, message: str, added_preferences: list[str], message_route) -> bool:
         meal_terms = ["吃饭", "吃好", "餐厅", "美食", "小吃", "晚饭", "午饭", "饭"]

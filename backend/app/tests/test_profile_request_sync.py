@@ -28,17 +28,17 @@ class ProfileRequestSyncTest(unittest.TestCase):
         request = ChatRequest(
             user_id="user_frontend",
             message="帮我规划路线",
-            preferences=["少排队", "吃好"],
-            avoid_tags=["人多"],
+            preferences=["别排队", "好吃", "高性价比"],
+            avoid_tags=["人多", "贵"],
             preference_weights={"quality": 0.2, "queue": 0.35, "distance": 0.2, "budget": 0.2, "preference": 0.05},
         )
 
         profile = ProfileService().get_profile(request.user_id, request)
 
         self.assertEqual(profile.user_id, "user_frontend")
-        self.assertEqual(profile.tags, ["少排队", "吃好"])
-        self.assertEqual(profile.preferences, ["少排队", "吃好"])
-        self.assertEqual(profile.avoid_tags, ["人多"])
+        self.assertEqual(profile.tags, ["少排队", "吃好", "更省钱"])
+        self.assertEqual(profile.preferences, ["少排队", "吃好", "更省钱"])
+        self.assertEqual(profile.avoid_tags, ["人流密集", "太贵"])
         self.assertEqual(profile.preference_weights["queue"], 0.35)
 
     def test_profile_service_merges_request_fields_into_intent(self) -> None:
@@ -46,8 +46,8 @@ class ProfileRequestSyncTest(unittest.TestCase):
             message="半天 citywalk",
             city="杭州",
             scenarios=["friends_citywalk"],
-            preferences=["少排队"],
-            avoid_tags=["商业街"],
+            preferences=["别排队", "打卡"],
+            avoid_tags=["人多", "贵"],
             budget_level="low",
         )
         parsed_intent = Intent(city="上海", budget_per_person=300, preferences=["拍照"], avoid_tags=[])
@@ -57,7 +57,7 @@ class ProfileRequestSyncTest(unittest.TestCase):
         self.assertEqual(merged.city, "杭州")
         self.assertEqual(merged.scenario, "friends_citywalk")
         self.assertEqual(merged.preferences, ["拍照", "少排队"])
-        self.assertEqual(merged.avoid_tags, ["商业街"])
+        self.assertEqual(merged.avoid_tags, ["人流密集", "太贵"])
         self.assertEqual(merged.budget_per_person, 100)
 
     def test_message_city_wins_over_onboarding_city(self) -> None:
