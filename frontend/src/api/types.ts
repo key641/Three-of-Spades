@@ -11,6 +11,8 @@ export interface RouteStop {
   category: string;
   district?: string;
   address?: string;
+  lat?: number | null;
+  lng?: number | null;
   start_time: string;
   end_time: string;
   estimated_cost: number;
@@ -28,6 +30,10 @@ export interface RouteStop {
   travel_minutes_from_previous?: number | null;
   distance_km_from_previous?: number | null;
   transport_mode_from_previous?: string | null;
+  polyline_from_previous?: string;
+  amap_distance_meters_from_previous?: number | null;
+  amap_duration_minutes_from_previous?: number | null;
+  route_leg_source_from_previous?: string | null;
   reason?: string | null;
 }
 

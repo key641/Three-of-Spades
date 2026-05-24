@@ -55,6 +55,97 @@
 
 ---
 
+## 2026-05-24 - `445a8fb` - `feat(route): 接入高德路线字段并补充协作文档`
+
+负责人：A 同学 / 后端外部 API 接入，B 同学路线策略联调，C 同学地图展示预留
+
+### 更新概览
+
+本次把后端路线规划链路接入高德 Web 服务路线能力。系统现在会优先通过高德计算相邻点之间的真实距离、耗时、路线折线和步骤信息；如果没有配置 key、网络不可用或高德接口失败，则自动回退到本地距离估算，保证 demo 流程不被外部接口阻断。
+
+同时补充了高德接入规划和字段契约文档，并把文档改成中文，方便 B 同学直接理解应该使用哪些路线字段做评分和策略优化。
+
+### 主要变更
+
+- 新增 `AmapService`：
+  - 读取 `AMAP_WEB_SERVICE_KEY`。
+  - 调用高德 Web 服务步行/驾车路线接口。
+  - 将高德原始返回整理成项目自己的 `RouteLeg` 字段。
+  - 高德不可用时返回 fallback 路段，避免路线生成中断。
+
+- 扩展 `RouteStop` 路线字段：
+  - 新增 `lat`、`lng`，供前端地图标记使用。
+  - 新增 `polyline_from_previous`，表示上一站到当前站的地图折线。
+  - 新增 `amap_distance_meters_from_previous`、`amap_duration_minutes_from_previous`，保留更细粒度的高德距离和耗时。
+  - 新增 `route_leg_source_from_previous`，用于区分当前路段来自 `amap` 还是 `fallback`。
+
+- `RouteService` 接入高德路段补全：
+  - 保持原有 POI 组合和路线策略逻辑不变。
+  - 在生成每个 stop 时补全真实路段距离、耗时、交通方式和 polyline。
+  - B 同学仍然使用 `travel_minutes_from_previous`、`distance_km_from_previous` 和 `transport_mode_from_previous` 做评分。
+
+- 文档补充：
+  - 新增 `docs/amap_route_integration_plan.md`，说明整体方案、分工、数据流、B/C 使用方式和测试结果。
+  - 新增 `docs/amap_route_contract.md`，说明 `RouteStop` 新字段和 B 同学评分建议。
+  - 两份文档均已改为中文说明。
+
+- 前端类型同步：
+  - `frontend/src/api/types.ts` 增加地图和高德路段字段，为后续 C 同学接高德 JS 地图展示做准备。
+
+### 涉及文件
+
+- `backend/app/services/amap_service.py`
+- `backend/app/services/route_service.py`
+- `backend/app/schemas/route.py`
+- `backend/app/config.py`
+- `backend/app/tests/test_amap_service.py`
+- `backend/app/tests/test_route_plan.py`
+- `frontend/src/api/types.ts`
+- `.env.example`
+- `docs/amap_route_integration_plan.md`
+- `docs/amap_route_contract.md`
+- `docs/version_log.md`
+
+### 协作影响
+
+| 角色 | 影响 | 需要关注 |
+| --- | --- | --- |
+| A 同学：Agent / 后端 | 后端已具备高德路线接口封装，Agent 后续可以继续通过 `RouteService` 获取真实路段字段。 | 需要在本地 `.env` 配置 `AMAP_WEB_SERVICE_KEY`；不要把高德原始 JSON 直接暴露给路线策略或前端。 |
+| B 同学：POI / 路线策略 | 可以直接使用 `RouteStop` 中的真实距离、耗时、交通方式和来源字段做评分。 | 高德真实步行耗时会比原来的直线估算更长，短时间窗路线可能被过滤，需要考虑 taxi/metro 等交通方式切换策略。 |
+| C 同学：前端 / UI | 前端类型已包含 `lat`、`lng` 和 `polyline_from_previous`，后续可用高德 JS API 画 marker 和路线折线。 | 前端地图接入时需要确认使用的是 JS API key 和安全密钥；当前完成的是后端 Web 服务 key 链路。 |
+
+### 风险与注意事项
+
+- 当前后端路线链路已验证高德 key 生效，但普通沙盒环境不允许联网时会走 fallback；真实运行环境需要允许后端访问 `restapi.amap.com`。
+- 接入真实步行路线后，4 小时时间窗下部分路线会因为耗时变长被过滤；8 小时时间窗已验证可以正常生成路线并返回 `source=amap` 的路段字段。
+- 当前只做两点之间的路段补全，尚未实现全局最优路线算法、实时路况、公交换乘细节或高德 MCP。
+- 后端虚拟环境目前缺少 `pytest`，完整 pytest 命令无法运行；已用定向契约检查和 Python 编译检查验证本次核心链路。
+
+### 建议验证
+
+```bash
+cd backend
+.\.venv\Scripts\python.exe - <<'PY'
+from app.services.amap_service import AmapService, GeoPoint
+
+leg = AmapService(timeout_seconds=10).route_leg(
+    origin=GeoPoint(lat=31.2304, lng=121.4737),
+    destination=GeoPoint(lat=31.2397, lng=121.4998),
+    mode="walk",
+)
+print(leg.source, leg.distance_meters, leg.duration_minutes, bool(leg.polyline))
+PY
+```
+
+期望联网环境下输出 `amap`，并有距离、耗时和 polyline。
+
+```bash
+cd frontend
+npm.cmd run build
+```
+
+---
+
 ## 2026-05-24 - `788bac6` - `feat(agent): add state tracing and streaming thinking UI`
 
 负责人：Agent / 后端编排 / A 同学，前端 trace 展示 / C 侧联调
