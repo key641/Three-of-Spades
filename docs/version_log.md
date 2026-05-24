@@ -55,7 +55,7 @@
 
 ---
 
-## 2026-05-24 - `pending` - `feat(agent): promote structured delta understanding`
+## 2026-05-24 - `8ae5b55` - `feat(agent): promote structured delta understanding`
 
 负责人：Agent / 后端编排 / A 同学，前端 trace 调试体验 / C 侧联调
 
