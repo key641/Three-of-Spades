@@ -416,7 +416,7 @@ class OrchestratorIntentFlowTest(unittest.TestCase):
             )
 
             await orchestrator.handle_message(ChatRequest(session_id="s1", user_id="user_001", message="我想两个人在上海一日游，喜欢拍照"))
-            await orchestrator.handle_message(ChatRequest(session_id="s1", user_id="user_001", message="我还要吃饭"))
+            response = await orchestrator.handle_message(ChatRequest(session_id="s1", user_id="user_001", message="我还要吃饭"))
 
             state = orchestrator.memory.get_state("s1")
             self.assertEqual(state.last_intent.city, "上海")
@@ -424,6 +424,23 @@ class OrchestratorIntentFlowTest(unittest.TestCase):
             self.assertEqual(state.last_intent.duration_hours, 8)
             self.assertEqual(state.last_intent.scenario, "friends_citywalk")
             self.assertEqual(state.last_intent.preferences, ["拍照", "吃好"])
+            self.assertIsNotNone(state.trip_state)
+            self.assertEqual(state.trip_state.city, "上海")
+            self.assertEqual(state.trip_state.people_count, 2)
+            self.assertEqual(state.trip_state.duration_hours, 8)
+            self.assertEqual(state.trip_state.soft_preferences, ["拍照", "吃好"])
+            self.assertIn("meal_stop", state.trip_state.must_include)
+            route_step = next(step for step in response.agent_trace if step.step == "route_message")
+            delta_step = next(step for step in response.agent_trace if step.step == "apply_query_delta")
+            self.assertEqual(route_step.details["turn_type"], "add_constraint")
+            self.assertTrue(route_step.details["inherit_previous"])
+            self.assertIn("meal_stop", delta_step.details["added"])
+            self.assertIn("保留", response.message)
+            self.assertIn("上海", response.message)
+            self.assertIn("2人", response.message)
+            self.assertIn("拍照", response.message)
+            self.assertIn("新增", response.message)
+            self.assertIn("吃饭节点", response.message)
 
         import asyncio
 

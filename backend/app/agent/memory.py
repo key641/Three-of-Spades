@@ -1,4 +1,4 @@
-from app.agent.schemas import ChatTurn, SessionState
+from app.agent.schemas import ChatTurn, SessionState, TripState
 from app.schemas.intent import Intent
 from app.schemas.route import Route
 from app.schemas.user import UserProfile
@@ -32,6 +32,7 @@ class SessionMemory:
         intent: Intent,
         user_profile: UserProfile,
         routes: list[Route],
+        trip_state: TripState | None = None,
     ) -> None:
         state = self.get_state(session_id)
         state.recent_messages = [
@@ -40,6 +41,7 @@ class SessionMemory:
             ChatTurn(role="assistant", content=assistant_message),
         ][-12:]
         state.last_intent = intent
+        state.trip_state = trip_state or TripState.from_intent(intent)
         state.user_profile = user_profile
         state.current_routes = routes
         self.save_state(state)

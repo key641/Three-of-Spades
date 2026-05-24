@@ -24,6 +24,7 @@ class AgentTraceStep(BaseModel):
     step: str
     label: str
     status: str
+    details: dict[str, object] = Field(default_factory=dict)
 
 
 class ChatResponse(BaseModel):

@@ -1,6 +1,7 @@
-import { AlertTriangle, CheckCircle, Loader } from "lucide-react";
+import { AlertTriangle, BrainCircuit, CheckCircle, Loader } from "lucide-react";
 import { useState } from "react";
 import type { AgentTraceStep } from "../api/types";
+import { buildThinkingSummary } from "../utils/agentThinking";
 import { STEP_ICONS } from "../utils/traceIcons";
 
 interface AgentTraceProps {
@@ -12,6 +13,7 @@ export function AgentTrace({ steps, loading = false }: AgentTraceProps) {
   const [expanded, setExpanded] = useState(false);
   const issueCount = steps.filter((step) => step.status === "fallback" || step.status === "error").length;
   const hasIssue = issueCount > 0;
+  const thinking = buildThinkingSummary(steps, loading);
 
   // 没有数据且不在加载时，不渲染
   if (!loading && steps.length === 0) return null;
@@ -28,7 +30,8 @@ export function AgentTrace({ steps, loading = false }: AgentTraceProps) {
         {loading ? (
           <>
             <Loader size={14} style={{ animation: "spin 1s linear infinite" }} />
-            <span>Agent 正在处理…</span>
+            <span>{thinking.headline}</span>
+            <span className="trace-summary-status">实时更新中</span>
           </>
         ) : (
           <>
@@ -37,11 +40,28 @@ export function AgentTrace({ steps, loading = false }: AgentTraceProps) {
             ) : (
               <CheckCircle size={14} style={{ color: "var(--color-success)" }} />
             )}
-            <span>{hasIssue ? `完成 ${steps.length} 步，${issueCount} 项需关注` : `已完成 ${steps.length} 步`}</span>
+            <span>{thinking.headline}</span>
+            <span className={hasIssue ? "trace-summary-status is-warning" : "trace-summary-status"}>
+              {thinking.statusText}
+            </span>
             <span style={{ marginLeft: "auto" }}>{expanded ? "▲" : "▼"}</span>
           </>
         )}
       </button>
+
+      <div className="trace-thinking">
+        <div className="trace-thinking-title">
+          <BrainCircuit size={15} />
+          <span>{loading ? "正在组织路线思路" : thinking.statusText}</span>
+        </div>
+        <div className="trace-thinking-list">
+          {thinking.items.map((item) => (
+            <span className="trace-thinking-item" key={item}>
+              {item}
+            </span>
+          ))}
+        </div>
+      </div>
 
       {/* 步骤列表 */}
       {(expanded || loading) && (

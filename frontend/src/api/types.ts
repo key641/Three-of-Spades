@@ -2,6 +2,7 @@ export interface AgentTraceStep {
   step: string;
   label: string;
   status: string;
+  details?: Record<string, unknown>;
 }
 
 export interface RouteStop {
@@ -72,3 +73,8 @@ export interface ChatResponse {
   routes: Route[];
   agent_trace: AgentTraceStep[];
 }
+
+export type ChatStreamEvent =
+  | { type: "progress"; step: AgentTraceStep }
+  | { type: "final"; response: ChatResponse }
+  | { type: "error"; message: string };

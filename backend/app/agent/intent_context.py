@@ -1,4 +1,4 @@
-from app.agent.schemas import SessionState
+from app.agent.schemas import IntentDelta, QueryUnderstanding, SessionState, StateChangeSummary, TripState
 from app.agent.message_router import MessageRoute, TurnType
 from app.schemas.intent import Intent
 
@@ -77,6 +77,94 @@ def apply_session_context(intent: Intent, message: str, state: SessionState, rou
         merged["scenario"] = current["scenario"]
 
     return Intent.model_validate(merged)
+
+
+def apply_query_delta(
+    intent: Intent,
+    state: SessionState,
+    understanding: QueryUnderstanding,
+    delta: IntentDelta,
+) -> tuple[Intent, TripState, StateChangeSummary]:
+    base_state = _base_trip_state(intent, state, understanding)
+    original = base_state.model_dump()
+    data = base_state.model_dump()
+    summary = StateChangeSummary()
+
+    _apply_hard_constraint_changes(data, delta, summary)
+    _apply_list_changes(data, "soft_preferences", delta.added_preferences, delta.removed_preferences, summary)
+    _apply_list_changes(data, "avoid_tags", delta.added_avoid_tags, delta.removed_avoid_tags, summary)
+    _apply_list_changes(data, "implicit_needs", delta.added_implicit_needs, delta.removed_implicit_needs, summary)
+    _apply_list_changes(data, "must_include", delta.added_must_include, delta.removed_must_include, summary)
+
+    for value in delta.added_must_include:
+        if value in data["implicit_needs"]:
+            data["implicit_needs"] = [item for item in data["implicit_needs"] if item != value]
+            if value not in summary.removed:
+                summary.removed.append(value)
+
+    if understanding.inherit_previous:
+        for key in ("city", "people_count", "start_time", "duration_hours", "budget_per_person", "scenario"):
+            if key not in summary.changed:
+                summary.kept.append(key)
+
+    data["hard_constraints"] = {
+        "city": data["city"],
+        "people_count": data["people_count"],
+        "start_time": data["start_time"],
+        "duration_hours": data["duration_hours"],
+        "budget_per_person": data["budget_per_person"],
+    }
+
+    trip_state = TripState.model_validate(data)
+    merged_intent = trip_state.to_intent()
+    if original.get("city") != trip_state.city or "city" in delta.modified_hard_constraints or "city" in delta.added_hard_constraints:
+        merged_intent.city_from_message = True
+    return merged_intent, trip_state, summary
+
+
+def _base_trip_state(intent: Intent, state: SessionState, understanding: QueryUnderstanding) -> TripState:
+    if understanding.inherit_previous:
+        if state.trip_state:
+            return state.trip_state
+        if state.last_intent:
+            return TripState.from_intent(state.last_intent)
+    return TripState.from_intent(intent)
+
+
+def _apply_hard_constraint_changes(data: dict, delta: IntentDelta, summary: StateChangeSummary) -> None:
+    for key in delta.removed_hard_constraints:
+        if key in data["hard_constraints"]:
+            summary.removed.append(key)
+            data["hard_constraints"].pop(key, None)
+
+    changes = delta.added_hard_constraints | delta.modified_hard_constraints
+    for key, value in changes.items():
+        if key not in {"city", "people_count", "start_time", "duration_hours", "budget_per_person", "scenario"}:
+            data["hard_constraints"][key] = value
+            continue
+        previous = data.get(key)
+        if previous != value:
+            data[key] = value
+            summary.changed[key] = {"from": previous, "to": value}
+
+
+def _apply_list_changes(
+    data: dict,
+    field: str,
+    added_values: list[str],
+    removed_values: list[str],
+    summary: StateChangeSummary,
+) -> None:
+    current = list(data[field])
+    for value in removed_values:
+        if value in current:
+            current.remove(value)
+            summary.removed.append(value)
+    for value in added_values:
+        if value not in current:
+            current.append(value)
+            summary.added.append(value)
+    data[field] = current
 
 
 def _unique(values: list[str]) -> list[str]:
