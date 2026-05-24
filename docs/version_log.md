@@ -632,3 +632,128 @@ for route in routes:
         print(" -", stop.name, stop.primary_category, stop.route_roles)
 PY
 ```
+
+## 2026-05-24 - `42698d9` - `feat(route): add map-aware dynamic route replanning`
+
+负责人：动态重规划 / 地图适配 / B 同学
+
+### 更新概览
+
+本次更新为“用户已选路线并开始行进后的实时调整”补齐了后端基础能力。路线不再只能一次性生成，而是可以在排队暴增、POI 临时不可用、交通拥堵、用户累了、天气变化等事件发生后，保留已完成点位，只对后续受影响部分进行局部重规划。
+
+同时为后续接入真实地图 API 做了适配层设计：业务逻辑不直接绑定高德、百度、Google 或 Mapbox，而是通过统一的 `MapProvider` 获取实时通勤、地点状态和附近替代 POI。当前实现使用 mock provider 跑通流程，后续替换真实 provider 即可。
+
+### 主要变更
+
+- 新增地图 API 适配层：
+  - 新增 `MapProvider` 协议和 `MockMapProvider`。
+  - 统一封装实时路程估算、路线选项、附近 POI 搜索、地点状态、地理编码和反向地理编码。
+  - 业务层只消费统一模型，不依赖具体地图供应商。
+
+- 新增实时地图数据结构：
+  - `LiveLegEstimate`：表示实时距离、通勤时间、交通倍率、交通状态和数据来源。
+  - `ExternalPOIStatus`：表示 POI 是否营业、是否可达、实时排队、人流和状态原因。
+  - `ExternalPOICandidate`：表示地图 API 搜出的外部候选 POI。
+
+- 扩展 POI 地图映射字段：
+  - `external_place_ids`
+  - `source_provider`
+  - `source_updated_at`
+  - `map_category`
+  - `map_category_code`
+  - `geohash`
+  - `canonical_poi_id`
+  - 这些字段用于后续把本地 POI 和真实地图 place id 对齐，同时不覆盖本地维护的路线角色、体验标签和推荐语义。
+
+- 重写动态重规划逻辑：
+  - `ReplanService` 不再只返回原路线占位文案。
+  - 支持保留 `completed_poi_ids`，避免已完成点位被删除。
+  - 支持 `locked_poi_ids`，默认不改用户锁定的后续点位。
+  - 针对 `queue_spike`、`poi_closed`、`traffic_jam`、`user_tired`、`weather_change` 做局部重规划。
+  - 优先用本地 POI 找同角色替代点；本地候选不足时，可通过地图 provider 搜附近外部候选并归一化为本地 POI。
+  - 重规划后会重新计算 stops 时间线、总排队、总交通、总距离、总成本和路线评分。
+
+- 扩展 `/api/routes/replan` 前后端契约：
+  - 请求新增 `selected_route_id`、`current_poi_id`、`current_lat/current_lng`、`current_time`、`locked_poi_ids`、`event_payload`、`intent`、`user_profile`。
+  - 响应路线新增 `changed_stops`、`live_warnings`、`data_sources`。
+  - 前端 TypeScript 类型同步增加这些可选字段，现有页面不展示时也保持兼容。
+
+- 新增测试：
+  - 覆盖排队暴增后替换未来点位并保留已完成点位。
+  - 覆盖 POI 临时关闭后必须从后续路线移除。
+  - 覆盖交通拥堵后重新计算通勤并返回实时 warning。
+  - 覆盖本地替代点不足时使用 mock 地图外部候选兜底。
+  - 完整后端测试已通过 `41 passed`。
+
+### 涉及文件
+
+- `backend/app/schemas/map.py`
+- `backend/app/schemas/poi.py`
+- `backend/app/schemas/route.py`
+- `backend/app/services/map_provider.py`
+- `backend/app/services/poi_service.py`
+- `backend/app/services/replan_service.py`
+- `backend/app/tests/test_replan_service.py`
+- `docs/api_contract.md`
+- `frontend/src/api/types.ts`
+
+### 协作影响
+
+| 角色 | 影响 | 需要关注 |
+| --- | --- | --- |
+| A 同学：Agent / 后端 | Agent 后续可以在用户反馈“排队太久 / 堵车 / 累了 / 下雨了”时调用 `/api/routes/replan`，并把事件结构化放入 `event_payload`。 | prompt 或工具调用需要传入当前路线、已完成 POI、当前时间和事件类型；总结时可优先引用 `replan_reason`、`changed_stops`、`live_warnings`。 |
+| B 同学：POI / 路线策略 | 动态重规划开始复用 POI 语义角色和路线评分，并为真实地图 API 预留 place id 映射。 | 后续补 `pois.json` 时可逐步增加 `external_place_ids`、`map_category`、`canonical_poi_id`；真实地图数据进入路线前仍需保留本地语义归一化。 |
+| C 同学：前端 / UI | `Route` 新增可选字段，可用于展示“路线已动态调整”“替换了哪个点”“实时风险提示”。 | 现有页面只展示 `replan_reason` 仍可工作；如要增强 UI，可读取 `changed_stops/live_warnings/data_sources` 做差异卡片。 |
+
+### 风险与注意事项
+
+- 当前地图适配层仍使用 `MockMapProvider`，尚未接入真实高德、百度、Google 或 Mapbox。
+- 外部 POI 候选是 mock 数据，主要用于验证“地图 API 搜附近替代点”的链路。
+- 重规划以局部替换为主，不会整条路线推倒重来；如果本地候选不足且未允许外部候选，可能保留原路线并只返回 warning。
+- 新增的 `changed_stops/live_warnings/data_sources` 是响应增强字段，前端不展示也不会影响原有路线卡片。
+- `docs/api_contract.md` 已同步 `/api/routes/replan` 的新增请求与响应字段。
+
+### 建议验证
+
+```bash
+cd backend
+.venv/bin/python -m pytest app/tests
+```
+
+```bash
+cd backend
+.venv/bin/python - <<'PY'
+from app.schemas.intent import Intent
+from app.schemas.route import ReplanRequest, RoutePlanRequest
+from app.services.poi_service import POIService
+from app.services.profile_service import ProfileService
+from app.services.route_service import RouteService
+from app.services.replan_service import ReplanService
+
+intent = Intent(preferences=["citywalk", "吃好", "少排队"], budget_per_person=300)
+profile = ProfileService().get_profile("user_demo")
+pois = POIService().search(intent, user_profile=profile)
+route = RouteService().generate_routes(RoutePlanRequest(intent=intent, user_profile=profile, candidate_pois=pois)).routes[0]
+affected = route.stops[1]
+
+response = ReplanService().replan(
+    ReplanRequest(
+        session_id="session_demo",
+        selected_route_id=route.route_id,
+        event_type="queue_spike",
+        event_label="排队突然变久",
+        current_routes=[route],
+        completed_poi_ids=[route.stops[0].poi_id],
+        current_time=route.stops[0].end_time,
+        event_payload={"affected_poi_id": affected.poi_id, "queue_minutes": 90},
+        intent=intent,
+        user_profile=profile,
+    )
+)
+
+updated = response.routes[0]
+print(updated.replan_reason)
+print(updated.live_warnings)
+print([(change.from_name, change.to_name, change.reason) for change in updated.changed_stops])
+PY
+```
