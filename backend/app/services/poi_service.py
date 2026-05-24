@@ -51,6 +51,12 @@ class POIService:
         )
         return [candidate.poi for candidate in ranked[:limit]]
 
+    def all_pois(self, city: str | None = None) -> list[POI]:
+        pois = [candidate.poi for candidate in self._candidates]
+        if city:
+            return [poi for poi in pois if poi.city == city]
+        return pois
+
     def _load_candidates(self) -> list[POICandidate]:
         with self.data_path.open(encoding="utf-8") as file:
             payload = json.load(file)
@@ -96,6 +102,13 @@ class POIService:
             district=str(location.get("district", "")),
             address=str(location.get("address", "")),
             category=category,
+            external_place_ids=dict(raw.get("external_place_ids") or {}),
+            source_provider=str(raw.get("source_provider", "local")),
+            source_updated_at=str(raw.get("source_updated_at", "")),
+            map_category=str(raw.get("map_category", category)),
+            map_category_code=str(raw.get("map_category_code", "")),
+            geohash=str(raw.get("geohash", "")),
+            canonical_poi_id=str(raw.get("canonical_poi_id", raw.get("poi_id", ""))),
             primary_category=primary_category,
             secondary_categories=secondary_categories,
             route_roles=route_roles,

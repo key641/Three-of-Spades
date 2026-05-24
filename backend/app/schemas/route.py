@@ -1,5 +1,7 @@
 from pydantic import BaseModel, Field
 
+from typing import Any
+
 from app.schemas.intent import Intent
 from app.schemas.poi import POI
 from app.schemas.user import StrategyWeights, UserProfile
@@ -43,6 +45,15 @@ class RouteScoreBreakdown(BaseModel):
     preference: int
 
 
+class RouteChange(BaseModel):
+    change_type: str
+    from_poi_id: str | None = None
+    from_name: str | None = None
+    to_poi_id: str | None = None
+    to_name: str | None = None
+    reason: str
+
+
 class Route(BaseModel):
     route_id: str
     title: str
@@ -58,6 +69,9 @@ class Route(BaseModel):
     stops: list[RouteStop]
     reasons: list[str]
     replan_reason: str | None = None
+    changed_stops: list[RouteChange] = Field(default_factory=list)
+    live_warnings: list[str] = Field(default_factory=list)
+    data_sources: list[str] = Field(default_factory=list)
 
 
 class RoutePlanRequest(BaseModel):
@@ -77,3 +91,12 @@ class ReplanRequest(BaseModel):
     event_label: str
     current_routes: list[Route]
     completed_poi_ids: list[str] = Field(default_factory=list)
+    selected_route_id: str | None = None
+    current_poi_id: str | None = None
+    current_lat: float | None = None
+    current_lng: float | None = None
+    current_time: str | None = None
+    locked_poi_ids: list[str] = Field(default_factory=list)
+    event_payload: dict[str, Any] = Field(default_factory=dict)
+    intent: Intent | None = None
+    user_profile: UserProfile | None = None

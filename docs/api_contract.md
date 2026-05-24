@@ -144,6 +144,67 @@ B 同学调试路线规划使用。
 
 动态事件重规划使用。
 
+### Request
+
+在用户已经选择某条路线并开始行进后，前端或 Agent 可把当前路线、已完成点位和实时事件传给后端。`current_routes` 仍兼容现有 `Route` 结构。
+
+```json
+{
+  "session_id": "session_demo",
+  "selected_route_id": "route_balanced_best",
+  "event_type": "queue_spike",
+  "event_label": "餐厅排队 90 分钟",
+  "current_routes": [],
+  "completed_poi_ids": ["poi_001"],
+  "locked_poi_ids": ["poi_003"],
+  "current_poi_id": "poi_001",
+  "current_lat": 31.2304,
+  "current_lng": 121.4737,
+  "current_time": "15:20",
+  "event_payload": {
+    "affected_poi_id": "poi_002",
+    "queue_minutes": 90,
+    "traffic_multiplier": 1.6,
+    "allow_external_candidates": false
+  }
+}
+```
+
+说明：
+
+- `event_type` 当前支持 `queue_spike`、`poi_closed`、`traffic_jam`、`user_tired`、`weather_change`。
+- `completed_poi_ids` 会被固定保留，不参与替换。
+- `locked_poi_ids` 默认保留，除非实时状态是 `closed / unavailable / sold_out`。
+- `event_payload` 是地图 API / mock provider 的扩展载体，后续接高德、百度、Google 或 Mapbox 时统一映射到内部 live status。
+
+### Response Additions
+
+每条路线除原有字段外，会额外返回：
+
+```json
+{
+  "replan_reason": "已根据「餐厅排队 90 分钟」替换受影响的后续点位，并重新计算时间、排队和交通。",
+  "changed_stops": [
+    {
+      "change_type": "replace",
+      "from_poi_id": "poi_002",
+      "from_name": "原餐厅",
+      "to_poi_id": "poi_008",
+      "to_name": "替代餐厅",
+      "reason": "原 POI 实时排队过长"
+    }
+  ],
+  "live_warnings": ["原餐厅 实时排队约 90 分钟，已换成 替代餐厅。"],
+  "data_sources": ["local", "mock"]
+}
+```
+
+说明：
+
+- `changed_stops` 用于前端展示“替换/删除/调整”的差异。
+- `live_warnings` 用于提示排队、闭店、交通拥堵等风险。
+- `data_sources` 当前可能是 `local/mock`，后续真实地图 API 接入后可出现 `amap/baidu/google/mapbox`。
+
 ## POST /api/feedback
 
 行程评分和画像更新使用。
