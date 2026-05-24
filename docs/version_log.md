@@ -480,11 +480,6 @@ for module in [test_poi_service, test_route_plan]:
 PY
 ```
 
-```bash
-cd backend
-.venv/bin/python -m compileall app
-```
-
 ## 2026-05-21 - `7d7291b` - `Merge remote-tracking branch 'origin/main' into LYNN`
 
 负责人：协作同步 / LYNN 分支
@@ -540,5 +535,100 @@ for module in [test_poi_service, test_route_plan]:
         if name.startswith("test_"):
             getattr(module, name)()
             print(f"PASS {module.__name__}.{name}")
+PY
+```
+
+## 2026-05-22 - `2ab6fd7` - `feat(route): improve POI semantics and route diversity scoring`
+
+负责人：路线策略 / POI 数据 / B 同学
+
+### 更新概览
+
+本次更新优化了 POI 召回、路线结构和路线评分逻辑，解决演示中出现的“推荐过度依赖 POI 标签”“路线里连续出现两个咖啡店或同质点位”“POI 分类过于单一，无法表达点位在路线里的角色”等问题。
+
+用户可感知的变化是：推荐路线不再只是把高分 POI 拼在一起，而是会更像一条有结构的行程，例如包含主活动点、餐饮点、咖啡/休息点、拍照点等不同角色；每个目标下仍会先生成候选路线并评分，再只返回该目标下评分最高的推荐路线。
+
+### 主要变更
+
+- 扩展 POI 语义字段：
+  - `POI` 新增 `primary_category`、`secondary_categories`、`route_roles`、`experience_tags`。
+  - `RouteStop` 同步新增这些字段，方便前端展示和调试每个点在路线中的角色。
+  - 保留原有 `category`、`tags`、`meal_type` 字段，避免破坏现有前后端契约。
+
+- POI 召回从标签匹配升级为规则语义增强：
+  - `POIService` 会从现有 `category`、`meal_type`、`tags`、`highlight_text_tags`、`suitability`、`planning_features` 自动推导语义字段。
+  - 搜索文本纳入主类别、辅助类别、路线角色和体验标签，减少只依赖原始标签命中的局限。
+  - 暂不要求立即重写 `data/seed/pois.json`，旧 seed 数据可以通过推导逻辑继续使用。
+
+- 路线生成加入结构约束：
+  - 默认每条路线最多 1 个 `coffee_break`，除非用户明确表达“咖啡探店 / 咖啡路线 / 多家咖啡”。
+  - 默认每条路线最多 1 个正餐 `meal`，除非用户明确表达“美食路线 / 扫街 / 吃很多家”。
+  - 每条推荐路线会倾向包含至少 1 个 `main_activity`，避免路线全是吃喝。
+  - `photo_citywalk` 会补足 `photo_stop` 和 `main_activity`。
+  - `indoor_rainy` 会优先补足室内主活动点。
+  - 连续同类 `primary_category` 或重复 `route_roles` 会在选点时被扣分。
+
+- 路线评分加入结构合理性：
+  - `ScoringService` 升级为基于 POI 原始字段和路线结构的五维评分。
+  - 评分继续输出 `quality`、`queue`、`budget`、`distance`、`preference`，前端接口字段不变。
+  - 缺少主活动点、目标必需角色缺失、重复咖啡/重复正餐、连续同类点都会形成 hard penalty 或 preference penalty。
+  - 每个 objective 内部生成多条候选路线后，会按评分排序并只返回 `route_<objective>_best`。
+
+- 测试补充：
+  - 增加 POI 语义字段推导测试。
+  - 增加路线结构测试，覆盖不重复咖啡、包含主活动、拍照路线包含拍照/主活动、室内雨天路线包含室内主活动等场景。
+  - 完整后端测试已通过 `37 passed`。
+
+### 涉及文件
+
+- `backend/app/schemas/poi.py`
+- `backend/app/schemas/route.py`
+- `backend/app/services/poi_service.py`
+- `backend/app/services/route_service.py`
+- `backend/app/services/scoring_service.py`
+- `backend/app/tests/test_poi_service.py`
+- `backend/app/tests/test_route_plan.py`
+
+### 协作影响
+
+| 角色 | 影响 | 需要关注 |
+| --- | --- | --- |
+| A 同学：Agent / 后端 | `/api/chat` 返回的路线 stop 现在带有更丰富的语义角色字段，Agent 总结可以引用“主活动 / 餐饮 / 咖啡休息 / 拍照点”等概念。 | LLM prompt 如果后续解释路线，可以优先使用 `Route.summary`、`Route.reasons` 和 `route_roles`，避免只复述标签。 |
+| B 同学：POI / 路线策略 | POI 召回和路线生成从单点标签匹配升级为“语义画像 + 路线结构”。 | 后续扩充 `pois.json` 时可以直接补 `primary_category`、`secondary_categories`、`route_roles`、`experience_tags`；不补也会自动推导，但人工维护会更准。 |
+| C 同学：前端 / UI | API 兼容旧字段，同时 `RouteStop` 新增语义字段，可用于调试或展示路线结构。 | 如果前端希望展示“主活动 / 咖啡休息 / 餐饮点”标签，可以读取 `route_roles`；当前不展示也不影响页面。 |
+
+### 风险与注意事项
+
+- 新语义字段目前主要由规则推导，不是真实人工标注；部分 POI 的角色可能仍需后续手动校准。
+- `primary_category` 和 `route_roles` 的枚举还不是正式产品枚举，后续如果接地图或商户真实分类，需要统一字典。
+- 当前没有引入 embedding 或向量召回，语义能力仍是规则增强，适合当前 hackathon seed 数据规模。
+- 如果用户明确要求“咖啡探店”或“美食扫街”，系统会放宽重复咖啡/重复餐饮限制；其他普通路线默认避免同质重复。
+- 本次新增了后端响应字段，但未同步更新 `docs/api_contract.md`；如果 C 侧要正式展示这些字段，建议补充接口文档。
+
+### 建议验证
+
+```bash
+cd backend
+.venv/bin/python -m pytest app/tests
+```
+
+```bash
+cd backend
+.venv/bin/python - <<'PY'
+from app.schemas.intent import Intent
+from app.schemas.route import RoutePlanRequest
+from app.services.poi_service import POIService
+from app.services.profile_service import ProfileService
+from app.services.route_service import RouteService
+
+intent = Intent(preferences=["citywalk", "吃好", "少排队"], avoid_tags=["人多"], budget_per_person=300)
+profile = ProfileService().get_profile("user_demo")
+pois = POIService().search(intent, user_profile=profile)
+routes = RouteService().generate_routes(RoutePlanRequest(intent=intent, user_profile=profile, candidate_pois=pois)).routes
+
+for route in routes:
+    print(route.objective, route.score, route.summary)
+    for stop in route.stops:
+        print(" -", stop.name, stop.primary_category, stop.route_roles)
 PY
 ```
