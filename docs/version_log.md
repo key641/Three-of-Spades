@@ -55,6 +55,132 @@
 
 ---
 
+## 2026-05-24 - `788bac6` - `feat(agent): add state tracing and streaming thinking UI`
+
+负责人：Agent / 后端编排 / A 同学，前端 trace 展示 / C 侧联调
+
+### 更新概览
+
+本次把 A 侧 Agent 从“能生成路线”继续推进到“能解释自己每一步在做什么”。后端新增结构化 TripState / IntentDelta / QueryUnderstanding 契约，并通过 `/api/chat/stream` 实时输出 Agent 处理步骤。前端的“Agent 思考过程”不再只显示固定说明，而是能展示本轮具体判断结果，例如“判定为补充需求”“继承上一轮上下文”“新增吃饭节点”“召回 N 个候选点”“生成 N 条候选路线”。
+
+同时补充了 Agent roadmap 和 B/C 支持需求文档，明确哪些能力 A 侧可以先推进，哪些能力未来需要 B 侧路线策略和 C 侧前端展示配合。
+
+### 主要变更
+
+- Agent 状态契约增强：
+  - 新增 `QueryUnderstanding`，记录本轮话术类型、是否继承上一轮、是否保留场景、是否引用上一轮路线。
+  - 新增 `IntentDelta`，描述本轮新增、修改、移除的硬约束、软偏好、隐含需求和必须包含节点。
+  - 新增 `TripState`，作为跨轮路线状态容器，保存城市、人数、时长、预算、场景、偏好、避开标签、隐含需求、必须包含节点、当前路线等信息。
+
+- 多轮状态合并增强：
+  - 新增 `apply_query_delta`，把本轮理解结果合并进上一轮 `SessionState.trip_state`。
+  - “我还要吃饭”这类补充需求会保留上一轮上海、2 人、8 小时、拍照场景，并把 `meal_stop` 从隐含建议提升为必须包含节点。
+  - Agent 回复正文会把关键状态变化用易懂话术提前说明，例如“我保留了上海、2人、8小时、拍照的设定，新增了吃饭节点。”
+
+- 流式接口新增：
+  - 新增 `POST /api/chat/stream`。
+  - 使用 NDJSON 逐步返回：`progress`、`final`、`error`。
+  - `AgentOrchestrator.handle_message` 支持 `progress_callback`，在 route_message、parse_intent、state merge、画像读取、POI 召回、路线生成、总结等节点实时发出 trace。
+
+- Trace 结构化增强：
+  - `AgentTraceStep` 新增 `details` 字段。
+  - 后端关键步骤会返回结构化结果：
+    - 消息路由：`intent_type`、`turn_type`、是否继承、是否保留场景、置信度。
+    - 意图解析：城市、人数、开始时间、时长、预算、偏好、避开标签、场景。
+    - 状态合并：保留、新增、修改、移除项。
+    - 用户画像：偏好、避开标签、画像 tags。
+    - 策略权重：quality、queue、distance、budget、preference。
+    - POI 召回：候选点数量、城市、前几个 POI 名称。
+    - 路线生成：路线数量、路线标题、目标类型。
+
+- 前端 Agent 思考过程升级：
+  - `useChat` 改为调用 `sendChatMessageStream`，发送后实时接收 progress trace。
+  - `PlannerPage` 在 loading 时展示 `liveTrace`，用户能看到后台步骤逐步出现。
+  - `AgentTrace` 新增“Agent 思考过程”摘要区。
+  - 新增 `frontend/src/utils/agentThinking.ts`，把后端 `details` 翻译成用户能读懂的话。
+  - mock 模式也补齐结构化 trace，方便后端未启动时预览同样效果。
+
+- 文档补充：
+  - 新增 `docs/agent_roadmap.md`，把原 roadmap 升级为 Agent 行为规格，包含 Core Contracts、Policy Matrix、M1/M2/M4 验收方向。
+  - 新增 `docs/bc_agent_support_requirements.md`，说明未来如果要推进 meal/rest stop、路线局部编辑、路线解释、前端 trace 展示等能力，需要 B/C 侧提供哪些字段和交互支持。
+
+- 测试补充：
+  - 新增 `backend/app/tests/test_query_delta.py`，覆盖状态合并、隐含需求、必须包含节点等行为。
+  - 新增 `backend/app/tests/test_chat_stream.py`，验证 `/api/chat/stream` 会先输出 progress，再输出 final。
+  - 扩展 `test_orchestrator_intent_flow.py`，覆盖补充吃饭需求时 trace details 必须带出 `turn_type=add_constraint`、继承上一轮、以及新增 `meal_stop`。
+
+### 涉及文件
+
+- Agent 状态与编排：
+  - `backend/app/agent/schemas.py`
+  - `backend/app/agent/intent_context.py`
+  - `backend/app/agent/memory.py`
+  - `backend/app/agent/orchestrator.py`
+  - `backend/app/schemas/chat.py`
+
+- 后端 API：
+  - `backend/app/api/chat.py`
+
+- 后端测试：
+  - `backend/app/tests/test_query_delta.py`
+  - `backend/app/tests/test_chat_stream.py`
+  - `backend/app/tests/test_orchestrator_intent_flow.py`
+
+- 前端 API / 状态 / 展示：
+  - `frontend/src/api/chatApi.ts`
+  - `frontend/src/api/types.ts`
+  - `frontend/src/hooks/useChat.ts`
+  - `frontend/src/pages/PlannerPage.tsx`
+  - `frontend/src/components/AgentTrace.tsx`
+  - `frontend/src/utils/agentThinking.ts`
+  - `frontend/src/styles/globals.css`
+
+- 文档：
+  - `docs/agent_roadmap.md`
+  - `docs/bc_agent_support_requirements.md`
+  - `docs/version_log.md`
+
+### 协作影响
+
+| 角色 | 影响 | 需要关注 |
+| --- | --- | --- |
+| A 同学：Agent / 后端 | Agent 已有更清晰的理解层、状态层、delta 合并层和 trace 层。 | 后续新增多轮能力时优先扩展 `TripState` / `IntentDelta`，不要把状态散落在 router、intent、memory 各处。 |
+| A 同学：Agent / 后端 | `/api/chat/stream` 已可实时输出后台处理步骤。 | 如果部署环境或代理不支持流式响应，需要前端 fallback 到 `/api/chat`，或统一网关配置。 |
+| B 同学：POI / 路线策略 | A 侧已能表达 `meal_stop`、`rest_stop`、`must_include`、`implicit_needs` 等规划需求。 | 当前 B 侧 route planner 还没有完整消费这些 schema，未来要支持“必须安排吃饭/休息”时需要在路线生成契约中明确 stop type 和约束语义。 |
+| B 同学：POI / 路线策略 | 前端 trace 会展示 POI 召回数量和路线生成数量。 | 如果候选点不足或路线为空，建议 B 侧未来返回更明确的过滤原因，方便 A/C 展示可解释 fallback。 |
+| C 同学：前端 / UI | 前端现在能实时展示 Agent 处理过程，而不是等最终结果。 | UI 应继续把 `details` 翻译成用户语言，不展示原始内部字段名；不要展示模型原始链路推理，只展示可解释步骤和结果。 |
+| C 同学：前端 / UI | `AgentTraceStep.details` 是新增可选字段。 | 老接口只返回 `step/label/status` 时仍需兼容；新增 step 或 status 时要同步 `agentThinking.ts` 和 trace icon 映射。 |
+
+### 风险与注意事项
+
+- `/api/chat/stream` 是新增接口，前端真实联调时需要确认 `VITE_API_BASE_URL` 指向运行了新代码的后端；旧后端只会有 `/api/chat`，会返回 404。
+- Vite `.env` 只在 dev server 启动时读取；如果切换 `VITE_API_BASE_URL` 或 mock 开关，需要重启前端 dev server。
+- `AgentTraceStep.details` 目前还没有同步进 `docs/api_contract.md`，后续需要补充 `/api/chat/stream` 的 NDJSON 事件格式和 trace details 字段说明。
+- 当前 `meal_stop/rest_stop` 已进入 A 侧状态语义，但 B 侧路线规划还需要后续按 schema 消费，否则只能部分体现在偏好和文本解释里。
+- 当前 trace 是“可解释处理过程”，不是模型原始 chain-of-thought；前端文案应继续避免展示不可控或过细的内部推理。
+
+### 建议验证
+
+```bash
+cd backend
+$env:PYTHONPATH='.'
+pytest app/tests -q
+```
+
+```bash
+cd frontend
+npm.cmd run build
+```
+
+手动联调建议：
+
+- 启动新后端，确认 `/api/chat/stream` 可访问。
+- 首轮输入“我想两个人在上海一日游，喜欢拍照”。
+- 第二轮输入“我还要吃饭”。
+- 期望前端 Agent 思考过程实时显示：本轮判定为补充需求、继承上一轮上下文、保留上海/2 人/8 小时/拍照、新增吃饭节点，并继续展示 POI 召回和路线生成结果。
+
+---
+
 ## 2026-05-21 - `pending` - `fix(agent): adapt route explanations to enriched route fields`
 
 负责人：Agent / 后端编排 / A 同学
