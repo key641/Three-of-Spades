@@ -85,6 +85,26 @@ class RoutePlanResponse(BaseModel):
     routes: list[Route]
 
 
+class RouteEvaluationRequest(BaseModel):
+    intent: Intent
+    routes: list[Route]
+    user_profile: UserProfile | None = None
+
+
+class RouteEvaluation(BaseModel):
+    route_id: str
+    score: int
+    summary: str
+    highlights: list[str] = Field(default_factory=list)
+    risks: list[str] = Field(default_factory=list)
+    recommendation: str = ""
+    source: str = "fallback"
+
+
+class RouteEvaluationResponse(BaseModel):
+    evaluations: list[RouteEvaluation]
+
+
 class ReplanRequest(BaseModel):
     session_id: str
     event_type: str

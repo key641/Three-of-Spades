@@ -139,6 +139,15 @@ def test_photo_citywalk_route_has_photo_or_main_activity_structure() -> None:
     assert any("main_activity" in stop.route_roles for stop in photo_route.stops)
 
 
+def test_multi_city_route_generation_has_usable_candidates() -> None:
+    for city in ["北京", "杭州", "成都"]:
+        response = _plan(Intent(city=city, preferences=["咖啡", "拍照"], duration_hours=6))
+
+        assert 1 <= len(response.routes) <= 3
+        assert all(route.stops for route in response.routes)
+        assert all(stop.district for route in response.routes for stop in route.stops)
+
+
 def test_indoor_rainy_route_has_indoor_main_activity() -> None:
     response = _plan(Intent(preferences=["室内", "雨天"]))
     indoor_route = next(route for route in response.routes if route.objective == "indoor_rainy")

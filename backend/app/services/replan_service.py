@@ -43,6 +43,7 @@ class ReplanService:
         completed_ids = set(request.completed_poi_ids)
         locked_ids = set(request.locked_poi_ids)
         event_payload = {**request.event_payload, "event_type": request.event_type, "event_label": request.event_label}
+        preserve_ids = set(self._as_list(event_payload.get("preserve_poi_ids")))
         poi_by_id = {poi.id: poi for poi in self.poi_service.all_pois()}
 
         completed_stops = [stop for stop in route.stops if stop.poi_id in completed_ids]
@@ -70,6 +71,8 @@ class ReplanService:
             adjusted_pois[adjusted.id] = adjusted
 
             should_replace = self._should_replace(stop, adjusted, status, request)
+            if stop.poi_id in preserve_ids and status.status not in {"closed", "unavailable", "sold_out"}:
+                should_replace = False
             if stop.poi_id in locked_ids and status.status not in {"closed", "unavailable", "sold_out"}:
                 should_replace = False
 
@@ -81,6 +84,7 @@ class ReplanService:
                     selected_poi_ids=route_poi_ids | unavailable_ids,
                     completed_ids=completed_ids,
                     locked_ids=locked_ids,
+                    preserve_ids=preserve_ids,
                     local_candidates=local_candidates,
                     request=request,
                     event_payload=event_payload,
@@ -100,7 +104,8 @@ class ReplanService:
                             reason=self._replacement_reason(status, request),
                         )
                     )
-                    live_warnings.append(f"{stop.name} {self._status_warning(status, adjusted)}，已换成 {replacement.name}。")
+                    warning = self._status_warning(status, adjusted) or self._replacement_reason(status, request)
+                    live_warnings.append(f"{stop.name} {warning}，已换成 {replacement.name}。")
                     continue
 
             replanned_future.append(adjusted)
@@ -141,6 +146,25 @@ class ReplanService:
     def _should_replace(self, stop: RouteStop, poi: POI, status: ExternalPOIStatus, request: ReplanRequest) -> bool:
         if status.status in {"closed", "unavailable", "sold_out"} or not status.is_open or not status.is_accessible:
             return True
+        if request.event_payload.get("warning_only"):
+            return False
+        if request.event_type in {"replace_poi", "avoid_poi"}:
+            if request.event_payload.get("force_replace") and self._is_affected_stop(stop, request.event_payload):
+                return True
+            if self._is_affected_stop(stop, request.event_payload):
+                return True
+            if request.event_type == "avoid_poi" and self._matches_payload_terms(stop, poi, request.event_payload, "avoid_tags"):
+                return True
+        if request.event_type == "preference_change":
+            if self._is_affected_stop(stop, request.event_payload):
+                return True
+            if self._matches_payload_terms(stop, poi, request.event_payload, "avoid_tags"):
+                return True
+            prefer_tags = set(self._as_list(request.event_payload.get("prefer_tags")))
+            if {"少走路", "轻松", "室内休息"} & prefer_tags and stop.walking_intensity == "high":
+                return True
+            if {"室内", "雨天", "下雨"} & prefer_tags and not stop.indoor:
+                return True
         if request.event_type == "queue_spike" and poi.queue_minutes >= self.QUEUE_REPLACE_THRESHOLD:
             return True
         if request.event_type == "user_tired" and stop.walking_intensity == "high":
@@ -156,17 +180,24 @@ class ReplanService:
         selected_poi_ids: set[str],
         completed_ids: set[str],
         locked_ids: set[str],
+        preserve_ids: set[str],
         local_candidates: list[POI],
         request: ReplanRequest,
         event_payload: dict,
         previous_stop: RouteStop | None,
     ) -> POI | None:
-        excluded_ids = selected_poi_ids | completed_ids | locked_ids
-        candidates = [poi for poi in local_candidates if poi.id not in excluded_ids]
+        excluded_ids = selected_poi_ids | completed_ids | locked_ids | preserve_ids
+        candidates = [
+            poi
+            for poi in local_candidates
+            if poi.id not in excluded_ids
+            and not self._matches_poi_terms(poi, self._as_list(event_payload.get("avoid_tags")))
+            and self._matches_replacement_category(poi, event_payload)
+        ]
         viable = [
             poi
             for poi in candidates
-            if self._replacement_role_score(original, poi) > 0
+            if (self._replacement_role_score(original, poi) > 0 or bool(event_payload.get("replacement_category")))
             and self._live_status_for_poi(poi, event_payload).status not in {"closed", "unavailable", "sold_out"}
         ]
         if not viable:
@@ -195,7 +226,7 @@ class ReplanService:
             origin,
             radius_km=2.5,
             categories=[original.category, original.primary_category],
-            keywords=[original.name, *original.route_roles, *original.tags],
+        keywords=[original.name, *original.route_roles, *original.tags],
             event_payload=event_payload,
         )
 
@@ -265,9 +296,13 @@ class ReplanService:
         score += max(0, 1 - min(candidate.queue_minutes, 90) / 90) * 2
         score += max(0, 1 - min(leg.travel_minutes, 60) / 60) * 1.5
         score += max(0, candidate.rating - 3.5) * 0.4
+        score += self._term_match_score(candidate, self._as_list(event_payload.get("prefer_tags"))) * 1.8
+        score -= self._term_match_score(candidate, self._as_list(event_payload.get("avoid_tags"))) * 3.0
+        score -= self._budget_penalty(candidate, request) * 1.2
+        score += self._objective_bonus(candidate, request) * 0.8
         if request.event_type == "user_tired":
             score += (1.2 if candidate.walking_intensity == "low" else 0) + (0.8 if candidate.indoor else 0)
-        if request.event_type == "weather_change":
+        if request.event_type == "weather_change" or self._has_any_payload_term(event_payload, "prefer_tags", {"室内", "雨天", "下雨"}):
             score += 1.5 if candidate.indoor else -1
         if status.status in {"closed", "unavailable", "sold_out"}:
             score -= 10
@@ -375,6 +410,12 @@ class ReplanService:
     def _replacement_reason(self, status: ExternalPOIStatus, request: ReplanRequest) -> str:
         if status.status in {"closed", "unavailable", "sold_out"}:
             return status.reason or "原 POI 实时状态不可用"
+        if request.event_type == "replace_poi":
+            return "用户希望更换该 POI"
+        if request.event_type == "avoid_poi":
+            return "用户希望避开该类型或标签"
+        if request.event_type == "preference_change":
+            return "用户偏好变化，改为更匹配的新点位"
         if request.event_type == "queue_spike":
             return "原 POI 实时排队过长"
         if request.event_type == "traffic_jam":
@@ -388,6 +429,8 @@ class ReplanService:
     def _status_warning(self, status: ExternalPOIStatus, poi: POI) -> str:
         if status.status in {"closed", "unavailable", "sold_out"}:
             return status.reason or "实时状态不可用"
+        if status.queue_minutes is not None and poi.queue_minutes > 0:
+            return f"实时排队约 {poi.queue_minutes} 分钟"
         if poi.queue_minutes >= self.QUEUE_REPLACE_THRESHOLD:
             return f"实时排队约 {poi.queue_minutes} 分钟"
         if status.live_crowd_level is not None and status.live_crowd_level >= 0.8:
@@ -400,6 +443,139 @@ class ReplanService:
         if warnings:
             return f"已根据「{request.event_label}」重新评估路线，当前无需替换点位。"
         return f"已接入实时{self.map_provider.source}数据复核，原路线仍是当前更优选择。"
+
+    def _is_affected_stop(self, stop: RouteStop, event_payload: dict) -> bool:
+        affected_ids = set(self._as_list(event_payload.get("affected_poi_ids")))
+        affected_id = str(event_payload.get("affected_poi_id", ""))
+        if affected_id:
+            affected_ids.add(affected_id)
+        if stop.poi_id in affected_ids:
+            return True
+        affected_category = str(event_payload.get("affected_category", ""))
+        return bool(affected_category and affected_category in {stop.category, stop.primary_category, *stop.tags})
+
+    def _matches_payload_terms(self, stop: RouteStop, poi: POI, event_payload: dict, key: str) -> bool:
+        return self._matches_text_terms(self._stop_text(stop, poi), self._as_list(event_payload.get(key)))
+
+    def _matches_poi_terms(self, poi: POI, terms: list[str]) -> bool:
+        return self._matches_text_terms(self._poi_text(poi), terms)
+
+    def _matches_text_terms(self, text: str, terms: list[str]) -> bool:
+        if not terms:
+            return False
+        lowered = text.lower()
+        return any(alias.lower() in lowered for term in terms for alias in self._term_aliases(term))
+
+    def _term_match_score(self, poi: POI, terms: list[str]) -> float:
+        if not terms:
+            return 0
+        text = self._poi_text(poi)
+        matches = sum(1 for term in terms if self._matches_text_terms(text, [term]))
+        return matches / len(terms)
+
+    def _matches_replacement_category(self, poi: POI, event_payload: dict) -> bool:
+        category = str(event_payload.get("replacement_category", "")).strip()
+        if not category:
+            return True
+        return self._matches_text_terms(self._poi_text(poi), [category])
+
+    def _budget_penalty(self, poi: POI, request: ReplanRequest) -> float:
+        budget = request.intent.budget_per_person if request.intent else 0
+        if budget <= 0 or poi.avg_price <= budget:
+            return 0
+        return min(1, (poi.avg_price - budget) / budget)
+
+    def _objective_bonus(self, poi: POI, request: ReplanRequest) -> float:
+        terms: set[str] = set()
+        if request.intent:
+            terms.update(request.intent.preferences)
+        if request.user_profile:
+            terms.update(request.user_profile.tags + request.user_profile.preferences)
+        terms.add(request.event_type)
+        if self._has_any(terms, {"少排队", "low_queue"}) and poi.queue_minutes <= 15:
+            return 1
+        if self._has_any(terms, {"少走路", "轻松", "low_walking"}) and poi.walking_intensity == "low":
+            return 1
+        if self._has_any(terms, {"室内", "雨天", "indoor_rainy"}) and poi.indoor:
+            return 1
+        if self._has_any(terms, {"吃好", "咖啡", "food_first"}) and poi.meal_type != "non_meal":
+            return 1
+        return 0
+
+    def _has_any_payload_term(self, event_payload: dict, key: str, values: set[str]) -> bool:
+        terms = set(self._as_list(event_payload.get(key)))
+        return self._has_any(terms, values)
+
+    def _has_any(self, terms: set[str], values: set[str]) -> bool:
+        return any(value in term or term in value for term in terms for value in values)
+
+    def _stop_text(self, stop: RouteStop, poi: POI) -> str:
+        return " ".join(
+            str(part)
+            for part in [
+                stop.name,
+                stop.category,
+                stop.primary_category,
+                stop.meal_type,
+                stop.walking_intensity,
+                stop.highlight_text,
+                stop.ugc_tip,
+                *stop.secondary_categories,
+                *stop.route_roles,
+                *stop.experience_tags,
+                *stop.tags,
+                self._poi_text(poi),
+            ]
+            if part
+        )
+
+    def _poi_text(self, poi: POI) -> str:
+        return " ".join(
+            str(part)
+            for part in [
+                poi.name,
+                poi.category,
+                poi.primary_category,
+                poi.meal_type,
+                poi.walking_intensity,
+                poi.highlight_text,
+                poi.ugc_tip,
+                *poi.secondary_categories,
+                *poi.route_roles,
+                *poi.experience_tags,
+                *poi.tags,
+                *poi.highlight_text_tags,
+                *poi.suitable_time_slots,
+            ]
+            if part
+        )
+
+    def _term_aliases(self, term: str) -> list[str]:
+        aliases = {
+            "咖啡馆": ["咖啡馆", "咖啡", "cafe", "coffee_break"],
+            "咖啡": ["咖啡", "cafe", "coffee_break"],
+            "餐厅": ["餐厅", "美食", "restaurant", "meal", "local_food", "fine_dining"],
+            "美食": ["美食", "餐厅", "restaurant", "meal", "local_food", "fine_dining"],
+            "小吃": ["小吃", "market", "snack", "light_meal"],
+            "室内展览": ["室内展览", "室内", "展览", "museum", "gallery"],
+            "室内": ["室内", "museum", "gallery", "theater", "shopping", "cafe", "indoor"],
+            "雨天": ["雨天", "室内", "rainy", "museum", "gallery", "theater", "shopping"],
+            "安静": ["安静", "清净", "人少", "小众", "cafe"],
+            "人少": ["人少", "安静", "清净", "小众"],
+            "少走路": ["少走路", "轻松", "low", "metro", "transit_anchor"],
+            "轻松": ["轻松", "少走路", "low", "metro"],
+            "商业化": ["商业化", "商业街"],
+            "人多": ["人多", "人流密集", "拥挤", "crowded", "long_queue"],
+            "太贵": ["太贵", "高价", "贵"],
+        }
+        return aliases.get(term, [term])
+
+    def _as_list(self, value: object) -> list[str]:
+        if value is None:
+            return []
+        if isinstance(value, list):
+            return [str(item) for item in value if item]
+        return [str(value)]
 
     def _summary(self, route: Route, request: ReplanRequest, replacement_used: bool) -> str:
         action = "动态调整后" if replacement_used else "实时复核后"

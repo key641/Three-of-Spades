@@ -112,9 +112,9 @@ class RouteService:
         candidates = [
             ("low_queue", request.strategy_weights.queue, ["少排队", "别排队", "不排队"]),
             ("budget", request.strategy_weights.budget, ["更省钱", "省钱", "便宜"]),
-            ("low_walking", request.strategy_weights.distance, ["少走路", "轻松", "老人", "亲子"]),
+            ("low_walking", request.strategy_weights.distance, ["少走路", "轻松", "老人", "亲子", "亲子友好", "老人友好"]),
             ("food_first", request.strategy_weights.preference, ["吃好", "咖啡", "聚餐", "餐厅", "美食"]),
-            ("photo_citywalk", request.strategy_weights.preference, ["拍照", "citywalk", "散步", "街区"]),
+            ("photo_citywalk", request.strategy_weights.preference, ["拍照", "citywalk", "散步", "街区", "艺术展", "本地感"]),
             ("indoor_rainy", request.strategy_weights.preference, ["室内", "雨天", "下雨"]),
             ("night_friendly", request.strategy_weights.preference, ["晚上", "夜景", "夜游"]),
         ]

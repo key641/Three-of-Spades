@@ -19,6 +19,8 @@ class POICandidate:
 class POIService:
     """B-owned module: filters POI candidates by intent and strategy tags."""
 
+    MIN_DEFAULT_CANDIDATES = 12
+
     def __init__(self, data_path: Path | None = None) -> None:
         self.data_path = data_path or Path(__file__).resolve().parents[3] / "data" / "seed" / "pois.json"
         self._candidates = self._load_candidates()
@@ -26,7 +28,8 @@ class POIService:
     def search(self, intent: Intent, user_profile: UserProfile | None = None, limit: int = 20) -> list[POI]:
         city_matches = [candidate for candidate in self._candidates if candidate.poi.city == intent.city]
         if not city_matches:
-            return []
+            city_matches = self._fallback_candidates(intent.city)
+        min_candidates = min(limit, self.MIN_DEFAULT_CANDIDATES)
 
         strict_matches = [
             candidate
@@ -41,6 +44,21 @@ class POIService:
             if not self._matches_avoid_tags(candidate, intent)
             and self._is_not_extreme_budget_mismatch(candidate.poi, intent)
         ]
+        if len(candidates) < min_candidates:
+            relaxed_matches = [
+                candidate
+                for candidate in city_matches
+                if not self._matches_avoid_tags(candidate, intent)
+                and self._is_not_extreme_budget_mismatch(candidate.poi, intent)
+            ]
+            candidates = self._merge_candidates(candidates, relaxed_matches)
+        if len(candidates) < min_candidates:
+            low_risk_matches = [
+                candidate
+                for candidate in city_matches
+                if not {"long_queue", "high_price"} & set(candidate.poi.risk_flags + candidate.poi.avoid_reasons)
+            ]
+            candidates = self._merge_candidates(candidates, low_risk_matches)
         if not candidates:
             candidates = city_matches
 
@@ -181,6 +199,31 @@ class POIService:
             search_text=" ".join(str(part) for part in searchable_parts if part),
             risk_text=" ".join(str(part) for part in risk_parts if part),
         )
+
+    def _fallback_candidates(self, requested_city: str) -> list[POICandidate]:
+        fallback_pool = [candidate for candidate in self._candidates if candidate.poi.city == "上海"] or self._candidates
+        return [self._clone_candidate_for_city(candidate, requested_city) for candidate in fallback_pool[: max(self.MIN_DEFAULT_CANDIDATES, 20)]]
+
+    def _clone_candidate_for_city(self, candidate: POICandidate, city: str) -> POICandidate:
+        safe_city = city or "未知城市"
+        poi = candidate.poi.model_copy(
+            update={
+                "id": f"mock_{safe_city}_{candidate.poi.id}",
+                "city": safe_city,
+                "source_provider": "mock_fallback",
+            }
+        )
+        return POICandidate(poi=poi, search_text=candidate.search_text, risk_text=candidate.risk_text)
+
+    def _merge_candidates(self, primary: list[POICandidate], secondary: list[POICandidate]) -> list[POICandidate]:
+        result = list(primary)
+        seen = {candidate.poi.id for candidate in result}
+        for candidate in secondary:
+            if candidate.poi.id in seen:
+                continue
+            result.append(candidate)
+            seen.add(candidate.poi.id)
+        return result
 
     def _matches_budget(self, poi: POI, intent: Intent) -> bool:
         return poi.avg_price <= intent.budget_per_person
@@ -383,6 +426,15 @@ class POIService:
             "雨天": ["雨天", "室内", "museum", "gallery", "theater", "cafe", "shopping"],
             "拍照": ["拍照", "夜景", "出片", "photo"],
             "晚上": ["晚上", "夜景", "夜游", "evening", "night", "night_view"],
+            "夜游": ["夜游", "夜景", "晚上", "evening", "night", "night_view"],
+            "亲子友好": ["亲子友好", "亲子", "儿童", "儿童友好", "family", "公园"],
+            "亲子": ["亲子友好", "亲子", "儿童", "儿童友好", "family", "公园"],
+            "安静": ["安静", "清净", "人少", "小众", "solo", "cafe"],
+            "人少": ["人少", "安静", "清净", "小众", "少排队"],
+            "本地感": ["本地感", "本地", "市井", "老字号", "local"],
+            "艺术展": ["艺术展", "艺术", "展览", "gallery", "museum"],
+            "情侣": ["情侣", "couple", "夜景", "咖啡", "演出"],
+            "老人友好": ["老人友好", "长辈", "elderly", "少走路", "low"],
             "人流密集": ["人流密集", "拥挤", "人多", "long_queue"],
             "排队久": ["排队久", "long_queue", "排队"],
             "太贵": ["太贵", "高价", "贵"],

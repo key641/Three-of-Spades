@@ -757,3 +757,134 @@ print(updated.live_warnings)
 print([(change.from_name, change.to_name, change.reason) for change in updated.changed_stops])
 PY
 ```
+
+## 2026-05-27 - `uncommitted` - `feat(route): stabilize POI seeds and enhance replan tooling`
+
+负责人：POI 数据 / 路线策略 / 路线调整工具 / B 同学
+
+### 更新概览
+
+本次更新围绕 Demo 稳定性和路线调整工具可用性做了一轮集中增强。POI mock 数据从单一上海样例扩展为多城市候选池，避免北京、杭州、成都等常见测试城市返回空结果；路线召回增加了城市兜底和最小候选保障，让路线生成更稳定。
+
+同时新增了路线点评接口 `/api/routes/evaluate`，方便 A 同学后续把已生成路线交给大模型做逐条点评；并进一步增强 `/api/routes/replan`，让路线调整工具不仅能处理排队、闭店、堵车、下雨、累了，也能处理“用户不喜欢某个 POI，希望只换这个点、其他保留”的主动调整场景。
+
+### 主要变更
+
+- 扩充 POI mock 数据：
+  - `data/seed/pois.json` 扩展到 220 条 POI。
+  - 保留上海 80 条，并新增北京、杭州、成都、广州、深圳、南京、苏州各 20 条。
+  - 新增城市覆盖地标、博物馆/展览、餐厅、小吃/市集、咖啡、商场/室内、夜景、公园/街区等类型。
+  - 所有新增 POI 保持唯一 `poi_id`，并补齐价格、排队、营业时间、适合时段、步行强度、室内/雨天/夜间/亲子/拍照等路线策略字段。
+
+- 增强 POI 召回稳定性：
+  - `POIService.search()` 在目标城市无数据时返回 mock fallback 候选，避免直接空结果。
+  - 增加最小候选保障，默认尽量补足 12 条候选。
+  - 当严格偏好过滤结果过少时，会放宽到同城低风险候选。
+  - 扩展偏好别名，覆盖亲子友好、安静、人少、本地感、艺术展、夜游、情侣、老人友好等测试话术。
+  - 调轻 fallback intent，避免用户没明确表达偏好时默认塞入过多过滤条件。
+
+- 新增路线点评接口：
+  - 新增 `POST /api/routes/evaluate`。
+  - 输入已生成的 `routes + intent + 可选 user_profile`，不重新生成路线。
+  - 输出每条路线的 `score`、`summary`、`highlights`、`risks`、`recommendation`、`source`。
+  - LLM 可用时返回 `source: "llm"`；LLM 不可用时返回稳定 fallback，方便前端和 A 同学先联调。
+  - `docs/api_contract.md` 已说明该接口应接在“路线生成之后、前端展示之前”，用于把 B 的结构化路线结果转成用户可读短评。
+
+- 增强路线调整工具：
+  - 继续复用 `POST /api/routes/replan`，不新增第二个路线调整接口。
+  - 新增 `event_type`：`replace_poi`、`avoid_poi`、`preference_change`。
+  - 扩展 `event_payload`：`affected_poi_id(s)`、`preserve_poi_ids`、`avoid_tags`、`prefer_tags`、`replacement_category`、`force_replace`、`warning_only`。
+  - 支持用户主动要求“换掉某个 POI”，并尽量只替换指定点，保留其他点。
+  - 支持“换成咖啡馆 / 餐厅 / 室内展览”等指定替代类型。
+  - `preserve_poi_ids` 会阻止普通替换，除非 POI 已关闭、不可达或售罄。
+  - 对轻度排队、人流变化、堵车等情况支持只返回 `live_warnings`，不强制替换。
+  - 替代 POI 排序加入偏好标签、避让标签、预算、目标适配、距离和实时状态。
+
+- 补充测试：
+  - POI 数据质量和多城市覆盖测试。
+  - 北京、杭州、成都等城市召回不为空。
+  - 常见偏好组合召回不为空。
+  - 多城市路线生成测试。
+  - 路线点评 LLM/fallback 测试。
+  - 用户主动替换 POI、指定替代类型、保留点不被替换、轻度排队只提醒、warning-only 不替换测试。
+  - 完整后端测试已通过 `55 passed`。
+
+### 涉及文件
+
+- `data/seed/pois.json`
+- `backend/app/services/poi_service.py`
+- `backend/app/services/route_service.py`
+- `backend/app/services/replan_service.py`
+- `backend/app/services/route_evaluation_service.py`
+- `backend/app/agent/orchestrator.py`
+- `backend/app/api/routes.py`
+- `backend/app/schemas/route.py`
+- `backend/app/tests/test_poi_service.py`
+- `backend/app/tests/test_route_plan.py`
+- `backend/app/tests/test_replan_service.py`
+- `backend/app/tests/test_route_evaluation_service.py`
+- `docs/api_contract.md`
+
+### 协作影响
+
+| 角色 | 影响 | 需要关注 |
+| --- | --- | --- |
+| A 同学：Agent / 后端 | 可以更稳定地调用 B 的 POI/路线工具，即使用户说北京、杭州、成都等城市也不会轻易空结果。 | 调用 `/api/routes/replan` 时，需要把自然语言解析成 `event_type + event_payload`；路线点评可调用 `/api/routes/evaluate`，不要让大模型重选 POI 或编造路线。 |
+| B 同学：POI / 路线策略 | POI 数据和召回兜底更稳定；路线调整工具支持主动换点和 warning-only。 | 后续扩数据时要保持字段完整；路线调整仍以局部修复为主，不应推倒重来生成三条新路线。 |
+| C 同学：前端 / UI | 路线和重规划结果更稳定，`live_warnings`、`changed_stops`、`replan_reason` 可用于展示调整过程。 | 如要展示大模型路线点评，可读取 `/api/routes/evaluate` 返回的 `evaluations` 并按 `route_id` 匹配路线卡片。 |
+
+### 风险与注意事项
+
+- 多城市 POI 仍是 mock 数据，不代表真实门店、真实价格或实时营业状态。
+- `/api/routes/evaluate` 当前只是为 A 同学预留大模型点评接口，真实输出质量取决于后续 LLM provider 和 prompt 调试。
+- 路线调整工具依赖 A 同学传入结构化 `event_type/event_payload`；B 侧不负责自然语言解析。
+- `warning_only` 只阻止可用 POI 的普通替换；如果 POI 关闭、不可达或售罄，仍应允许替换。
+- 重规划仍以局部替换为主，不会整条路线重新生成。
+
+### 建议验证
+
+```bash
+cd backend
+PYTHONPATH=. .venv/bin/pytest
+```
+
+```bash
+cd backend
+PYTHONPATH=. .venv/bin/python - <<'PY'
+from app.schemas.intent import Intent
+from app.schemas.route import ReplanRequest, RoutePlanRequest
+from app.services.poi_service import POIService
+from app.services.profile_service import ProfileService
+from app.services.route_service import RouteService
+from app.services.replan_service import ReplanService
+
+intent = Intent(city="北京", preferences=["citywalk", "拍照"], budget_per_person=300)
+profile = ProfileService().get_profile("user_demo")
+pois = POIService().search(intent, user_profile=profile)
+route = RouteService().generate_routes(RoutePlanRequest(intent=intent, user_profile=profile, candidate_pois=pois)).routes[0]
+affected = route.stops[1]
+
+response = ReplanService().replan(
+    ReplanRequest(
+        session_id="session_demo",
+        selected_route_id=route.route_id,
+        event_type="replace_poi",
+        event_label="用户不想去这个点，换成咖啡馆",
+        current_routes=[route],
+        event_payload={
+            "affected_poi_id": affected.poi_id,
+            "replacement_category": "咖啡馆",
+            "prefer_tags": ["安静", "咖啡"],
+            "force_replace": True,
+        },
+        intent=intent,
+        user_profile=profile,
+    )
+)
+
+updated = response.routes[0]
+print(updated.replan_reason)
+print(updated.live_warnings)
+print([(change.from_name, change.to_name, change.reason) for change in updated.changed_stops])
+PY
+```

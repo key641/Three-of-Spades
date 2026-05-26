@@ -140,6 +140,69 @@ B 同学调试 POI 召回使用。
 
 B 同学调试路线规划使用。
 
+## POST /api/routes/evaluate
+
+A 同学调试路线点评大模型使用。该接口不重新生成路线，只接收已经由 `/api/routes/plan` 或 `/api/chat` 产出的 routes，并返回每条路线的简要评分、亮点、风险和推荐语。
+
+### 给 A 同学的接入说明
+
+这个接口需要接在“路线已生成”之后、“前端展示路线概览”之前：
+
+```text
+用户输入
+-> intent 解析
+-> POI 召回
+-> /api/routes/plan 或 /api/chat 生成 1-3 条 Route
+-> /api/routes/evaluate 调用大模型逐条点评 Route
+-> 前端把 Route + evaluation 一起展示
+```
+
+这一部分的作用是把 B 同学的规则算法结果翻译成更像用户能读懂的路线评语。算法已经给出了 `score`、`score_breakdown`、`summary`、`reasons` 等结构化分数和原因；A 同学需要在这里调用大模型，让模型基于这些已有字段生成每条路线的短评、亮点、风险和推荐语。注意：这个接口只做“点评和解释”，不负责重新选 POI、不重新排序路线，也不要让模型编造新的地点、价格或时间。
+
+后续如果要调 prompt 或切换模型，主要改 `backend/app/services/route_evaluation_service.py` 里的 LLM prompt、输入裁剪和 JSON 解析逻辑；接口路径和响应结构尽量保持稳定，方便前端联调。
+
+### Request
+
+```json
+{
+  "intent": {
+    "city": "北京",
+    "people_count": 2,
+    "start_time": "14:00",
+    "duration_hours": 6,
+    "budget_per_person": 300,
+    "preferences": ["拍照", "咖啡"],
+    "avoid_tags": [],
+    "scenario": "friends_citywalk"
+  },
+  "user_profile": null,
+  "routes": []
+}
+```
+
+说明：
+
+- `routes` 使用现有 `Route` 结构，通常直接复用 `/api/routes/plan` 或 `/api/chat` 返回值。
+- 后端会优先调用 LLM provider；LLM 不可用时返回 `source: "fallback"` 的稳定结果，方便前端和 A 同学先联调接口。
+
+### Response
+
+```json
+{
+  "evaluations": [
+    {
+      "route_id": "route_balanced_best",
+      "score": 91,
+      "summary": "节奏均衡，适合首次游玩。",
+      "highlights": ["点位集中", "预算稳定"],
+      "risks": ["热门点位可能略拥挤"],
+      "recommendation": "推荐作为首选方案。",
+      "source": "llm"
+    }
+  ]
+}
+```
+
 ## POST /api/routes/replan
 
 动态事件重规划使用。
@@ -172,10 +235,54 @@ B 同学调试路线规划使用。
 
 说明：
 
-- `event_type` 当前支持 `queue_spike`、`poi_closed`、`traffic_jam`、`user_tired`、`weather_change`。
+- `event_type` 当前支持 `replace_poi`、`avoid_poi`、`preference_change`、`queue_spike`、`poi_closed`、`traffic_jam`、`user_tired`、`weather_change`。
 - `completed_poi_ids` 会被固定保留，不参与替换。
 - `locked_poi_ids` 默认保留，除非实时状态是 `closed / unavailable / sold_out`。
 - `event_payload` 是地图 API / mock provider 的扩展载体，后续接高德、百度、Google 或 Mapbox 时统一映射到内部 live status。
+- A 同学负责把用户自然语言解析成 `event_type + event_payload`；B 的路线调整工具只执行结构化策略，不做自然语言理解。
+
+### Replan Event Payload 约定
+
+用户主动调整：
+
+```json
+{
+  "event_type": "replace_poi",
+  "event_label": "用户不想去第二个点，换一个",
+  "event_payload": {
+    "affected_poi_id": "poi_002",
+    "preserve_poi_ids": ["poi_001", "poi_003"],
+    "replacement_category": "咖啡馆",
+    "prefer_tags": ["安静", "咖啡"],
+    "avoid_tags": ["商业化", "人多"],
+    "force_replace": true
+  }
+}
+```
+
+动态风险提醒：
+
+```json
+{
+  "event_type": "queue_spike",
+  "event_label": "餐厅排队变长",
+  "event_payload": {
+    "affected_poi_id": "poi_002",
+    "queue_minutes": 25,
+    "warning_only": true
+  }
+}
+```
+
+字段说明：
+
+- `affected_poi_id` / `affected_poi_ids`：需要替换或提醒的 POI。
+- `preserve_poi_ids`：用户明确要求保留的 POI，优先级高于普通替换；闭店、不可达、售罄除外。
+- `avoid_tags`：本次调整额外避开的标签，例如“商业化”“人多”“太贵”。
+- `prefer_tags`：本次调整额外偏好的标签，例如“安静”“咖啡”“室内”。
+- `replacement_category`：用户指定替代类型，例如“咖啡馆”“餐厅”“室内展览”。
+- `force_replace`：用户明确说“换掉”时设为 `true`。
+- `warning_only`：只做实时复核和提醒，不替换可用 POI。
 
 ### Response Additions
 
