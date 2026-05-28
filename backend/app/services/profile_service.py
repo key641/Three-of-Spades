@@ -2,6 +2,7 @@ import json
 from pathlib import Path
 from typing import Any
 
+from app.agent.intent_enhancer import normalize_avoid_tags, normalize_preferences
 from app.schemas.feedback import FeedbackRequest, FeedbackResponse
 from app.schemas.chat import ChatRequest
 from app.schemas.intent import Intent
@@ -25,12 +26,12 @@ class ProfileService:
 
     def get_profile(self, user_id: str, request: ChatRequest | None = None) -> UserProfile:
         if request and (request.preferences or request.avoid_tags or request.preference_weights):
-            preferences = self._unique(request.preferences)
+            preferences = normalize_preferences(request.preferences)
             return UserProfile(
                 user_id=user_id,
                 tags=preferences,
                 preferences=preferences,
-                avoid_tags=self._unique(request.avoid_tags),
+                avoid_tags=normalize_avoid_tags(request.avoid_tags),
                 preference_weights=request.preference_weights or self.DEFAULT_WEIGHTS,
             )
 
@@ -66,8 +67,8 @@ class ProfileService:
         if scenario:
             data["scenario"] = scenario
 
-        data["preferences"] = self._unique([*intent.preferences, *request.preferences])
-        data["avoid_tags"] = self._unique([*intent.avoid_tags, *request.avoid_tags])
+        data["preferences"] = normalize_preferences([*intent.preferences, *request.preferences])
+        data["avoid_tags"] = normalize_avoid_tags([*intent.avoid_tags, *request.avoid_tags])
 
         budget = self.BUDGET_BY_LEVEL.get((request.budget_level or "").lower())
         if budget is not None:
@@ -111,8 +112,8 @@ class ProfileService:
             raw.get("current_trip", {})
             .get("soft_preferences", {})
         )
-        preferences = self._unique(self._as_string_list(soft_preferences.get("prefer_tags")))
-        avoid_tags = self._unique(self._as_string_list(soft_preferences.get("avoid_tags")))
+        preferences = normalize_preferences(self._as_string_list(soft_preferences.get("prefer_tags")))
+        avoid_tags = normalize_avoid_tags(self._as_string_list(soft_preferences.get("avoid_tags")))
         return UserProfile(
             user_id=user_id,
             tags=preferences,

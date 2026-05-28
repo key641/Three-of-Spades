@@ -2,6 +2,7 @@ export interface AgentTraceStep {
   step: string;
   label: string;
   status: string;
+  details?: Record<string, unknown>;
 }
 
 export interface RouteStop {
@@ -10,6 +11,8 @@ export interface RouteStop {
   category: string;
   district?: string;
   address?: string;
+  lat?: number | null;
+  lng?: number | null;
   start_time: string;
   end_time: string;
   estimated_cost: number;
@@ -27,6 +30,10 @@ export interface RouteStop {
   travel_minutes_from_previous?: number | null;
   distance_km_from_previous?: number | null;
   transport_mode_from_previous?: string | null;
+  polyline_from_previous?: string;
+  amap_distance_meters_from_previous?: number | null;
+  amap_duration_minutes_from_previous?: number | null;
+  route_leg_source_from_previous?: string | null;
   reason?: string | null;
 }
 
@@ -82,3 +89,8 @@ export interface ChatResponse {
   routes: Route[];
   agent_trace: AgentTraceStep[];
 }
+
+export type ChatStreamEvent =
+  | { type: "progress"; step: AgentTraceStep }
+  | { type: "final"; response: ChatResponse }
+  | { type: "error"; message: string };

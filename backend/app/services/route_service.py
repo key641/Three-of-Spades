@@ -4,6 +4,7 @@ from dataclasses import dataclass
 
 from app.schemas.poi import POI
 from app.schemas.route import Route, RoutePlanRequest, RoutePlanResponse, RouteScoreBreakdown, RouteStop
+from app.services.amap_service import AmapService, GeoPoint, RouteLeg
 from app.services.scoring_service import ScoringService
 
 
@@ -31,7 +32,8 @@ class RouteService:
 
     CANDIDATES_PER_OBJECTIVE = 4
 
-    def __init__(self) -> None:
+    def __init__(self, amap_service: AmapService | None = None) -> None:
+        self.amap_service = amap_service or AmapService()
         self.scoring_service = ScoringService()
 
     def generate_routes(self, request: RoutePlanRequest) -> RoutePlanResponse:
@@ -223,7 +225,10 @@ class RouteService:
         request: RoutePlanRequest,
     ) -> tuple[RouteStop, RouteBuildState] | None:
         distance = self._distance_km(state.current_lat, state.current_lng, poi)
-        travel_minutes = self._travel_minutes(distance)
+        transport_mode = self._transport_mode(distance, poi)
+        route_leg = self._route_leg(state.current_lat, state.current_lng, poi, transport_mode)
+        travel_minutes = route_leg.duration_minutes if route_leg else self._travel_minutes(distance)
+        distance_km = self._distance_from_leg(route_leg, distance)
         total_add = travel_minutes + poi.queue_minutes + poi.visit_duration_minutes
         if state.elapsed_minutes + total_add > time_limit:
             return None
@@ -240,6 +245,8 @@ class RouteService:
             experience_tags=poi.experience_tags,
             district=poi.district,
             address=poi.address,
+            lat=poi.lat,
+            lng=poi.lng,
             start_time=self._format_time(start_minutes),
             end_time=self._format_time(end_minutes),
             estimated_cost=poi.avg_price,
@@ -254,9 +261,13 @@ class RouteService:
             ugc_tip=poi.ugc_tip,
             indoor=poi.indoor,
             recommended_transport=poi.recommended_transport,
-            travel_minutes_from_previous=travel_minutes if distance is not None else None,
-            distance_km_from_previous=round(distance, 1) if distance is not None else None,
-            transport_mode_from_previous=self._transport_mode(distance, poi),
+            travel_minutes_from_previous=travel_minutes if distance_km is not None else None,
+            distance_km_from_previous=round(distance_km, 1) if distance_km is not None else None,
+            transport_mode_from_previous=route_leg.mode if route_leg else transport_mode,
+            polyline_from_previous=route_leg.polyline if route_leg else "",
+            amap_distance_meters_from_previous=route_leg.distance_meters if route_leg else None,
+            amap_duration_minutes_from_previous=route_leg.duration_minutes if route_leg else None,
+            route_leg_source_from_previous=route_leg.source if route_leg else None,
             reason=self._stop_reason(poi, objective, request, start_minutes),
         )
         next_state = RouteBuildState(
@@ -266,6 +277,20 @@ class RouteService:
             current_lng=poi.lng,
         )
         return stop, next_state
+
+    def _route_leg(self, current_lat: float | None, current_lng: float | None, poi: POI, mode: str | None) -> RouteLeg | None:
+        if current_lat is None or current_lng is None or mode is None:
+            return None
+        return self.amap_service.route_leg(
+            origin=GeoPoint(lat=current_lat, lng=current_lng),
+            destination=GeoPoint(lat=poi.lat, lng=poi.lng),
+            mode=mode,
+        )
+
+    def _distance_from_leg(self, route_leg: RouteLeg | None, fallback_distance: float | None) -> float | None:
+        if route_leg is not None:
+            return route_leg.distance_meters / 1000
+        return fallback_distance
 
     def _route_from_stops(self, stops: list[RouteStop], objective: str, request: RoutePlanRequest) -> Route:
         total_travel = sum(stop.travel_minutes_from_previous or 0 for stop in stops)

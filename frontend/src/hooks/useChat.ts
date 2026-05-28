@@ -1,6 +1,6 @@
-import { useState } from "react";
-import { sendChatMessage } from "../api/chatApi";
-import type { ChatResponse } from "../api/types";
+import { useRef, useState } from "react";
+import { sendChatMessageStream } from "../api/chatApi";
+import type { AgentTraceStep, ChatResponse } from "../api/types";
 import type { OnboardingProfile } from "./useOnboarding";
 
 export interface ChatMessage {
@@ -12,17 +12,26 @@ export interface ChatMessage {
 export function useChat(profile?: OnboardingProfile) {
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [response, setResponse] = useState<ChatResponse | null>(null);
+  const [liveTrace, setLiveTrace] = useState<AgentTraceStep[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const hasSentProfile = useRef(false);
 
   async function send(message: string) {
     const userMsg: ChatMessage = { role: "user", content: message, timestamp: Date.now() };
     setMessages((prev) => [...prev, userMsg]);
+    setResponse(null);
+    setLiveTrace([]);
     setLoading(true);
     setError(null);
     try {
-      const res = await sendChatMessage(message, profile);
+      const includeProfile = !hasSentProfile.current;
+      const res = await sendChatMessageStream(message, profile, includeProfile, (step) => {
+        setLiveTrace((prev) => [...prev, step]);
+      });
+      hasSentProfile.current = true;
       setResponse(res);
+      setLiveTrace(res.agent_trace);
       const assistantMsg: ChatMessage = {
         role: "assistant",
         content: res.message,
@@ -46,8 +55,10 @@ export function useChat(profile?: OnboardingProfile) {
   function reset() {
     setMessages([]);
     setResponse(null);
+    setLiveTrace([]);
     setError(null);
+    hasSentProfile.current = false;
   }
 
-  return { messages, response, loading, error, send, inject, reset };
+  return { messages, response, liveTrace, loading, error, send, inject, reset };
 }

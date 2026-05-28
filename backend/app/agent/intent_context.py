@@ -1,0 +1,184 @@
+from app.agent.schemas import IntentDelta, QueryUnderstanding, SessionState, StateChangeSummary, TripState
+from app.agent.message_router import MessageRoute, TurnType
+from app.agent.intent_enhancer import extract_explicit_trip_fields, normalize_avoid_tags, normalize_preferences
+from app.schemas.intent import Intent
+
+
+ADJUSTMENT_TERMS = [
+    "预算低",
+    "便宜",
+    "省钱",
+    "别排队",
+    "少排队",
+    "不排队",
+    "不想排队",
+    "少走路",
+    "不要太累",
+    "别太累",
+    "轻松",
+    "换一家",
+    "换个",
+    "换成",
+    "换到",
+    "改成",
+    "改一下",
+    "刚刚",
+    "刚刚的方案",
+    "方案",
+    "不要这个",
+    "太贵",
+    "太远",
+    "打车",
+    "开车",
+    "不走路",
+    "再",
+    "继续",
+    "更",
+    "一点",
+    "一些",
+]
+
+
+def is_adjustment_message(message: str) -> bool:
+    return any(term in message for term in ADJUSTMENT_TERMS)
+
+
+def apply_session_context(intent: Intent, message: str, state: SessionState, route: MessageRoute | None = None) -> Intent:
+    should_inherit = bool(
+        state.last_intent
+        and (
+            is_adjustment_message(message)
+            or route
+            and route.inherit_previous
+        )
+    )
+    if not should_inherit:
+        return intent
+
+    base = state.last_intent.model_dump()
+    current = intent.model_dump()
+    merged = base | {
+        "preferences": normalize_preferences([*state.last_intent.preferences, *intent.preferences]),
+        "avoid_tags": normalize_avoid_tags([*state.last_intent.avoid_tags, *intent.avoid_tags]),
+        "need_clarification": False,
+    }
+
+    if intent.city_from_message:
+        merged["city"] = intent.city
+        merged["city_from_message"] = True
+
+    is_add_constraint = bool(route and route.turn_type == TurnType.ADD_CONSTRAINT)
+    explicit_fields = extract_explicit_trip_fields(message)
+    for key in ("budget_per_person", "people_count", "start_time", "duration_hours"):
+        if key in explicit_fields:
+            merged[key] = explicit_fields[key]
+        elif not is_add_constraint and current.get(key) != Intent().model_dump().get(key):
+            merged[key] = current[key]
+
+    preserve_scenario = bool(is_add_constraint and route and route.preserve_scenario)
+    if not preserve_scenario and current.get("scenario") != Intent().model_dump().get("scenario"):
+        merged["scenario"] = current["scenario"]
+
+    return Intent.model_validate(merged)
+
+
+def apply_query_delta(
+    intent: Intent,
+    state: SessionState,
+    understanding: QueryUnderstanding,
+    delta: IntentDelta,
+) -> tuple[Intent, TripState, StateChangeSummary]:
+    base_state = _base_trip_state(intent, state, understanding)
+    original = base_state.model_dump()
+    data = base_state.model_dump()
+    summary = StateChangeSummary()
+
+    _apply_hard_constraint_changes(data, delta, summary)
+    _apply_list_changes(data, "soft_preferences", delta.added_preferences, delta.removed_preferences, summary)
+    _apply_list_changes(data, "avoid_tags", delta.added_avoid_tags, delta.removed_avoid_tags, summary)
+    promoted_needs = set(delta.added_must_include) & set(delta.removed_implicit_needs)
+    visible_removed_implicit_needs = [value for value in delta.removed_implicit_needs if value not in promoted_needs]
+    _apply_list_changes(data, "implicit_needs", delta.added_implicit_needs, visible_removed_implicit_needs, summary)
+    _apply_list_changes(data, "must_include", delta.added_must_include, delta.removed_must_include, summary)
+
+    for value in delta.added_must_include:
+        if value in data["implicit_needs"]:
+            data["implicit_needs"] = [item for item in data["implicit_needs"] if item != value]
+
+    if understanding.inherit_previous:
+        for key in ("city", "people_count", "start_time", "duration_hours", "budget_per_person", "scenario"):
+            if key not in summary.changed:
+                summary.kept.append(key)
+
+    data["hard_constraints"] = {
+        "city": data["city"],
+        "people_count": data["people_count"],
+        "start_time": data["start_time"],
+        "duration_hours": data["duration_hours"],
+        "budget_per_person": data["budget_per_person"],
+    }
+
+    trip_state = TripState.model_validate(data)
+    merged_intent = trip_state.to_intent()
+    if original.get("city") != trip_state.city or "city" in delta.modified_hard_constraints or "city" in delta.added_hard_constraints:
+        merged_intent.city_from_message = True
+    return merged_intent, trip_state, summary
+
+
+def _base_trip_state(intent: Intent, state: SessionState, understanding: QueryUnderstanding) -> TripState:
+    if understanding.inherit_previous:
+        if state.trip_state:
+            return state.trip_state
+        if state.last_intent:
+            return TripState.from_intent(state.last_intent)
+    return TripState.from_intent(intent)
+
+
+def _apply_hard_constraint_changes(data: dict, delta: IntentDelta, summary: StateChangeSummary) -> None:
+    for key in delta.removed_hard_constraints:
+        if key in data["hard_constraints"]:
+            _append_unique(summary.removed, key)
+            data["hard_constraints"].pop(key, None)
+
+    changes = delta.added_hard_constraints | delta.modified_hard_constraints
+    for key, value in changes.items():
+        if key not in {"city", "people_count", "start_time", "duration_hours", "budget_per_person", "scenario"}:
+            data["hard_constraints"][key] = value
+            continue
+        previous = data.get(key)
+        if previous != value:
+            data[key] = value
+            summary.changed[key] = {"from": previous, "to": value}
+
+
+def _apply_list_changes(
+    data: dict,
+    field: str,
+    added_values: list[str],
+    removed_values: list[str],
+    summary: StateChangeSummary,
+) -> None:
+    current = list(data[field])
+    for value in removed_values:
+        if value in current:
+            current.remove(value)
+            _append_unique(summary.removed, value)
+    for value in added_values:
+        if value not in current:
+            current.append(value)
+            _append_unique(summary.added, value)
+    data[field] = current
+
+
+def _unique(values: list[str]) -> list[str]:
+    result: list[str] = []
+    for value in values:
+        normalized = value.strip()
+        if normalized and normalized not in result:
+            result.append(normalized)
+    return result
+
+
+def _append_unique(values: list[str], value: str) -> None:
+    if value not in values:
+        values.append(value)

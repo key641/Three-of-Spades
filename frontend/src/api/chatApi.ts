@@ -1,6 +1,6 @@
-import { postJson } from "./client";
+import { API_BASE_URL, postJson } from "./client";
 import type { OnboardingProfile } from "../hooks/useOnboarding";
-import type { ChatResponse } from "./types";
+import type { AgentTraceStep, ChatResponse, ChatStreamEvent } from "./types";
 
 // ============================================================
 // Mock 开关：后端未启动时设为 true，可直接预览所有 UI 流程
@@ -210,23 +210,171 @@ function buildMockResponse(message: string): ChatResponse {
 export async function sendChatMessage(
   message: string,
   profile?: OnboardingProfile,
+  includeProfile = true,
 ): Promise<ChatResponse> {
   if (USE_MOCK) {
     await delay(1200); // 模拟 1.2s 延迟，让 loading 动效可见
     return buildMockResponse(message);
   }
 
+  const profilePayload = includeProfile
+    ? {
+        city:         profile?.city,
+        scenarios:    profile?.scenarios ?? [],
+        preferences:  profile?.preferences ?? [],
+        avoid_tags:   profile?.avoid_tags ?? [],
+        budget_level: profile?.budget_level ?? "mid",
+        preference_weights: profile?.preference_weights,
+      }
+    : {};
+
   return postJson<ChatResponse>("/api/chat", {
     session_id: "session_demo",
     user_id:    profile?.user_id ?? "user_demo",
     message,
     event_type: "user_message",
-    // 完整画像字段，供后端个性化策略使用
-    city:         profile?.city,
-    scenarios:    profile?.scenarios ?? [],
-    preferences:  profile?.preferences ?? [],
-    avoid_tags:   profile?.avoid_tags ?? [],
-    budget_level: profile?.budget_level ?? "mid",
-    preference_weights: profile?.preference_weights,
+    // 完整画像字段只在会话首轮发送，后续由后端 session memory 接管当前上下文。
+    ...profilePayload,
   });
+}
+
+export async function sendChatMessageStream(
+  message: string,
+  profile?: OnboardingProfile,
+  includeProfile = true,
+  onProgress?: (step: AgentTraceStep) => void,
+): Promise<ChatResponse> {
+  if (USE_MOCK) {
+    const mockSteps: AgentTraceStep[] = [
+      {
+        step: "route_message",
+        label: "判定为：补充需求，继承上一轮出行上下文",
+        status: "done",
+        details: {
+          intent_type: "modify_plan",
+          intent_type_label: "修改已有路线",
+          turn_type: "add_constraint",
+          turn_type_label: "补充需求",
+          inherit_previous: true,
+          preserve_scenario: true,
+          confidence: 0.86,
+        },
+      },
+      {
+        step: "parse_intent",
+        label: "LLM 解析用户意图",
+        status: "done",
+        details: {
+          city: "上海",
+          people_count: 2,
+          duration_hours: 8,
+          preferences: ["拍照", "吃好"],
+        },
+      },
+      {
+        step: "apply_query_delta",
+        label: "保留 city、people_count、duration_hours；新增 meal_stop",
+        status: "done",
+        details: {
+          kept: ["city", "people_count", "duration_hours"],
+          added: ["meal_stop"],
+          changed: {},
+          removed: [],
+        },
+      },
+      {
+        step: "search_pois",
+        label: "召回候选 POI",
+        status: "done",
+        details: { count: 12, city: "上海", names: ["外滩观景平台", "新天地广场", "Manner 咖啡"] },
+      },
+      {
+        step: "generate_routes",
+        label: "生成 3 条路线",
+        status: "done",
+        details: { count: 3, route_titles: ["综合候选路线 1", "吃好优先候选路线 1"] },
+      },
+    ];
+    for (const step of mockSteps) {
+      await delay(220);
+      onProgress?.(step);
+    }
+    await delay(250);
+    return buildMockResponse(message);
+  }
+
+  const profilePayload = includeProfile
+    ? {
+        city:         profile?.city,
+        scenarios:    profile?.scenarios ?? [],
+        preferences:  profile?.preferences ?? [],
+        avoid_tags:   profile?.avoid_tags ?? [],
+        budget_level: profile?.budget_level ?? "mid",
+        preference_weights: profile?.preference_weights,
+      }
+    : {};
+
+  const response = await fetch(`${API_BASE_URL}/api/chat/stream`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      session_id: "session_demo",
+      user_id:    profile?.user_id ?? "user_demo",
+      message,
+      event_type: "user_message",
+      ...profilePayload,
+    }),
+  });
+
+  if (!response.ok) {
+    throw new Error(`Request failed: ${response.status}`);
+  }
+  if (!response.body) {
+    throw new Error("当前浏览器不支持流式响应");
+  }
+
+  const reader = response.body.getReader();
+  const decoder = new TextDecoder();
+  let buffer = "";
+  let finalResponse: ChatResponse | null = null;
+
+  while (true) {
+    const { value, done } = await reader.read();
+    if (done) break;
+
+    buffer += decoder.decode(value, { stream: true });
+    const lines = buffer.split("\n");
+    buffer = lines.pop() ?? "";
+    for (const line of lines) {
+      const event = parseStreamEvent(line);
+      if (!event) continue;
+      if (event.type === "progress") {
+        onProgress?.(event.step);
+      } else if (event.type === "final") {
+        finalResponse = event.response;
+      } else if (event.type === "error") {
+        throw new Error(event.message);
+      }
+    }
+  }
+
+  const remainingEvent = parseStreamEvent(buffer);
+  if (remainingEvent?.type === "progress") {
+    onProgress?.(remainingEvent.step);
+  } else if (remainingEvent?.type === "final") {
+    finalResponse = remainingEvent.response;
+  } else if (remainingEvent?.type === "error") {
+    throw new Error(remainingEvent.message);
+  }
+
+  if (!finalResponse) {
+    throw new Error("流式响应缺少最终结果");
+  }
+  return finalResponse;
+}
+
+function parseStreamEvent(line: string): ChatStreamEvent | null {
+  const trimmed = line.trim();
+  if (!trimmed) return null;
+  return JSON.parse(trimmed) as ChatStreamEvent;
 }

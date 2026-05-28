@@ -17,6 +17,8 @@ class RouteStop(BaseModel):
     experience_tags: list[str] = Field(default_factory=list)
     district: str = ""
     address: str = ""
+    lat: float | None = None
+    lng: float | None = None
     start_time: str
     end_time: str
     estimated_cost: int
@@ -34,6 +36,10 @@ class RouteStop(BaseModel):
     travel_minutes_from_previous: int | None = None
     distance_km_from_previous: float | None = None
     transport_mode_from_previous: str | None = None
+    polyline_from_previous: str = ""
+    amap_distance_meters_from_previous: int | None = None
+    amap_duration_minutes_from_previous: int | None = None
+    route_leg_source_from_previous: str | None = None
     reason: str | None = None
 
 

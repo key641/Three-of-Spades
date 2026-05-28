@@ -50,6 +50,20 @@ class IntentEnhancerTest(unittest.TestCase):
         self.assertEqual(intent.city, "上海")
         self.assertTrue(intent.city_from_message)
 
+    def test_normalizes_all_preference_and_avoid_aliases(self) -> None:
+        base = Intent(
+            preferences=["好吃", "高性价比", "打卡", "城市漫步", "带娃"],
+            avoid_tags=["人多", "贵", "走路多"],
+        )
+
+        intent = enhance_intent_from_message(base, "还想出片、便宜一点，也不想排队")
+
+        self.assertEqual(
+            intent.preferences,
+            ["吃好", "更省钱", "拍照", "citywalk", "亲子友好", "少排队"],
+        )
+        self.assertEqual(intent.avoid_tags, ["人流密集", "太贵", "步行多", "排队久"])
+
 
 if __name__ == "__main__":
     unittest.main()

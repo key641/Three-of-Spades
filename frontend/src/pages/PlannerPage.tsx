@@ -51,7 +51,7 @@ function buildActionMessage(actionKey: string, routeId: string): string {
 }
 
 export function PlannerPage({ profile, onResetProfile }: PlannerPageProps) {
-  const { messages, response, loading, error, send, inject, reset } = useChat(profile);
+  const { messages, response, liveTrace, loading, error, send, inject, reset } = useChat(profile);
   const [inputText, setInputText] = useState("");
   const [localProfile, setLocalProfile] = useState<OnboardingProfile>(profile);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
@@ -165,7 +165,7 @@ export function PlannerPage({ profile, onResetProfile }: PlannerPageProps) {
               clarifyingQuestion={response?.need_clarification ? (response.clarifying_question ?? null) : null}
               onClarify={(answer) => send(answer)}
             />
-            <AgentTrace steps={response?.agent_trace ?? []} loading={loading} />
+            <AgentTrace steps={loading ? liveTrace : response?.agent_trace ?? liveTrace} loading={loading} />
           </div>
 
           {/* 右栏占位 */}

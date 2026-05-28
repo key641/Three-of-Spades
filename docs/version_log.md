@@ -55,6 +55,478 @@
 
 ---
 
+## 2026-05-24 - `8ae5b55` - `feat(agent): promote structured delta understanding`
+
+负责人：Agent / 后端编排 / A 同学，前端 trace 调试体验 / C 侧联调
+
+### 更新概览
+
+本次继续把多轮理解从“规则补丁”推进到更接近未来 Agent 架构的形态：多轮时优先让 LLM 根据上一轮 `TripState` 输出结构化 `QueryUnderstanding + IntentDelta`，后端只做 schema 校验、标签归一化和确定性 reducer 合并。规则不再承担主要语义理解，只在 LLM 断连、返回非法 JSON 或空 delta 时做保守兜底。
+
+前端侧同步增强了 Agent 思考过程：运行中仍可实时看到处理步骤，完成后默认折叠，但展开后能看到每一步的结构化 details，方便排查“哪一步理解错、哪一步合并错、是不是 fallback 导致”。
+
+### 主要变更
+
+- 多轮理解主路径升级：
+  - 新增 `_parse_query_delta()`，多轮时优先调用 LLM 输出 `QueryUnderstanding + IntentDelta`。
+  - 新增 `_llm_parse_query_delta()`，提示模型不要重写完整 Intent，而是比较用户本轮消息和上一轮 `TripState` 后输出 delta。
+  - 首轮仍由完整 `Intent` 初始化 `TripState`；多轮才进入 structured delta 主路径。
+  - `apply_query_delta` trace 新增 `source`，可区分 `llm_structured_delta`、`rule_fallback_delta`、`initial_intent_snapshot`。
+
+- Delta validator 和标签归一化：
+  - 新增 `_normalize_intent_delta()`，对 LLM 输出做字段过滤和归一化。
+  - 约束 LLM 只能输出系统支持的 canonical labels。
+  - `preferences` 支持归一：`吃饭/好吃/餐厅 -> 吃好`、`便宜/高性价比 -> 更省钱`、`出片/打卡/网红 -> 拍照`、`城市漫步/逛逛 -> citywalk` 等。
+  - `avoid_tags` 支持归一：`人多/拥挤 -> 人流密集`、`贵/高价 -> 太贵`、`走路多/太累 -> 步行多` 等。
+  - 前端 onboarding 画像、seed 用户画像、LLM intent 结果、多轮状态合并、delta 比较都接入同一套 canonical 规则。
+
+- 明确显式约束优先级：
+  - `add_constraint` 不再等于“所有硬约束都继承旧状态”。
+  - 本轮明确说出的城市、人数、时长、预算、开始时间可以覆盖旧状态。
+  - “有朋友和我一起 / 双人 / 两个人”会把 `people_count` 更新为 2。
+  - “不要吃饭 / 不安排吃饭”会移除 `吃好` 偏好和 `meal_stop`。
+  - `meal_stop` 从隐含建议升级为显式必须时，不再在 trace 中显示成“新增吃饭节点；移除吃饭节点”。
+
+- 前端 trace 调试体验增强：
+  - 完成后 Agent 思考过程默认折叠，不再占用大量空间。
+  - 桌面端不再隐藏 `.trace-toggle`，完成后仍能看到折叠入口。
+  - 展开后每个 step 会显示结构化 details chips，例如本轮类型、是否继承、delta 来源、保留/新增/修改/移除、候选点数量、路线标题等。
+  - 运行中仍保持实时展开，便于观察后台处理进度。
+
+- 测试补充：
+  - 覆盖 LLM structured delta 作为多轮状态更新主路径。
+  - 覆盖 LLM delta 失败时规则 fallback 仍能处理明确约束。
+  - 覆盖显式人数覆盖旧状态、否定吃饭移除 meal stop。
+  - 覆盖所有偏好和避开标签的 canonical 归一化。
+  - 覆盖前端画像字段进入后端 profile/intent 前会归一化。
+
+### 涉及文件
+
+- Agent 状态与理解：
+  - `backend/app/agent/orchestrator.py`
+  - `backend/app/agent/intent_context.py`
+  - `backend/app/agent/intent_enhancer.py`
+  - `backend/app/services/profile_service.py`
+
+- 后端测试：
+  - `backend/app/tests/test_orchestrator_intent_flow.py`
+  - `backend/app/tests/test_query_delta.py`
+  - `backend/app/tests/test_intent_enhancer.py`
+  - `backend/app/tests/test_profile_request_sync.py`
+
+- 前端 trace 展示：
+  - `frontend/src/components/AgentTrace.tsx`
+  - `frontend/src/styles/globals.css`
+
+- 文档：
+  - `docs/version_log.md`
+## 2026-05-24 - `a00f0aa` - `feat(route): 接入高德路线字段并补充协作文档`
+
+负责人：A 同学 / 后端外部 API 接入，B 同学路线策略联调，C 同学地图展示预留
+
+### 更新概览
+
+本次把后端路线规划链路接入高德 Web 服务路线能力。系统现在会优先通过高德计算相邻点之间的真实距离、耗时、路线折线和步骤信息；如果没有配置 key、网络不可用或高德接口失败，则自动回退到本地距离估算，保证 demo 流程不被外部接口阻断。
+
+同时补充了高德接入规划和字段契约文档，并把文档改成中文，方便 B 同学直接理解应该使用哪些路线字段做评分和策略优化。
+
+### 主要变更
+
+- 新增 `AmapService`：
+  - 读取 `AMAP_WEB_SERVICE_KEY`。
+  - 调用高德 Web 服务步行/驾车路线接口。
+  - 将高德原始返回整理成项目自己的 `RouteLeg` 字段。
+  - 高德不可用时返回 fallback 路段，避免路线生成中断。
+
+- 扩展 `RouteStop` 路线字段：
+  - 新增 `lat`、`lng`，供前端地图标记使用。
+  - 新增 `polyline_from_previous`，表示上一站到当前站的地图折线。
+  - 新增 `amap_distance_meters_from_previous`、`amap_duration_minutes_from_previous`，保留更细粒度的高德距离和耗时。
+  - 新增 `route_leg_source_from_previous`，用于区分当前路段来自 `amap` 还是 `fallback`。
+
+- `RouteService` 接入高德路段补全：
+  - 保持原有 POI 组合和路线策略逻辑不变。
+  - 在生成每个 stop 时补全真实路段距离、耗时、交通方式和 polyline。
+  - B 同学仍然使用 `travel_minutes_from_previous`、`distance_km_from_previous` 和 `transport_mode_from_previous` 做评分。
+
+- 文档补充：
+  - 新增 `docs/amap_route_integration_plan.md`，说明整体方案、分工、数据流、B/C 使用方式和测试结果。
+  - 新增 `docs/amap_route_contract.md`，说明 `RouteStop` 新字段和 B 同学评分建议。
+  - 两份文档均已改为中文说明。
+
+- 前端类型同步：
+  - `frontend/src/api/types.ts` 增加地图和高德路段字段，为后续 C 同学接高德 JS 地图展示做准备。
+
+### 涉及文件
+
+- `backend/app/services/amap_service.py`
+- `backend/app/services/route_service.py`
+- `backend/app/schemas/route.py`
+- `backend/app/config.py`
+- `backend/app/tests/test_amap_service.py`
+- `backend/app/tests/test_route_plan.py`
+- `frontend/src/api/types.ts`
+- `.env.example`
+- `docs/amap_route_integration_plan.md`
+- `docs/amap_route_contract.md`
+- `docs/version_log.md`
+
+### 协作影响
+
+| 角色 | 影响 | 需要关注 |
+| --- | --- | --- |
+| A 同学：Agent / 后端 | 多轮状态更新主路径变为 LLM structured delta + deterministic reducer。 | 后续新增语义类型时优先扩展 `IntentDelta` schema 和 validator，不要继续把理解逻辑堆在 `_build_intent_delta` 规则里。 |
+| A 同学：Agent / 后端 | trace 能区分 `llm_structured_delta` 和 `rule_fallback_delta`。 | 排查状态 bug 时先看 `parse_query_delta` 和 `apply_query_delta.details.source`。 |
+| B 同学：POI / 路线策略 | A 侧会更稳定地产出 canonical 偏好、避开标签和 `meal_stop/rest_stop`。 | B 侧后续消费规划需求时，应直接对齐 canonical labels，不要再依赖用户原话。 |
+| C 同学：前端 / UI | Agent 思考过程完成后保留折叠入口，展开后能看到 details。 | 如果后续新增 trace details 字段，前端可以继续复用 details chips，不需要每个字段都定制组件。 |
+
+### 风险与注意事项
+
+- LLM structured delta 是主路径，但依赖模型网关稳定性；如果发生 `ConnectError`，系统会退回 `rule_fallback_delta`。
+- 规则 fallback 必须保持保守，避免 LLM 失败时用 fallback Intent 的默认值误改人数、时长、预算等硬状态。
+- canonical labels 目前仍是有限枚举；未来 B/C 如果新增策略标签，需要同步扩展 validator 的 allowed values。
+- 当前版本还没有把 `/api/chat/stream` 的 NDJSON 事件和 `AgentTraceStep.details` 完整写入 `docs/api_contract.md`，后续应补齐。
+| A 同学：Agent / 后端 | 后端已具备高德路线接口封装，Agent 后续可以继续通过 `RouteService` 获取真实路段字段。 | 需要在本地 `.env` 配置 `AMAP_WEB_SERVICE_KEY`；不要把高德原始 JSON 直接暴露给路线策略或前端。 |
+| B 同学：POI / 路线策略 | 可以直接使用 `RouteStop` 中的真实距离、耗时、交通方式和来源字段做评分。 | 高德真实步行耗时会比原来的直线估算更长，短时间窗路线可能被过滤，需要考虑 taxi/metro 等交通方式切换策略。 |
+| C 同学：前端 / UI | 前端类型已包含 `lat`、`lng` 和 `polyline_from_previous`，后续可用高德 JS API 画 marker 和路线折线。 | 前端地图接入时需要确认使用的是 JS API key 和安全密钥；当前完成的是后端 Web 服务 key 链路。 |
+
+### 风险与注意事项
+
+- 当前后端路线链路已验证高德 key 生效，但普通沙盒环境不允许联网时会走 fallback；真实运行环境需要允许后端访问 `restapi.amap.com`。
+- 接入真实步行路线后，4 小时时间窗下部分路线会因为耗时变长被过滤；8 小时时间窗已验证可以正常生成路线并返回 `source=amap` 的路段字段。
+- 当前只做两点之间的路段补全，尚未实现全局最优路线算法、实时路况、公交换乘细节或高德 MCP。
+- 后端虚拟环境目前缺少 `pytest`，完整 pytest 命令无法运行；已用定向契约检查和 Python 编译检查验证本次核心链路。
+
+### 建议验证
+
+```bash
+cd backend
+$env:PYTHONPATH='.'
+pytest app/tests -q
+```
+
+.\.venv\Scripts\python.exe - <<'PY'
+from app.services.amap_service import AmapService, GeoPoint
+
+leg = AmapService(timeout_seconds=10).route_leg(
+    origin=GeoPoint(lat=31.2304, lng=121.4737),
+    destination=GeoPoint(lat=31.2397, lng=121.4998),
+    mode="walk",
+)
+print(leg.source, leg.distance_meters, leg.duration_minutes, bool(leg.polyline))
+PY
+```
+
+期望联网环境下输出 `amap`，并有距离、耗时和 polyline。
+
+```bash
+cd frontend
+npm.cmd run build
+```
+
+手动联调建议：
+
+- 首轮输入“我一个人在上海玩一天，想拍照和吃饭”。
+- 第二轮输入“我不要吃饭，有朋友和我一起”。
+- 展开 Agent 思考过程，期望看到：`parse_query_delta` 成功时 source 为 `llm_structured_delta`；人数从 1 改为 2；移除 `吃好/meal_stop`；如果 LLM 断连，则 source 为 `rule_fallback_delta` 且前端能清楚展示 fallback 来源。
+
+---
+
+## 2026-05-24 - `788bac6` - `feat(agent): add state tracing and streaming thinking UI`
+
+负责人：Agent / 后端编排 / A 同学，前端 trace 展示 / C 侧联调
+
+### 更新概览
+
+本次把 A 侧 Agent 从“能生成路线”继续推进到“能解释自己每一步在做什么”。后端新增结构化 TripState / IntentDelta / QueryUnderstanding 契约，并通过 `/api/chat/stream` 实时输出 Agent 处理步骤。前端的“Agent 思考过程”不再只显示固定说明，而是能展示本轮具体判断结果，例如“判定为补充需求”“继承上一轮上下文”“新增吃饭节点”“召回 N 个候选点”“生成 N 条候选路线”。
+
+同时补充了 Agent roadmap 和 B/C 支持需求文档，明确哪些能力 A 侧可以先推进，哪些能力未来需要 B 侧路线策略和 C 侧前端展示配合。
+
+### 主要变更
+
+- Agent 状态契约增强：
+  - 新增 `QueryUnderstanding`，记录本轮话术类型、是否继承上一轮、是否保留场景、是否引用上一轮路线。
+  - 新增 `IntentDelta`，描述本轮新增、修改、移除的硬约束、软偏好、隐含需求和必须包含节点。
+  - 新增 `TripState`，作为跨轮路线状态容器，保存城市、人数、时长、预算、场景、偏好、避开标签、隐含需求、必须包含节点、当前路线等信息。
+
+- 多轮状态合并增强：
+  - 新增 `apply_query_delta`，把本轮理解结果合并进上一轮 `SessionState.trip_state`。
+  - “我还要吃饭”这类补充需求会保留上一轮上海、2 人、8 小时、拍照场景，并把 `meal_stop` 从隐含建议提升为必须包含节点。
+  - Agent 回复正文会把关键状态变化用易懂话术提前说明，例如“我保留了上海、2人、8小时、拍照的设定，新增了吃饭节点。”
+
+- 流式接口新增：
+  - 新增 `POST /api/chat/stream`。
+  - 使用 NDJSON 逐步返回：`progress`、`final`、`error`。
+  - `AgentOrchestrator.handle_message` 支持 `progress_callback`，在 route_message、parse_intent、state merge、画像读取、POI 召回、路线生成、总结等节点实时发出 trace。
+
+- Trace 结构化增强：
+  - `AgentTraceStep` 新增 `details` 字段。
+  - 后端关键步骤会返回结构化结果：
+    - 消息路由：`intent_type`、`turn_type`、是否继承、是否保留场景、置信度。
+    - 意图解析：城市、人数、开始时间、时长、预算、偏好、避开标签、场景。
+    - 状态合并：保留、新增、修改、移除项。
+    - 用户画像：偏好、避开标签、画像 tags。
+    - 策略权重：quality、queue、distance、budget、preference。
+    - POI 召回：候选点数量、城市、前几个 POI 名称。
+    - 路线生成：路线数量、路线标题、目标类型。
+
+- 前端 Agent 思考过程升级：
+  - `useChat` 改为调用 `sendChatMessageStream`，发送后实时接收 progress trace。
+  - `PlannerPage` 在 loading 时展示 `liveTrace`，用户能看到后台步骤逐步出现。
+  - `AgentTrace` 新增“Agent 思考过程”摘要区。
+  - 新增 `frontend/src/utils/agentThinking.ts`，把后端 `details` 翻译成用户能读懂的话。
+  - mock 模式也补齐结构化 trace，方便后端未启动时预览同样效果。
+
+- 文档补充：
+  - 新增 `docs/agent_roadmap.md`，把原 roadmap 升级为 Agent 行为规格，包含 Core Contracts、Policy Matrix、M1/M2/M4 验收方向。
+  - 新增 `docs/bc_agent_support_requirements.md`，说明未来如果要推进 meal/rest stop、路线局部编辑、路线解释、前端 trace 展示等能力，需要 B/C 侧提供哪些字段和交互支持。
+
+- 测试补充：
+  - 新增 `backend/app/tests/test_query_delta.py`，覆盖状态合并、隐含需求、必须包含节点等行为。
+  - 新增 `backend/app/tests/test_chat_stream.py`，验证 `/api/chat/stream` 会先输出 progress，再输出 final。
+  - 扩展 `test_orchestrator_intent_flow.py`，覆盖补充吃饭需求时 trace details 必须带出 `turn_type=add_constraint`、继承上一轮、以及新增 `meal_stop`。
+
+### 涉及文件
+
+- Agent 状态与编排：
+  - `backend/app/agent/schemas.py`
+  - `backend/app/agent/intent_context.py`
+  - `backend/app/agent/memory.py`
+  - `backend/app/agent/orchestrator.py`
+  - `backend/app/schemas/chat.py`
+
+- 后端 API：
+  - `backend/app/api/chat.py`
+
+- 后端测试：
+  - `backend/app/tests/test_query_delta.py`
+  - `backend/app/tests/test_chat_stream.py`
+  - `backend/app/tests/test_orchestrator_intent_flow.py`
+
+- 前端 API / 状态 / 展示：
+  - `frontend/src/api/chatApi.ts`
+  - `frontend/src/api/types.ts`
+  - `frontend/src/hooks/useChat.ts`
+  - `frontend/src/pages/PlannerPage.tsx`
+  - `frontend/src/components/AgentTrace.tsx`
+  - `frontend/src/utils/agentThinking.ts`
+  - `frontend/src/styles/globals.css`
+
+- 文档：
+  - `docs/agent_roadmap.md`
+  - `docs/bc_agent_support_requirements.md`
+  - `docs/version_log.md`
+
+### 协作影响
+
+| 角色 | 影响 | 需要关注 |
+| --- | --- | --- |
+| A 同学：Agent / 后端 | Agent 已有更清晰的理解层、状态层、delta 合并层和 trace 层。 | 后续新增多轮能力时优先扩展 `TripState` / `IntentDelta`，不要把状态散落在 router、intent、memory 各处。 |
+| A 同学：Agent / 后端 | `/api/chat/stream` 已可实时输出后台处理步骤。 | 如果部署环境或代理不支持流式响应，需要前端 fallback 到 `/api/chat`，或统一网关配置。 |
+| B 同学：POI / 路线策略 | A 侧已能表达 `meal_stop`、`rest_stop`、`must_include`、`implicit_needs` 等规划需求。 | 当前 B 侧 route planner 还没有完整消费这些 schema，未来要支持“必须安排吃饭/休息”时需要在路线生成契约中明确 stop type 和约束语义。 |
+| B 同学：POI / 路线策略 | 前端 trace 会展示 POI 召回数量和路线生成数量。 | 如果候选点不足或路线为空，建议 B 侧未来返回更明确的过滤原因，方便 A/C 展示可解释 fallback。 |
+| C 同学：前端 / UI | 前端现在能实时展示 Agent 处理过程，而不是等最终结果。 | UI 应继续把 `details` 翻译成用户语言，不展示原始内部字段名；不要展示模型原始链路推理，只展示可解释步骤和结果。 |
+| C 同学：前端 / UI | `AgentTraceStep.details` 是新增可选字段。 | 老接口只返回 `step/label/status` 时仍需兼容；新增 step 或 status 时要同步 `agentThinking.ts` 和 trace icon 映射。 |
+
+### 风险与注意事项
+
+- `/api/chat/stream` 是新增接口，前端真实联调时需要确认 `VITE_API_BASE_URL` 指向运行了新代码的后端；旧后端只会有 `/api/chat`，会返回 404。
+- Vite `.env` 只在 dev server 启动时读取；如果切换 `VITE_API_BASE_URL` 或 mock 开关，需要重启前端 dev server。
+- `AgentTraceStep.details` 目前还没有同步进 `docs/api_contract.md`，后续需要补充 `/api/chat/stream` 的 NDJSON 事件格式和 trace details 字段说明。
+- 当前 `meal_stop/rest_stop` 已进入 A 侧状态语义，但 B 侧路线规划还需要后续按 schema 消费，否则只能部分体现在偏好和文本解释里。
+- 当前 trace 是“可解释处理过程”，不是模型原始 chain-of-thought；前端文案应继续避免展示不可控或过细的内部推理。
+
+### 建议验证
+
+```bash
+cd backend
+$env:PYTHONPATH='.'
+pytest app/tests -q
+```
+
+```bash
+cd frontend
+npm.cmd run build
+```
+
+手动联调建议：
+
+- 启动新后端，确认 `/api/chat/stream` 可访问。
+- 首轮输入“我想两个人在上海一日游，喜欢拍照”。
+- 第二轮输入“我还要吃饭”。
+- 期望前端 Agent 思考过程实时显示：本轮判定为补充需求、继承上一轮上下文、保留上海/2 人/8 小时/拍照、新增吃饭节点，并继续展示 POI 召回和路线生成结果。
+
+---
+
+## 2026-05-21 - `pending` - `fix(agent): adapt route explanations to enriched route fields`
+
+负责人：Agent / 后端编排 / A 同学
+
+### 更新概览
+
+本次针对 LYNN 合入后的 POI/RouteStop 丰富字段做 A 侧适配。Agent 现在能更准确解释新路线字段中的组合交通方式，并在没有候选路线时返回明确的“候选点不足”提示，不再误说已经生成路线。同时 `_summarize_route_result` 会把 B 侧新增的站点解释字段传给 LLM，便于后续生成更具体的路线总结。
+
+### 主要变更
+
+- `RouteDetailHandler` 扩展交通方式映射：
+  - 支持 `metro/bike`、`metro/bus`、`drive/taxi` 等组合交通。
+  - 支持单项 `metro`、`taxi`、`walk`、`bike`、`bus`、`drive` 的中文解释。
+
+- `AgentOrchestrator._summarize_route_result` 调整：
+  - 当 `routes=[]` 时直接返回候选点不足提示，包含当前城市名。
+  - LLM 总结输入新增 `total_travel_minutes`、`total_distance_km`。
+  - 每个 stop 传入 `district`、`address`、`travel_minutes_from_previous`、`distance_km_from_previous`、`transport_mode_from_previous`、`walking_intensity`、`recommended_transport`、`highlight_text`、`ugc_tip`、`reason`。
+
+- 新增 A 侧 demo case 脚本：
+  - `scripts/demo_cases.py` 直接调用 `AgentOrchestrator`。
+  - 覆盖上海路线生成、多轮调整、路线交通追问、北京/杭州城市意图识别。
+  - 当前用于区分 A 侧意图/上下文是否稳定，以及 B 侧数据是否覆盖对应城市。
+
+- `docs/api_contract.md` 补充 `RouteStop` 新字段说明。
+
+- `AgentOrchestrator` 路线总结提示词增强：
+  - 要求聊天回复文本优先使用 `total_distance_km`、`total_travel_minutes`、`highlight_text`、`ugc_tip`、`reason`、`transport_mode_from_previous`、`distance_km_from_previous` 等结构化字段。
+  - LLM 不可用时，`message` 会明确提示“LLM 总结不可用”，再展示路线引擎生成的结构化结果，不再伪装成正常 LLM 总结。
+  - `AgentTrace` 折叠状态会标出 fallback/error 数量，前端可以同时看到路线输出和系统运行问题。
+
+- `MessageRouter` 新增结构化轮次类型：
+  - `MessageRoute` 增加 `turn_type`、`inherit_previous`、`preserve_scenario`。
+  - “我还要吃饭 / 加一个餐厅 / 也想拍照”这类追问会归为 `add_constraint`，默认继承上一轮路线意图。
+  - `apply_session_context` 对 `add_constraint` 保留上一轮城市、人数、时长、开始时间和主场景，只合并新增偏好，避免“上海两人拍照一日游 + 吃饭”被覆盖成纯美食路线。
+
+### 涉及文件
+
+- `backend/app/agent/route_detail_handler.py`
+- `backend/app/agent/orchestrator.py`
+- `backend/app/tests/test_route_detail_handler.py`
+- `backend/app/tests/test_orchestrator_intent_flow.py`
+- `backend/app/tests/test_demo_cases_script.py`
+- `scripts/demo_cases.py`
+- `scripts/README.md`
+- `docs/api_contract.md`
+- `docs/version_log.md`
+
+### 协作影响
+
+| 角色 | 影响 | 需要关注 |
+| --- | --- | --- |
+| A 同学：Agent / 后端 | 路线解释现在能消费 B 侧新增字段。 | 后续做更强路线解释时，优先使用结构化字段，不要让 LLM 编造交通和站点信息。 |
+| B 同学：POI / 路线策略 | `transport_mode_from_previous` 的组合值会被 Agent 翻译给用户。 | 推荐交通字段如果新增取值，需要同步 A/C 更新映射。 |
+| C 同学：前端 / UI | API 文档已补充 RouteStop 新字段。 | 前端可以逐步展示 `highlight_text`、`ugc_tip`、`reason`、`recommended_transport` 等字段。 |
+
+### 风险与注意事项
+
+- A 侧 demo case 当前显示上海路线可生成，北京/杭州城市能识别但 routes 为 0，说明 seed 数据主要覆盖上海。
+- 空路线提示只处理“候选不足”场景；如果后续有城市但被强约束过滤空，需要 B/A 再细化提示原因。
+
+### 建议验证
+
+```bash
+cd backend
+.\.venv\Scripts\python.exe -m unittest discover -s app\tests
+```
+
+```bash
+cd frontend
+npm.cmd run build
+```
+
+```bash
+.\backend\.venv\Scripts\python.exe scripts\demo_cases.py --verbose
+```
+
+---
+
+## 2026-05-21 - `cac0a27` - `feat(agent): route message intent before planning`
+
+负责人：Agent / 后端编排 / A 同学
+
+### 更新概览
+
+本次将 `/api/chat` 的主流程从“先用关键词判断是否路线相关”升级为“先做消息路由，再分发到对应 handler”。词表仍作为兜底，但不再承担主要决策职责。新增 `route_detail_question` 分支后，用户追问“刚刚那俩地之间怎么过去”时，Agent 会读取上一轮 `SessionState.current_routes` 回答路线段交通，而不是误走普通聊天或重新规划路线。
+
+同时前端真实后端联调时不再每轮重复发送 onboarding 画像字段。会话首轮发送完整画像，后续只发送消息和会话信息，让后端 session memory 维护当前上下文，避免默认画像城市覆盖用户在对话中明确切换的城市。
+
+### 主要变更
+
+- 新增 `MessageRouter`：
+  - 优先使用 LLM 输出结构化分类：`new_plan`、`modify_plan`、`route_detail_question`、`general_chat`。
+  - LLM 路由失败时保留轻量 fallback，识别路线详情追问和基础路线相关消息。
+  - `AgentOrchestrator` 每轮先执行 `route_message` trace，再按分类分发。
+
+- 新增 `RouteDetailHandler`：
+  - 当用户询问上一轮路线细节时，直接读取 `SessionState.current_routes`。
+  - 当前 MVP 支持回答相邻站点之间的交通方式、预计时间和距离。
+  - 如果没有可引用路线，会返回追问提示，要求先生成路线。
+
+- `AgentOrchestrator` 分发逻辑调整：
+  - `route_detail_question`：走 `RouteDetailHandler`，不调用 `POIService` / `RouteService`。
+  - `general_chat`：继续走直接 LLM 对话。
+  - `new_plan` / `modify_plan`：继续沿用现有 intent 解析、POI 召回、路线生成和总结链路。
+
+- 前端画像发送策略调整：
+  - `useChat` 使用 `hasSentProfile` 记录当前会话是否已发送画像。
+  - `sendChatMessage` 新增 `includeProfile` 参数。
+  - 首轮发送完整 onboarding 画像；后续轮次不再重复发送 `city/preferences/avoid_tags/budget_level/preference_weights`。
+
+- 多轮上下文城市保护：
+  - 当 session 中已有上一轮 intent，且当前消息没有显式城市时，后端不会再让 request 中的 onboarding `city` 覆盖当前会话城市。
+  - 补充“改一下 / 刚刚的方案 / 打车 / 不走路”等续改表达。
+
+### 涉及文件
+
+- `backend/app/agent/message_router.py`
+- `backend/app/agent/route_detail_handler.py`
+- `backend/app/agent/orchestrator.py`
+- `backend/app/agent/intent_context.py`
+- `backend/app/agent/memory.py`
+- `backend/app/agent/schemas.py`
+- `backend/app/tests/test_message_router.py`
+- `backend/app/tests/test_route_detail_handler.py`
+- `backend/app/tests/test_orchestrator_intent_flow.py`
+- `backend/app/tests/test_intent_context.py`
+- `backend/app/tests/test_session_state.py`
+- `frontend/src/api/chatApi.ts`
+- `frontend/src/hooks/useChat.ts`
+- `docs/api_contract.md`
+- `docs/version_log.md`
+
+### 协作影响
+
+| 角色 | 影响 | 需要关注 |
+| --- | --- | --- |
+| A 同学：Agent / 后端 | `/api/chat` 现在先经过消息路由，再决定是否规划、修改、回答路线细节或普通聊天。 | 后续新增意图类型时优先扩展 `MessageRouter` 和 handler，不要继续扩大 `_looks_route_related` 词表。 |
+| A 同学：Agent / 后端 | 路线细节追问会复用 `SessionState.current_routes`。 | 当前只回答相邻 stop 交通；后续可扩展指定 route_id、指定第几个 stop、费用/排队/营业时间等 detail type。 |
+| B 同学：POI / 路线策略 | 本次不修改 POI 召回、路线生成、评分算法。 | 用户追问路线细节时不会重新调用 `RouteService.generate_routes`，减少无意义重规划。 |
+| C 同学：前端 / UI | 前端真实后端请求只在首轮发送完整画像，后续依赖后端 session memory。 | 如果用户点击“重置画像/重开会话”，需要同步调用 `reset()`，让下一轮重新发送画像。 |
+
+### 风险与注意事项
+
+- `MessageRouter` 目前是 MVP 路由器，LLM 失败时仍有少量关键词兜底。
+- `RouteDetailHandler` 当前默认使用第一条路线和相邻站点，尚未支持用户指定“第二条路线 / 第二站到第三站”。
+- 如果后端进程重启，内存态 `SessionState.current_routes` 会丢失，路线详情追问会要求先生成路线。
+- 前端仍固定使用 `session_id: "session_demo"`，多用户或多标签页并行联调时会共享同一个后端内存会话。
+
+### 建议验证
+
+```bash
+cd backend
+.\.venv\Scripts\python.exe -m unittest discover -s app\tests
+```
+
+```bash
+cd frontend
+npm.cmd run build
+```
+
+手动联调建议：
+
+- 先生成一条上海路线。
+- 继续输入“就你刚刚生成的方案，那俩地之间怎么过去”。
+- 期望 Agent 直接回答上一轮路线中相邻站点之间的交通方式、预计时间和距离，不再反问地点名，也不重新生成路线。
+
+---
+
 ## 2026-05-21 - `f536727` - `feat(agent): sync intent parsing with route strategy`
 
 负责人：Agent / 后端编排 / A 同学
@@ -98,6 +570,24 @@
   - 解析 intent 后会先经过 `intent_enhancer` 规则增强，纠偏 LLM 或 fallback 的缺失字段。
   - 获取用户画像时传入完整 `ChatRequest`。
   - POI 召回和路线规划会使用合并后的 intent/profile/weights。
+  - 每轮结束后保存结构化 `SessionState`，包括最近消息、上一轮 intent、当前 routes 和 user_profile。
+
+- 新增框架友好的 Agent 状态边界：
+  - `ChatTurn`：保存单条对话消息。
+  - `SessionState`：保存跨轮会话状态。
+  - `AgentState`：描述单轮 agent 编排过程中的状态快照。
+  - `SessionMemory` 从只保存 routes 升级为保存完整 `SessionState`，同时保留 `save_current_routes/get_current_routes` 兼容旧调用。
+
+- 新增第二轮调整指令上下文继承：
+  - 新增 `intent_context`，识别“预算低一点”“别排队”“不想排队”“少走路”“不要太累”“换一家”“换成杭州吧”等调整指令。
+  - 当本轮是调整指令且没有显式新城市时，会继承 `SessionState.last_intent`。
+  - 支持把本轮新增偏好合并进上一轮 intent，例如“预算低一点，别排队”会继承上一轮城市/时长，并新增 `更省钱`、`少排队`、`排队久`。
+  - 支持连续多轮叠加约束，例如“上海一日游” -> “预算低一点，别排队” -> “再少走路一点，安静些”。
+  - “少走路/不要太累”现在会同时进入 `preferences=少走路` 和 `avoid_tags=步行多`。
+  - “不想排队”现在会被识别为调整指令，避免第二轮漏继承上一轮城市后被 onboarding 城市覆盖。
+  - “再/继续/更/一点/一些”这类短跟进表达会被识别为调整消息，用于继承上一轮上下文。
+  - “换成/换到/改成 + 城市”会及时切换到本轮显式城市，同时继承上一轮未被明确改写的时长、偏好和避开标签。
+  - 如果本轮明确说了新城市，例如“我想在北京一日游”，则不会继承旧城市。
 
 - 新增 `intent_enhancer`：
   - 支持城市提取：北京、上海、广州、深圳、成都、杭州、南京、武汉、西安、苏州、重庆等。
@@ -114,19 +604,31 @@
   - 覆盖 ChatRequest 接收前端字段、ProfileService 构造 profile、合并 intent、保留前端权重 boost。
   - `backend/app/tests/test_intent_enhancer.py`
   - `backend/app/tests/test_orchestrator_intent_flow.py`
+  - `backend/app/tests/test_session_state.py`
+  - `backend/app/tests/test_intent_context.py`
   - 覆盖“北京一日游”“2 人 / 人均 200 / 少排队 / 吃好”“今晚上海半天 citywalk”等话术。
   - 覆盖本轮显式城市优先于 onboarding 城市，以及 `一日游` 不进入 preferences。
+  - 覆盖结构化 session state 保存和 orchestrator 写入会话状态。
+  - 覆盖第二轮“预算低一点，别排队”继承上一轮“上海一日游”上下文。
+  - 覆盖第三轮继续叠加“少走路、安静、步行多”等约束。
+  - 覆盖 onboarding 城市为北京、上一轮为上海时，第二轮“不想排队”仍继承上海。
+  - 覆盖 onboarding 城市为北京、上一轮为上海时，第二轮“换成杭州吧”会切换到杭州，并保留上一轮一日游和少排队约束。
 
 ### 涉及文件
 
 - `backend/app/agent/orchestrator.py`
 - `backend/app/agent/intent_enhancer.py`
+- `backend/app/agent/intent_context.py`
+- `backend/app/agent/memory.py`
+- `backend/app/agent/schemas.py`
 - `backend/app/schemas/chat.py`
 - `backend/app/schemas/user.py`
 - `backend/app/services/profile_service.py`
 - `backend/app/tests/test_profile_request_sync.py`
 - `backend/app/tests/test_intent_enhancer.py`
 - `backend/app/tests/test_orchestrator_intent_flow.py`
+- `backend/app/tests/test_session_state.py`
+- `backend/app/tests/test_intent_context.py`
 - `frontend/src/api/chatApi.ts`
 - `frontend/.env.example`
 - `docs/api_contract.md`
@@ -136,6 +638,8 @@
 | 角色 | 影响 | 需要关注 |
 | --- | --- | --- |
 | A 同学：Agent / 后端 | `/api/chat` 已开始消费前端 onboarding 字段，也支持 seed 用户画像 fallback，并新增规则增强层。 | 后续 prompt 和 memory 逻辑要继续使用增强且合并后的 `Intent`；本轮用户显式城市应优先于历史画像城市。 |
+| A 同学：Agent / 后端 | `SessionMemory` 已升级为结构化状态存储。 | 下一步支持真正多轮时，应优先复用 `SessionState.last_intent/current_routes/recent_messages`，不要再新增散落的 dict。 |
+| A 同学：Agent / 后端 | 第二轮调整指令已能继承上一轮 intent。 | 目前是重新生成路线，不是基于 `current_routes` 做局部替换；“换一家”后续还需要接 replan/replace 逻辑。 |
 | B 同学：POI / 路线策略 | POI 召回现在能拿到前端偏好和权重。 | 策略调参时可以假设 `user_profile.tags/preferences/preference_weights` 会来自前端画像。 |
 | C 同学：前端 / UI | 前端传出的 `preferences/avoid_tags/preference_weights` 不再被后端静默丢弃。 | 联调真实后端时在 `frontend/.env` 设置 `VITE_USE_MOCK_CHAT=false` 和 `VITE_API_BASE_URL=http://localhost:8000`。 |
 
@@ -143,6 +647,7 @@
 
 - 当前 `ProfileService` 只做了 seed 用户画像的 MVP 映射，复杂字段如历史行为、默认出发点还没有全部进入 `Intent`。
 - `intent_enhancer` 是规则增强层，不替代 LLM；同义词表需要随着 B 的策略标签持续维护。
+- 第二轮上下文继承目前只覆盖偏好/约束调整；路线局部编辑、已完成 POI、指定 route_id 还没接入。
 - `budget_level` 到具体金额的映射是 MVP 约定，后续如产品口径变化需要同步前后端。
 - 真实反馈闭环 `/api/feedback` 还没有和前端本地画像更新打通。
 - 评分值域和前端展示仍需继续统一：后端真实路线当前按 0-100 输出，前端 mock 仍偏 10 分制。
@@ -159,6 +664,18 @@ $env:PYTHONDONTWRITEBYTECODE='1'
 cd backend
 $env:PYTHONDONTWRITEBYTECODE='1'
 .\.venv\Scripts\python.exe -m unittest app.tests.test_intent_enhancer app.tests.test_orchestrator_intent_flow
+```
+
+```bash
+cd backend
+$env:PYTHONDONTWRITEBYTECODE='1'
+.\.venv\Scripts\python.exe -m unittest app.tests.test_session_state
+```
+
+```bash
+cd backend
+$env:PYTHONDONTWRITEBYTECODE='1'
+.\.venv\Scripts\python.exe -m unittest app.tests.test_intent_context
 ```
 
 ```bash
