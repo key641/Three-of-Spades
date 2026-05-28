@@ -6,7 +6,8 @@ from typing import Any
 
 from app.schemas.intent import Intent
 from app.schemas.poi import POI
-from app.schemas.user import UserProfile
+from app.schemas.user import StrategyTag, UserProfile
+from app.services.strategy_service import StrategyService
 
 
 @dataclass(frozen=True)
@@ -19,13 +20,14 @@ class POICandidate:
 class POIService:
     """B-owned module: filters POI candidates by intent and strategy tags."""
 
-    MIN_DEFAULT_CANDIDATES = 12
+    MIN_DEFAULT_CANDIDATES = 32
 
     def __init__(self, data_path: Path | None = None) -> None:
         self.data_path = data_path or Path(__file__).resolve().parents[3] / "data" / "seed" / "pois.json"
         self._candidates = self._load_candidates()
+        self.strategy_service = StrategyService()
 
-    def search(self, intent: Intent, user_profile: UserProfile | None = None, limit: int = 20) -> list[POI]:
+    def search(self, intent: Intent, user_profile: UserProfile | None = None, limit: int = 32, strategy_tags: list[StrategyTag] | None = None) -> list[POI]:
         city_matches = [candidate for candidate in self._candidates if candidate.poi.city == intent.city]
         if not city_matches:
             city_matches = self._fallback_candidates(intent.city)
@@ -34,9 +36,9 @@ class POIService:
         strict_matches = [
             candidate
             for candidate in city_matches
-            if self._matches_budget(candidate.poi, intent)
-            and self._matches_preferences(candidate, intent)
+            if self._matches_preferences(candidate, intent)
             and not self._matches_avoid_tags(candidate, intent)
+            and self._is_not_extreme_budget_mismatch(candidate.poi, intent)
         ]
         candidates = strict_matches or [
             candidate
@@ -64,7 +66,7 @@ class POIService:
 
         ranked = sorted(
             candidates,
-            key=lambda candidate: self._rank_score(candidate, intent, user_profile),
+            key=lambda candidate: self._rank_score(candidate, intent, user_profile, strategy_tags or []),
             reverse=True,
         )
         return [candidate.poi for candidate in ranked[:limit]]
@@ -229,7 +231,7 @@ class POIService:
         return poi.avg_price <= intent.budget_per_person
 
     def _is_not_extreme_budget_mismatch(self, poi: POI, intent: Intent) -> bool:
-        return poi.avg_price <= max(intent.budget_per_person * 1.5, intent.budget_per_person + 80)
+        return poi.avg_price <= max(intent.budget_per_person * 2, intent.budget_per_person + 160)
 
     def _matches_preferences(self, candidate: POICandidate, intent: Intent) -> bool:
         preferences = self._normalize_terms(intent.preferences)
@@ -244,7 +246,7 @@ class POIService:
             for term in avoid_tags
         )
 
-    def _rank_score(self, candidate: POICandidate, intent: Intent, user_profile: UserProfile | None) -> float:
+    def _rank_score(self, candidate: POICandidate, intent: Intent, user_profile: UserProfile | None, strategy_tags: list[StrategyTag]) -> float:
         poi = candidate.poi
         weights = user_profile.preference_weights if user_profile else {}
         quality_weight = self._weight(weights, "quality", 0.3)
@@ -258,6 +260,10 @@ class POIService:
         budget_score = max(0, 1 - min(poi.avg_price, intent.budget_per_person) / max(intent.budget_per_person, 1))
         if poi.avg_price <= intent.budget_per_person:
             budget_score = max(budget_score, poi.budget_friendly)
+        elif poi.avg_price <= intent.budget_per_person * 1.5:
+            budget_score = max(budget_score, 0.45)
+        elif poi.avg_price > intent.budget_per_person * 2:
+            budget_score *= 0.25
         queue_score = max(
             0,
             1
@@ -282,6 +288,7 @@ class POIService:
             + profile_score * 0.2
             + scenario_score * 0.1
             + time_score * 0.12
+            + self.strategy_service.tag_score(poi, strategy_tags) * 0.45
         )
         if distance_km is not None:
             score += distance_score * 0.45
@@ -415,17 +422,25 @@ class POIService:
         aliases = {
             "少排队": ["少排队", "别排队", "不排队", "排队可接受", "queue"],
             "吃好": ["吃好", "美食", "餐厅", "聚餐", "菜", "restaurant", "local_food", "fine_dining"],
+            "food_first": ["吃好", "美食", "餐厅", "聚餐", "菜", "restaurant", "local_food", "fine_dining"],
+            "photo_food": ["拍照", "出片", "好看", "环境", "餐厅", "美食", "restaurant", "photo"],
+            "nature": ["自然", "风景", "公园", "江景", "海边", "湖", "山", "森林", "nature"],
+            "nature_relax": ["自然", "风景", "公园", "江景", "海边", "湖", "山", "森林", "nature"],
             "咖啡": ["咖啡", "下午茶", "休息", "cafe"],
             "轻食": ["轻食", "小吃", "light_meal", "fast_food", "market"],
             "小吃": ["小吃", "轻食", "light_meal", "fast_food", "market"],
             "更省钱": ["省钱", "便宜", "免费", "budget"],
             "少走路": ["少走路", "轻松", "交通", "metro", "low"],
+            "low_walking": ["少走路", "轻松", "交通", "metro", "low"],
             "轻松": ["少走路", "轻松", "low", "metro"],
             "citywalk": ["citywalk", "街区", "散步", "漫步", "拍照", "landmark"],
             "室内": ["室内", "雨天", "museum", "gallery", "theater", "cafe", "shopping"],
+            "indoor_rainy": ["室内", "雨天", "museum", "gallery", "theater", "cafe", "shopping"],
             "雨天": ["雨天", "室内", "museum", "gallery", "theater", "cafe", "shopping"],
             "拍照": ["拍照", "夜景", "出片", "photo"],
+            "photo": ["拍照", "夜景", "出片", "photo"],
             "晚上": ["晚上", "夜景", "夜游", "evening", "night", "night_view"],
+            "night_view": ["晚上", "夜景", "夜游", "evening", "night", "night_view"],
             "夜游": ["夜游", "夜景", "晚上", "evening", "night", "night_view"],
             "亲子友好": ["亲子友好", "亲子", "儿童", "儿童友好", "family", "公园"],
             "亲子": ["亲子友好", "亲子", "儿童", "儿童友好", "family", "公园"],

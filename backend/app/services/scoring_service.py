@@ -14,6 +14,8 @@ class ScoringService:
         "budget": StrategyWeights(quality=0.20, queue=0.15, distance=0.10, budget=0.45, preference=0.10),
         "low_walking": StrategyWeights(quality=0.15, queue=0.20, distance=0.45, budget=0.10, preference=0.10),
         "food_first": StrategyWeights(quality=0.30, queue=0.15, distance=0.10, budget=0.10, preference=0.35),
+        "photo_food": StrategyWeights(quality=0.30, queue=0.12, distance=0.10, budget=0.08, preference=0.40),
+        "nature_relax": StrategyWeights(quality=0.22, queue=0.14, distance=0.24, budget=0.10, preference=0.30),
         "photo_citywalk": StrategyWeights(quality=0.20, queue=0.15, distance=0.20, budget=0.10, preference=0.35),
         "indoor_rainy": StrategyWeights(quality=0.15, queue=0.15, distance=0.20, budget=0.10, preference=0.40),
         "night_friendly": StrategyWeights(quality=0.25, queue=0.15, distance=0.15, budget=0.10, preference=0.35),
@@ -88,10 +90,12 @@ class ScoringService:
 
         if objective == "food_first" and not any(self._is_food_poi(stop, poi_by_id.get(stop.poi_id)) for stop in stops):
             penalty += 25
+        if objective == "photo_food" and not any(self._is_food_poi(stop, poi_by_id.get(stop.poi_id)) and "photo_stop" in stop.route_roles for stop in stops):
+            penalty += 18
+        if objective == "nature_relax" and not any(self._nature_stop_score(stop, poi_by_id.get(stop.poi_id)) > 0 for stop in stops):
+            penalty += 18
         if objective == "indoor_rainy" and not any((poi_by_id.get(stop.poi_id) and poi_by_id[stop.poi_id].indoor) or stop.indoor for stop in stops):
             penalty += 25
-        if objective == "low_queue" and total_queue > 45:
-            penalty += 10
 
         penalty += self._structure_penalty(stops, objective, request)
         return min(70, penalty)
@@ -180,6 +184,17 @@ class ScoringService:
             meal_count = sum(1 for stop in stops if "meal" in stop.route_roles)
             foodish_count = sum(1 for stop in stops if self._is_food_poi(stop, next((poi for poi in pois if poi.id == stop.poi_id), None)))
             return min(1, meal_count / max(len(stops), 1) * 0.55 + foodish_count / max(len(stops), 1) * 0.3 + self._structure_fit(stops, objective, request) * 0.15)
+        if objective == "photo_food":
+            food_photo_count = sum(
+                1
+                for stop in stops
+                if self._is_food_poi(stop, next((poi for poi in pois if poi.id == stop.poi_id), None)) and self._photo_stop_score(stop, next((poi for poi in pois if poi.id == stop.poi_id), None)) > 0
+            )
+            return min(1, food_photo_count / max(len(stops), 1) * 0.7 + self._structure_fit(stops, objective, request) * 0.3)
+        if objective == "nature_relax":
+            nature_count = sum(1 for stop in stops if self._nature_stop_score(stop, next((poi for poi in pois if poi.id == stop.poi_id), None)) > 0)
+            low_count = sum(1 for stop in stops if stop.walking_intensity == "low")
+            return min(1, nature_count / max(len(stops), 1) * 0.7 + low_count / max(len(stops), 1) * 0.2 + self._structure_fit(stops, objective, request) * 0.1)
         if objective == "photo_citywalk":
             photo_count = sum(1 for stop in stops if "photo_stop" in stop.route_roles)
             return min(1, photo_count / max(len(stops), 1) * 0.65 + self._structure_fit(stops, objective, request) * 0.35)
@@ -241,6 +256,10 @@ class ScoringService:
             penalty += 16
         if objective == "food_first" and role_counts.get("meal", 0) == 0:
             penalty += 12
+        if objective == "photo_food" and not any(self._is_food_poi(stop, None) and "photo_stop" in stop.route_roles for stop in stops):
+            penalty += 14
+        if objective == "nature_relax" and not any(self._nature_stop_score(stop, None) > 0 for stop in stops):
+            penalty += 14
         return penalty
 
     def _role_counts(self, stops: list[RouteStop]) -> dict[str, int]:
@@ -266,7 +285,32 @@ class ScoringService:
         return [poi_by_id[stop.poi_id] for stop in stops if stop.poi_id in poi_by_id]
 
     def _preference_terms(self, request: RoutePlanRequest) -> list[str]:
-        return self._terms([*request.intent.preferences, *request.user_profile.preferences, *request.user_profile.tags])
+        return self._terms([*request.intent.preferences, *request.user_profile.preferences, *request.user_profile.tags, *[tag.tag for tag in request.strategy_tags]])
+
+    def _photo_stop_score(self, stop: RouteStop, poi: POI | None) -> float:
+        text = self._stop_text(stop, poi)
+        return 1.0 if any(term in text for term in ["拍照", "出片", "好看", "文艺", "经典", "环境", "photo"]) else 0.0
+
+    def _nature_stop_score(self, stop: RouteStop, poi: POI | None) -> float:
+        text = self._stop_text(stop, poi)
+        return 1.0 if stop.category == "park" or any(term in text for term in ["自然", "风景", "公园", "江景", "海边", "湖", "山", "森林", "nature"]) else 0.0
+
+    def _stop_text(self, stop: RouteStop, poi: POI | None) -> str:
+        parts = [
+            stop.name,
+            stop.category,
+            stop.primary_category,
+            stop.meal_type,
+            stop.highlight_text,
+            stop.ugc_tip,
+            *stop.secondary_categories,
+            *stop.route_roles,
+            *stop.experience_tags,
+            *stop.tags,
+        ]
+        if poi:
+            parts.extend([poi.name, poi.highlight_text, poi.ugc_tip, *poi.tags, *poi.highlight_text_tags, *poi.experience_tags])
+        return " ".join(str(part) for part in parts if part)
 
     def _terms(self, values: list[str]) -> list[str]:
         result: list[str] = []
@@ -321,6 +365,10 @@ class ScoringService:
         aliases = {
             "少排队": ["少排队", "别排队", "不排队", "排队可接受", "低排队", "queue"],
             "吃好": ["吃好", "美食", "餐厅", "聚餐", "菜", "restaurant", "local_food", "fine_dining", "meal"],
+            "food_first": ["吃好", "美食", "餐厅", "聚餐", "菜", "restaurant", "local_food", "fine_dining", "meal"],
+            "photo_food": ["拍照", "出片", "好看", "环境", "餐厅", "美食", "restaurant", "photo"],
+            "nature": ["自然", "风景", "公园", "江景", "海边", "湖", "山", "森林", "nature"],
+            "nature_relax": ["自然", "风景", "公园", "江景", "海边", "湖", "山", "森林", "nature"],
             "咖啡": ["咖啡", "下午茶", "休息", "cafe", "coffee_break"],
             "轻食": ["轻食", "小吃", "light_meal", "fast_food", "market", "snack"],
             "小吃": ["小吃", "轻食", "light_meal", "fast_food", "market", "snack"],
@@ -328,12 +376,16 @@ class ScoringService:
             "省钱": ["省钱", "便宜", "免费", "budget"],
             "便宜": ["省钱", "便宜", "免费", "budget"],
             "少走路": ["少走路", "轻松", "交通", "metro", "low", "transit_anchor"],
+            "low_walking": ["少走路", "轻松", "交通", "metro", "low", "transit_anchor"],
             "轻松": ["少走路", "轻松", "low", "metro"],
             "citywalk": ["citywalk", "街区", "散步", "漫步", "拍照", "landmark", "photo_stop"],
             "室内": ["室内", "雨天", "museum", "gallery", "theater", "cafe", "shopping", "indoor"],
+            "indoor_rainy": ["室内", "雨天", "museum", "gallery", "theater", "cafe", "shopping", "indoor"],
             "雨天": ["雨天", "室内", "museum", "gallery", "theater", "cafe", "shopping", "rainy"],
             "拍照": ["拍照", "夜景", "出片", "photo", "photo_stop"],
+            "photo": ["拍照", "夜景", "出片", "photo", "photo_stop"],
             "晚上": ["晚上", "夜景", "夜游", "evening", "night", "night_view", "night_end"],
+            "night_view": ["晚上", "夜景", "夜游", "evening", "night", "night_view", "night_end"],
             "人多": ["人多", "人流密集", "拥挤", "crowded"],
             "人流密集": ["人流密集", "拥挤", "人多", "long_queue"],
             "排队久": ["排队久", "long_queue", "排队"],

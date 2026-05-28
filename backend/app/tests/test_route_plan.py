@@ -3,13 +3,16 @@ from app.schemas.route import RoutePlanRequest
 from app.services.poi_service import POIService
 from app.services.profile_service import ProfileService
 from app.services.route_service import RouteService
+from app.services.strategy_service import StrategyService
 
 
-def _plan(intent: Intent):
+def _plan(intent: Intent, message: str = ""):
     profile = ProfileService().get_profile("user_demo")
-    pois = POIService().search(intent, user_profile=profile)
+    strategy_tags = StrategyService().infer_tags(message or " ".join(intent.preferences), intent, profile)
+    strategy_weights = ProfileService().build_strategy_weights(intent, profile, strategy_tags)
+    pois = POIService().search(intent, user_profile=profile, strategy_tags=strategy_tags)
     return RouteService().generate_routes(
-        RoutePlanRequest(intent=intent, user_profile=profile, candidate_pois=pois)
+        RoutePlanRequest(intent=intent, user_profile=profile, strategy_weights=strategy_weights, strategy_tags=strategy_tags, candidate_pois=pois)
     )
 
 
@@ -18,6 +21,7 @@ def test_generate_route_candidates() -> None:
 
     assert len(response.routes) == 3
     assert "balanced" in {route.objective for route in response.routes}
+    assert response.routes[0].objective != "balanced"
     assert len({route.objective for route in response.routes}) == len(response.routes)
     assert all(1 <= len(route.stops) <= 5 for route in response.routes)
     assert all(0 < route.score <= 100 for route in response.routes)
@@ -85,6 +89,29 @@ def test_photo_citywalk_preference_generates_photo_candidates() -> None:
         for route in photo_routes
         for stop in route.stops
     )
+
+
+def test_photo_food_strong_intent_beats_low_queue_objective() -> None:
+    response = _plan(
+        Intent(preferences=["拍照", "吃好", "少排队"]),
+        message="饭店拍照必须好看，吃美食，也希望少排队",
+    )
+    objectives = [route.objective for route in response.routes]
+
+    assert "photo_food" in objectives
+    assert "food_first" in objectives
+    assert "balanced" in objectives
+    assert "low_queue" not in objectives
+    assert objectives[0] != "balanced"
+
+
+def test_nature_intent_generates_nature_route_and_balanced() -> None:
+    response = _plan(Intent(preferences=["自然风景", "少排队"]), message="想看自然风景，轻松半日游，少排队")
+    objectives = [route.objective for route in response.routes]
+
+    assert "nature_relax" in objectives
+    assert "balanced" in objectives
+    assert "low_queue" not in objectives
 
 
 def test_returns_one_top_route_per_objective() -> None:

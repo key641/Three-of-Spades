@@ -151,13 +151,32 @@ class AgentOrchestrator:
         await emit_pending_trace()
         logger.info("step done session_id=%s step=get_user_profile profile=%s", request.session_id, user_profile.model_dump())
 
-        strategy_weights = self.profile_service.build_strategy_weights(intent, user_profile)
+        strategy_tags = self.profile_service.strategy_service.infer_tags(request.message, intent, user_profile)
+        trace.append(
+            AgentTraceStep(
+                step="derive_strategy_tags",
+                label="生成本轮策略标签",
+                status="done",
+                details={"strategy_tags": [tag.model_dump() for tag in strategy_tags]},
+            )
+        )
+        await emit_pending_trace()
+        logger.info(
+            "step done session_id=%s step=derive_strategy_tags tags=%s",
+            request.session_id,
+            [tag.model_dump() for tag in strategy_tags],
+        )
+
+        strategy_weights = self.profile_service.build_strategy_weights(intent, user_profile, strategy_tags)
         trace.append(
             AgentTraceStep(
                 step="build_strategy_weights",
                 label="生成偏好权重",
                 status="done",
-                details={"weights": strategy_weights.model_dump()},
+                details={
+                    "weights": strategy_weights.model_dump(),
+                    "strategy_tags": [tag.model_dump() for tag in strategy_tags],
+                },
             )
         )
         await emit_pending_trace()
@@ -167,7 +186,7 @@ class AgentOrchestrator:
             strategy_weights.model_dump(),
         )
 
-        pois = self.poi_service.search(intent, user_profile=user_profile)
+        pois = self.poi_service.search(intent, user_profile=user_profile, strategy_tags=strategy_tags)
         trace.append(
             AgentTraceStep(
                 step="search_pois",
@@ -177,6 +196,7 @@ class AgentOrchestrator:
                     "count": len(pois),
                     "city": intent.city,
                     "names": [poi.name for poi in pois[:5]],
+                    "strategy_tags": [tag.model_dump() for tag in strategy_tags],
                 },
             )
         )
@@ -189,7 +209,13 @@ class AgentOrchestrator:
         )
 
         routes = self.route_service.generate_routes(
-            RoutePlanRequest(intent=intent, user_profile=user_profile, strategy_weights=strategy_weights, candidate_pois=pois)
+            RoutePlanRequest(
+                intent=intent,
+                user_profile=user_profile,
+                strategy_weights=strategy_weights,
+                strategy_tags=strategy_tags,
+                candidate_pois=pois,
+            )
         ).routes
         trace.append(AgentTraceStep(step="generate_routes", label="生成多目标路线", status="done"))
         trace[-1].details = {

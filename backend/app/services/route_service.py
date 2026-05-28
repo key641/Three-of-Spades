@@ -6,6 +6,7 @@ from app.schemas.poi import POI
 from app.schemas.route import Route, RoutePlanRequest, RoutePlanResponse, RouteScoreBreakdown, RouteStop
 from app.services.amap_service import AmapService, GeoPoint, RouteLeg
 from app.services.scoring_service import ScoringService
+from app.services.strategy_service import StrategyService
 
 
 @dataclass(frozen=True)
@@ -21,10 +22,11 @@ class RouteService:
 
     OBJECTIVE_TITLES = {
         "balanced": "综合候选路线",
-        "low_queue": "少排队候选路线",
         "budget": "省钱候选路线",
         "low_walking": "少走路候选路线",
         "food_first": "吃好优先候选路线",
+        "photo_food": "拍照餐饮候选路线",
+        "nature_relax": "自然风景候选路线",
         "photo_citywalk": "拍照 Citywalk 候选路线",
         "indoor_rainy": "室内雨天候选路线",
         "night_friendly": "夜间友好候选路线",
@@ -35,6 +37,7 @@ class RouteService:
     def __init__(self, amap_service: AmapService | None = None) -> None:
         self.amap_service = amap_service or AmapService()
         self.scoring_service = ScoringService()
+        self.strategy_service = StrategyService()
 
     def generate_routes(self, request: RoutePlanRequest) -> RoutePlanResponse:
         if not request.candidate_pois:
@@ -95,10 +98,11 @@ class RouteService:
         time_fit = -abs(route.total_duration_minutes - request.intent.duration_hours * 60 * 0.85)
         preference_fit = self.scoring_service.preference_match_ratio(route.stops, request, poi_by_id)
         objective_fit = {
-            "low_queue": -route.total_queue_minutes,
             "budget": -route.total_cost_per_person,
             "low_walking": -route.total_distance_km,
             "food_first": route.score_breakdown.preference,
+            "photo_food": route.score_breakdown.preference,
+            "nature_relax": route.score_breakdown.preference,
             "photo_citywalk": route.score_breakdown.preference,
             "indoor_rainy": route.score_breakdown.preference,
             "night_friendly": route.score_breakdown.preference,
@@ -107,39 +111,19 @@ class RouteService:
 
     def _select_objectives(self, request: RoutePlanRequest) -> list[str]:
         if not request.intent.preferences and not request.user_profile.tags and not request.user_profile.preferences:
-            return ["balanced", "low_queue", "budget"]
+            return ["photo_citywalk", "food_first", "balanced"]
 
-        intent_terms = set(request.intent.preferences)
-        profile_terms = set(request.user_profile.tags + request.user_profile.preferences)
-        candidates = [
-            ("low_queue", request.strategy_weights.queue, ["少排队", "别排队", "不排队"]),
-            ("budget", request.strategy_weights.budget, ["更省钱", "省钱", "便宜"]),
-            ("low_walking", request.strategy_weights.distance, ["少走路", "轻松", "老人", "亲子", "亲子友好", "老人友好"]),
-            ("food_first", request.strategy_weights.preference, ["吃好", "咖啡", "聚餐", "餐厅", "美食"]),
-            ("photo_citywalk", request.strategy_weights.preference, ["拍照", "citywalk", "散步", "街区", "艺术展", "本地感"]),
-            ("indoor_rainy", request.strategy_weights.preference, ["室内", "雨天", "下雨"]),
-            ("night_friendly", request.strategy_weights.preference, ["晚上", "夜景", "夜游"]),
-        ]
-
-        selected = ["balanced"]
-        for objective, _weight, values in candidates:
-            if self._has_any(intent_terms, values) and objective not in selected:
-                selected.append(objective)
+        data_counts = self._objective_data_counts(request.candidate_pois)
+        scores = self.strategy_service.objective_scores(request.strategy_tags, request.user_profile, data_counts)
+        ordered = [objective for objective, score in sorted(scores.items(), key=lambda item: item[1], reverse=True) if objective != "balanced" and score > 0]
+        selected = ordered[:2]
+        if "balanced" not in selected:
+            selected.append("balanced")
+        for fallback in ["food_first", "photo_citywalk", "nature_relax", "indoor_rainy", "low_walking", "budget", "night_friendly"]:
             if len(selected) >= 3:
-                return selected
-
-        for objective, _weight, values in candidates:
-            if self._has_any(profile_terms, values) and objective not in selected:
-                selected.append(objective)
-            if len(selected) >= 3:
-                return selected
-
-        for objective, _weight, _values in sorted(candidates, key=lambda item: item[1], reverse=True):
-            if objective not in selected:
-                selected.append(objective)
-            if len(selected) >= 3:
-                return selected
-
+                break
+            if fallback not in selected:
+                selected.append(fallback)
         return selected[:3]
 
     def _build_candidates_for_objective(self, pois: list[POI], objective: str, request: RoutePlanRequest) -> list[Route]:
@@ -382,14 +366,16 @@ class RouteService:
         walking = self._walking_score(poi)
         score = quality * 0.22 + queue * 0.14 + budget * 0.12 + preference * 0.18 + time_fit * 0.14 + distance * 0.12 + walking * 0.08
 
-        if objective == "low_queue":
-            score += queue * 0.5
-        elif objective == "budget":
+        if objective == "budget":
             score += budget * 0.5
         elif objective == "low_walking":
             score += (distance * 0.28 + walking * 0.32 + (0.15 if poi.transit_hub_nearby else 0))
         elif objective == "food_first":
             score += self._food_score(poi, request) * 0.55
+        elif objective == "photo_food":
+            score += self._photo_food_score(poi) * 0.65 + self._food_score(poi, request) * 0.25
+        elif objective == "nature_relax":
+            score += self._nature_score(poi) * 0.65 + walking * 0.12
         elif objective == "photo_citywalk":
             score += self._photo_citywalk_score(poi) * 0.55
         elif objective == "indoor_rainy":
@@ -425,13 +411,21 @@ class RouteService:
         aliases = {
             "少排队": ["少排队", "不排队", "低排队"],
             "吃好": ["餐厅", "美食", "聚餐", "restaurant", "local_food", "fine_dining"],
+            "food_first": ["餐厅", "美食", "聚餐", "restaurant", "local_food", "fine_dining"],
+            "photo_food": ["拍照", "出片", "好看", "环境", "餐厅", "美食", "restaurant", "photo"],
+            "nature": ["自然", "风景", "公园", "江景", "海边", "湖", "山", "森林", "nature"],
+            "nature_relax": ["自然", "风景", "公园", "江景", "海边", "湖", "山", "森林", "nature"],
             "咖啡": ["咖啡", "cafe", "下午茶"],
             "citywalk": ["citywalk", "街区", "散步", "landmark", "拍照"],
             "拍照": ["拍照", "夜景", "经典", "photo"],
+            "photo": ["拍照", "夜景", "经典", "photo"],
             "室内": ["室内", "museum", "gallery", "theater", "shopping", "cafe"],
+            "indoor_rainy": ["室内", "museum", "gallery", "theater", "shopping", "cafe"],
             "雨天": ["室内", "雨天", "rainy"],
             "少走路": ["少走路", "轻松", "low"],
+            "low_walking": ["少走路", "轻松", "low"],
             "晚上": ["晚上", "夜景", "night", "evening"],
+            "night_view": ["晚上", "夜景", "night", "evening"],
         }
         return any(value.lower() in text for value in aliases.get(term, [term]))
 
@@ -462,6 +456,19 @@ class RouteService:
         tag_hit = bool(tags & {"拍照", "夜景", "经典", "小众", "文艺", "citywalk"})
         category_hit = poi.category in {"landmark", "gallery", "night_view", "market"}
         return max(poi.photo_friendly, 0.85 if tag_hit or category_hit else 0)
+
+    def _photo_food_score(self, poi: POI) -> float:
+        if not self._is_food_poi_obj(poi):
+            return 0
+        text = " ".join([poi.name, poi.highlight_text, poi.ugc_tip, *poi.tags, *poi.highlight_text_tags, *poi.experience_tags])
+        photo_hit = any(term in text for term in ["拍照", "出片", "好看", "环境", "文艺", "经典", "网红"])
+        return max(0.55, poi.photo_friendly, 0.95 if photo_hit else 0)
+
+    def _nature_score(self, poi: POI) -> float:
+        text = " ".join([poi.name, poi.category, poi.primary_category, poi.highlight_text, *poi.tags, *poi.highlight_text_tags, *poi.experience_tags])
+        if poi.category == "park" or poi.primary_category == "nature":
+            return 1
+        return 0.9 if any(term in text for term in ["自然", "风景", "公园", "江景", "海边", "湖", "山", "森林"]) else 0
 
     def _time_fit_score(self, poi: POI, request: RoutePlanRequest) -> float:
         minutes = self._parse_time(request.intent.start_time)
@@ -525,11 +532,6 @@ class RouteService:
                 bonus += 0.22
             if counts["rest"] == 0 and ("rest_stop" in poi.route_roles or "coffee_break" in poi.route_roles):
                 bonus += 0.18
-        elif objective == "low_queue":
-            if "main_activity" in poi.route_roles and poi.queue_minutes <= 15:
-                bonus += 0.4
-            if counts["rest"] == 0 and ("rest_stop" in poi.route_roles or "meal" in poi.route_roles):
-                bonus += 0.18
         elif objective == "budget":
             if "main_activity" in poi.route_roles and poi.avg_price <= request.intent.budget_per_person * 0.35:
                 bonus += 0.35
@@ -542,6 +544,16 @@ class RouteService:
                 bonus += 0.45
             if counts["coffee"] == 0 and "coffee_break" in poi.route_roles:
                 bonus += 0.2
+        elif objective == "photo_food":
+            if counts["meal"] == 0 and self._is_food_poi_obj(poi):
+                bonus += 0.55
+            if counts["photo"] == 0 and ("photo_stop" in poi.route_roles or self._photo_food_score(poi) >= 0.8):
+                bonus += 0.45
+        elif objective == "nature_relax":
+            if counts["main_activity"] == 0 and self._nature_score(poi) > 0:
+                bonus += 0.6
+            if counts["rest"] == 0 and ("rest_stop" in poi.route_roles or poi.walking_intensity == "low"):
+                bonus += 0.18
         elif objective == "photo_citywalk":
             if counts["photo"] == 0 and "photo_stop" in poi.route_roles:
                 bonus += 0.55
@@ -610,7 +622,7 @@ class RouteService:
 
     def _route_wants_food(self, objective: str, request: RoutePlanRequest) -> bool:
         terms = set(request.intent.preferences + request.user_profile.tags + request.user_profile.preferences)
-        return objective == "food_first" or self._has_any(terms, ["吃好", "咖啡", "聚餐", "餐厅", "美食"])
+        return objective in {"food_first", "photo_food"} or self._has_any(terms, ["吃好", "咖啡", "聚餐", "餐厅", "美食"])
 
     def _is_food_poi(self, stop: RouteStop) -> bool:
         return stop.category in {"restaurant", "cafe", "market"} or stop.meal_type in {"local_food", "fine_dining", "cafe", "light_meal", "fast_food"}
@@ -709,14 +721,16 @@ class RouteService:
         return end - start
 
     def _stop_reason(self, poi: POI, objective: str, request: RoutePlanRequest, start_minutes: int) -> str:
-        if objective == "low_queue":
-            return f"排队约 {poi.queue_minutes} 分钟，人流压力较低"
         if objective == "budget":
             return f"人均约 {poi.avg_price} 元，适合控制预算"
         if objective == "low_walking":
             return f"步行强度 {poi.walking_intensity}，便于轻松衔接"
         if objective == "food_first" and self._is_food_poi_obj(poi):
             return f"{poi.meal_type} 节点，匹配餐饮和休息需求"
+        if objective == "photo_food":
+            return "餐饮和拍照环境匹配本轮强偏好"
+        if objective == "nature_relax":
+            return "自然风景或低强度休闲体验较强"
         if objective == "photo_citywalk":
             return "拍照、街区或 citywalk 体验较强"
         if objective == "indoor_rainy":
@@ -739,10 +753,11 @@ class RouteService:
     ) -> str:
         objective_text = {
             "balanced": "综合平衡推荐",
-            "low_queue": "少排队推荐",
             "budget": "省钱推荐",
             "low_walking": "少走路推荐",
             "food_first": "餐饮优先推荐",
+            "photo_food": "拍照餐饮推荐",
+            "nature_relax": "自然风景推荐",
             "photo_citywalk": "拍照 citywalk 推荐",
             "indoor_rainy": "室内雨天推荐",
             "night_friendly": "夜间友好推荐",
@@ -760,10 +775,11 @@ class RouteService:
         breakdown: RouteScoreBreakdown,
     ) -> str:
         objective_advantages = {
-            "low_queue": f"排队控制在约 {total_queue} 分钟，适合不想等位的行程",
             "budget": f"人均约 {total_cost} 元，预算压力相对更低",
             "low_walking": f"路上约 {total_travel} 分钟，点位衔接更轻松",
             "food_first": "餐饮和休息节点更突出，适合把吃好放在优先级前面",
+            "photo_food": "餐饮和拍照环境匹配度更高",
+            "nature_relax": "自然风景和轻松休闲体验更突出",
             "photo_citywalk": "拍照、街区和漫步体验更集中",
             "indoor_rainy": "室内点位和雨天友好度更高",
             "night_friendly": "晚间可玩性和夜景体验更强",
@@ -818,3 +834,16 @@ class RouteService:
 
     def _has_any(self, terms: set[str], values: list[str]) -> bool:
         return any(value in term or term in value for term in terms for value in values)
+
+    def _objective_data_counts(self, pois: list[POI]) -> dict[str, int]:
+        return {
+            "photo_food": sum(1 for poi in pois if self._photo_food_score(poi) > 0),
+            "food_first": sum(1 for poi in pois if self._is_food_poi_obj(poi)),
+            "nature_relax": sum(1 for poi in pois if self._nature_score(poi) > 0),
+            "photo_citywalk": sum(1 for poi in pois if self._photo_citywalk_score(poi) > 0),
+            "indoor_rainy": sum(1 for poi in pois if poi.indoor or poi.rainy_day_score >= 0.7),
+            "night_friendly": sum(1 for poi in pois if poi.night_activity >= 0.7 or {"evening", "night"} & set(poi.suitable_time_slots)),
+            "low_walking": sum(1 for poi in pois if poi.walking_intensity == "low"),
+            "budget": sum(1 for poi in pois if poi.avg_price <= 80 or poi.budget_friendly >= 0.8),
+            "balanced": len(pois),
+        }

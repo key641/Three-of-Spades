@@ -5,9 +5,10 @@ from pathlib import Path
 from app.schemas.intent import Intent
 from app.schemas.user import UserProfile
 from app.services.poi_service import POIService
+from app.services.strategy_service import StrategyService
 
 
-KEY_CITIES = {"上海", "北京", "杭州", "成都", "广州", "深圳", "南京", "苏州"}
+KEY_CITIES = {"上海", "北京", "杭州", "成都", "广州", "深圳", "南京", "苏州", "武汉", "重庆", "西安", "长沙", "厦门", "青岛", "天津"}
 
 
 def test_search_loads_pois_from_json() -> None:
@@ -122,7 +123,7 @@ def test_seed_data_covers_key_cities_and_scenarios() -> None:
     pois = POIService().all_pois()
     by_city = Counter(poi.city for poi in pois)
 
-    assert all(by_city[city] >= 20 for city in KEY_CITIES)
+    assert all(by_city[city] == 100 for city in KEY_CITIES)
     for city in KEY_CITIES:
         city_pois = [poi for poi in pois if poi.city == city]
         assert any(poi.category in {"restaurant", "market"} or poi.meal_type in {"local_food", "light_meal", "fine_dining"} for poi in city_pois)
@@ -132,6 +133,7 @@ def test_seed_data_covers_key_cities_and_scenarios() -> None:
         assert any(poi.night_activity >= 0.7 or "night" in poi.suitable_time_slots for poi in city_pois)
         assert any(poi.avg_price <= 80 or poi.budget_friendly >= 0.8 for poi in city_pois)
         assert any(poi.walking_intensity == "low" for poi in city_pois)
+        assert any(poi.category == "park" or poi.primary_category == "nature" for poi in city_pois)
 
 
 def test_seed_data_has_valid_planning_fields() -> None:
@@ -164,7 +166,7 @@ def test_key_city_searches_do_not_return_empty_results() -> None:
     for city in ["北京", "杭州", "成都"]:
         pois = service.search(Intent(city=city))
 
-        assert len(pois) >= 12
+        assert len(pois) == 32
         assert all(poi.city == city for poi in pois)
 
 
@@ -194,9 +196,29 @@ def test_low_budget_and_avoid_tags_still_keep_candidates() -> None:
     assert all("人流密集" not in poi.tags for poi in pois)
 
 
+def test_photo_food_strategy_prioritizes_photo_friendly_food() -> None:
+    service = POIService()
+    profile = UserProfile(user_id="u", tags=[], preferences=[], preference_weights={})
+    intent = Intent(city="上海", preferences=["拍照", "吃好"])
+    tags = StrategyService().infer_tags("饭店拍照必须好看，吃美食", intent, profile)
+    pois = service.search(intent, user_profile=profile, strategy_tags=tags, limit=10)
+
+    assert any(poi.category in {"restaurant", "cafe", "market"} and (poi.photo_friendly >= 0.7 or "拍照" in poi.tags) for poi in pois[:5])
+
+
+def test_nature_strategy_prioritizes_nature_pois() -> None:
+    service = POIService()
+    profile = UserProfile(user_id="u", tags=[], preferences=[], preference_weights={})
+    intent = Intent(city="杭州", preferences=["自然风景"])
+    tags = StrategyService().infer_tags("想看自然风景，轻松一点", intent, profile)
+    pois = service.search(intent, user_profile=profile, strategy_tags=tags, limit=10)
+
+    assert any(poi.category == "park" or poi.primary_category == "nature" for poi in pois[:5])
+
+
 def test_unknown_city_uses_mock_fallback_candidates() -> None:
-    pois = POIService().search(Intent(city="武汉"), limit=12)
+    pois = POIService().search(Intent(city="哈尔滨"), limit=12)
 
     assert len(pois) == 12
-    assert all(poi.city == "武汉" for poi in pois)
+    assert all(poi.city == "哈尔滨" for poi in pois)
     assert all(poi.source_provider == "mock_fallback" for poi in pois)

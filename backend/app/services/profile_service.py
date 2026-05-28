@@ -6,7 +6,8 @@ from app.agent.intent_enhancer import normalize_avoid_tags, normalize_preference
 from app.schemas.feedback import FeedbackRequest, FeedbackResponse
 from app.schemas.chat import ChatRequest
 from app.schemas.intent import Intent
-from app.schemas.user import StrategyWeights, UserProfile
+from app.schemas.user import StrategyTag, StrategyWeights, UserProfile
+from app.services.strategy_service import StrategyService
 
 
 class ProfileService:
@@ -23,6 +24,7 @@ class ProfileService:
     def __init__(self, data_path: Path | None = None) -> None:
         self.data_path = data_path or Path(__file__).resolve().parents[3] / "data" / "seed" / "user_profiles.json"
         self._seed_profiles = self._load_seed_profiles()
+        self.strategy_service = StrategyService()
 
     def get_profile(self, user_id: str, request: ChatRequest | None = None) -> UserProfile:
         if request and (request.preferences or request.avoid_tags or request.preference_weights):
@@ -48,7 +50,7 @@ class ProfileService:
             preference_weights=self.DEFAULT_WEIGHTS,
         )
 
-    def build_strategy_weights(self, intent: Intent, profile: UserProfile) -> StrategyWeights:
+    def build_strategy_weights(self, intent: Intent, profile: UserProfile, strategy_tags: list[StrategyTag] | None = None) -> StrategyWeights:
         weights = StrategyWeights.model_validate(profile.preference_weights or {})
         if "少排队" in intent.preferences:
             weights.queue = max(weights.queue, 0.3)
@@ -56,7 +58,7 @@ class ProfileService:
             weights.budget = max(weights.budget, 0.3)
         if "少走路" in intent.preferences:
             weights.distance = max(weights.distance, 0.25)
-        return weights
+        return self.strategy_service.build_weights(weights, strategy_tags or [])
 
     def merge_request_into_intent(self, intent: Intent, request: ChatRequest) -> Intent:
         data = intent.model_dump()

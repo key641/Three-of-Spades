@@ -4,7 +4,7 @@ from typing import Any
 
 from app.schemas.intent import Intent
 from app.schemas.poi import POI
-from app.schemas.user import StrategyWeights, UserProfile
+from app.schemas.user import StrategyTag, StrategyWeights, UserProfile
 
 
 class RouteStop(BaseModel):
@@ -84,6 +84,7 @@ class RoutePlanRequest(BaseModel):
     intent: Intent
     user_profile: UserProfile
     strategy_weights: StrategyWeights = Field(default_factory=StrategyWeights)
+    strategy_tags: list[StrategyTag] = Field(default_factory=list)
     candidate_pois: list[POI] = Field(default_factory=list)
 
 

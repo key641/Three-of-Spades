@@ -477,6 +477,16 @@ class ReplanService:
         category = str(event_payload.get("replacement_category", "")).strip()
         if not category:
             return True
+        if self._has_any({category}, {"咖啡馆", "咖啡", "cafe"}):
+            return poi.category == "cafe" or poi.meal_type == "cafe" or "coffee_break" in poi.route_roles or "咖啡" in poi.tags
+        if self._has_any({category}, {"餐厅", "美食", "吃饭", "restaurant"}):
+            return poi.category == "restaurant" or poi.meal_type in {"local_food", "fine_dining"} or "meal" in poi.route_roles
+        if self._has_any({category}, {"小吃", "市集", "market"}):
+            return poi.category == "market" or poi.meal_type == "light_meal" or "snack" in poi.route_roles
+        if self._has_any({category}, {"室内展览", "展览", "博物馆", "美术馆"}):
+            return poi.category in {"museum", "gallery"} or bool({"展览", "艺术展"} & set(poi.tags + poi.highlight_text_tags))
+        if self._has_any({category}, {"商场", "购物", "室内"}):
+            return poi.category == "shopping" or poi.indoor
         return self._matches_text_terms(self._poi_text(poi), [category])
 
     def _budget_penalty(self, poi: POI, request: ReplanRequest) -> float:

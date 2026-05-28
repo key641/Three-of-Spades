@@ -9,6 +9,13 @@ class StrategyWeights(BaseModel):
     preference: float = 0.1
 
 
+class StrategyTag(BaseModel):
+    tag: str
+    intensity: float = 0.5
+    polarity: str = "prefer"
+    evidence: str = ""
+
+
 class UserProfile(BaseModel):
     user_id: str
     tags: list[str] = Field(default_factory=list)
