@@ -209,8 +209,8 @@ class RouteService:
         request: RoutePlanRequest,
     ) -> tuple[RouteStop, RouteBuildState] | None:
         distance = self._distance_km(state.current_lat, state.current_lng, poi)
-        transport_mode = self._transport_mode(distance, poi)
-        route_leg = self._route_leg(state.current_lat, state.current_lng, poi, transport_mode)
+        transport_mode = self._transport_mode(distance, poi, request)
+        route_leg = self._best_route_leg(state.current_lat, state.current_lng, poi, request, distance)
         travel_minutes = route_leg.duration_minutes if route_leg else self._travel_minutes(distance)
         distance_km = self._distance_from_leg(route_leg, distance)
         total_add = travel_minutes + poi.queue_minutes + poi.visit_duration_minutes
@@ -271,6 +271,23 @@ class RouteService:
             mode=mode,
         )
 
+    def _best_route_leg(
+        self,
+        current_lat: float | None,
+        current_lng: float | None,
+        poi: POI,
+        request: RoutePlanRequest,
+        distance_km: float | None,
+    ) -> RouteLeg | None:
+        if current_lat is None or current_lng is None or distance_km is None:
+            return None
+        modes = self._candidate_transport_modes(distance_km, poi, request)
+        legs = [self._route_leg(current_lat, current_lng, poi, mode) for mode in modes]
+        available = [leg for leg in legs if leg is not None]
+        if not available:
+            return None
+        return min(available, key=lambda leg: self._transport_score(leg, request))
+
     def _distance_from_leg(self, route_leg: RouteLeg | None, fallback_distance: float | None) -> float | None:
         if route_leg is not None:
             return route_leg.distance_meters / 1000
@@ -316,6 +333,11 @@ class RouteService:
         must_extend: bool,
     ) -> POI | None:
         candidates = [poi for poi in pois if poi.id not in selected_ids]
+        candidates = [
+            poi
+            for poi in candidates
+            if self._passes_meal_composition(selected_ids, poi, pois, request)
+        ]
         if required_food and not any(self._is_food_poi_id(poi_id, pois) for poi_id in selected_ids):
             food_candidates = [poi for poi in candidates if self._is_food_poi_obj(poi)]
             if food_candidates:
@@ -501,6 +523,10 @@ class RouteService:
             penalty += 1.1
         if "meal" in poi.route_roles and counts["meal"] >= 1 and not allows_meal_repeat:
             penalty += 0.85
+        if self._meal_group(poi) in {"coffee", "meal"} and not self._allows_mixed_meal_nodes(request):
+            other_group = "meal" if self._meal_group(poi) == "coffee" else "coffee"
+            if counts[other_group] >= 1:
+                penalty += 2.4
 
         if selected[-1].primary_category and selected[-1].primary_category == poi.primary_category:
             penalty += 0.45
@@ -600,6 +626,35 @@ class RouteService:
         terms = request.intent.preferences + request.user_profile.tags + request.user_profile.preferences
         return self._has_any(set(terms), ["美食路线", "扫街", "吃很多家", "小吃街", "多家餐厅"])
 
+    def _allows_mixed_meal_nodes(self, request: RoutePlanRequest) -> bool:
+        terms = set(request.intent.preferences + request.user_profile.tags + request.user_profile.preferences)
+        wants_coffee = self._has_any(terms, ["咖啡", "下午茶", "咖啡馆", "咖啡探店"])
+        wants_meal = self._has_any(terms, ["吃好", "美食", "餐厅", "正餐", "火锅", "小吃"])
+        return wants_coffee and wants_meal
+
+    def _passes_meal_composition(self, selected_ids: set[str], poi: POI, pois: list[POI], request: RoutePlanRequest) -> bool:
+        group = self._meal_group(poi)
+        if group not in {"coffee", "meal"} or self._allows_mixed_meal_nodes(request):
+            return True
+        selected = [candidate for candidate in pois if candidate.id in selected_ids]
+        if not selected:
+            return True
+        selected_groups = {self._meal_group(candidate) for candidate in selected}
+        if group == "coffee" and "meal" in selected_groups:
+            return False
+        if group == "meal" and "coffee" in selected_groups:
+            return False
+        return True
+
+    def _meal_group(self, poi: POI | RouteStop) -> str:
+        if "coffee_break" in poi.route_roles or poi.category == "cafe" or poi.meal_type == "cafe":
+            return "coffee"
+        if "meal" in poi.route_roles or poi.category == "restaurant" or poi.meal_type in {"local_food", "fine_dining"}:
+            return "meal"
+        if "snack" in poi.route_roles or poi.category == "market" or poi.meal_type in {"light_meal", "fast_food"}:
+            return "snack"
+        return "none"
+
     def _food_replacement(
         self,
         pois: list[POI],
@@ -662,16 +717,61 @@ class RouteService:
             return round(8 + distance_km * 5)
         return round(12 + distance_km * 4)
 
-    def _transport_mode(self, distance_km: float | None, poi: POI) -> str | None:
+    def _transport_mode(self, distance_km: float | None, poi: POI, request: RoutePlanRequest | None = None) -> str | None:
         if distance_km is None:
             return None
-        if distance_km <= 1:
+        if distance_km <= 0.8 and not self._prefers_less_walking(request):
             return "walk"
         if poi.recommended_transport:
-            return "/".join(poi.recommended_transport[:2])
+            return self._normalize_transport_mode(poi.recommended_transport[0])
+        if self._prefers_less_walking(request) and distance_km > 1:
+            return "taxi"
         if distance_km <= 5:
-            return "metro/taxi"
-        return "taxi/metro"
+            return "metro"
+        return "taxi"
+
+    def _candidate_transport_modes(self, distance_km: float, poi: POI, request: RoutePlanRequest) -> list[str]:
+        modes = ["walk", "taxi", "metro"]
+        for mode in poi.recommended_transport:
+            normalized = self._normalize_transport_mode(mode)
+            if normalized not in modes:
+                modes.append(normalized)
+        if distance_km <= 0.8 and not self._prefers_less_walking(request):
+            return ["walk", "taxi"]
+        if distance_km > 8:
+            return [mode for mode in modes if mode != "walk"]
+        return modes
+
+    def _transport_score(self, leg: RouteLeg, request: RoutePlanRequest) -> float:
+        score = leg.duration_minutes
+        mode = self._normalize_transport_mode(leg.mode)
+        distance_km = leg.distance_meters / 1000
+        if self._prefers_less_walking(request) and mode == "walk" and distance_km > 1:
+            score += distance_km * 18
+        if mode == "taxi":
+            score += 2
+        if mode in {"metro", "bus"}:
+            score += 4
+        return score
+
+    def _prefers_less_walking(self, request: RoutePlanRequest | None) -> bool:
+        if request is None:
+            return False
+        terms = set(request.intent.preferences + request.user_profile.tags + request.user_profile.preferences)
+        if self._has_any(terms, ["少走路", "轻松", "室内", "亲子", "老人"]):
+            return True
+        return request.intent.duration_hours <= 4 and request.intent.scenario in {"friends_citywalk", "family_trip"}
+
+    def _normalize_transport_mode(self, mode: str) -> str:
+        if "walk" in mode or "步行" in mode:
+            return "walk"
+        if "taxi" in mode or "drive" in mode or "打车" in mode or "自驾" in mode:
+            return "taxi"
+        if "bus" in mode or "公交" in mode:
+            return "bus"
+        if "metro" in mode or "地铁" in mode:
+            return "metro"
+        return mode
 
     def _parse_time(self, value: str) -> int:
         match = re.search(r"(\d{1,2}):?(\d{2})?", value)

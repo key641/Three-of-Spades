@@ -1,5 +1,6 @@
 from pydantic import BaseModel
 from pydantic import Field
+from typing import Any
 
 from app.schemas.intent import Intent
 from app.schemas.route import Route
@@ -18,6 +19,14 @@ class ChatRequest(BaseModel):
     avoid_tags: list[str] = Field(default_factory=list)
     budget_level: str | None = None
     preference_weights: dict[str, float] | None = None
+    start_location_name: str | None = None
+    start_lat: float | None = None
+    start_lng: float | None = None
+    current_lat: float | None = None
+    current_lng: float | None = None
+    selected_route_id: str | None = None
+    target_poi_id: str | None = None
+    event_payload: dict[str, Any] = Field(default_factory=dict)
 
 
 class AgentTraceStep(BaseModel):

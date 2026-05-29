@@ -186,3 +186,32 @@ def test_indoor_rainy_route_has_indoor_main_activity() -> None:
     indoor_route = next(route for route in response.routes if route.objective == "indoor_rainy")
 
     assert any(stop.indoor and "main_activity" in stop.route_roles for stop in indoor_route.stops)
+
+
+def test_chongqing_half_day_defaults_to_one_meal_or_coffee_node() -> None:
+    response = _plan(
+        Intent(city="重庆", duration_hours=4, preferences=["室内", "拍照", "吃好", "citywalk"]),
+        message="我打算下午和朋友在重庆半日游，不希望一直在室外，能够打卡地标景点还能出片，吃点重庆特色美食。",
+    )
+
+    assert response.routes
+    for route in response.routes:
+        has_coffee = any(stop.category == "cafe" or stop.meal_type == "cafe" for stop in route.stops)
+        has_meal = any(stop.category == "restaurant" or stop.meal_type in {"local_food", "fine_dining"} for stop in route.stops)
+        assert not (has_coffee and has_meal)
+        if has_coffee or has_meal:
+            assert any("main_activity" in stop.route_roles or "photo_stop" in stop.route_roles for stop in route.stops)
+
+
+def test_less_walking_transport_avoids_long_walks() -> None:
+    response = _plan(Intent(start_lat=31.2304, start_lng=121.4737, preferences=["少走路"]))
+
+    assert response.routes
+    assert all(
+        not (
+            stop.transport_mode_from_previous == "walk"
+            and (stop.distance_km_from_previous or 0) > 1
+        )
+        for route in response.routes
+        for stop in route.stops
+    )

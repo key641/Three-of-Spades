@@ -211,6 +211,7 @@ export async function sendChatMessage(
   message: string,
   profile?: OnboardingProfile,
   includeProfile = true,
+  options: Record<string, unknown> = {},
 ): Promise<ChatResponse> {
   if (USE_MOCK) {
     await delay(1200); // 模拟 1.2s 延迟，让 loading 动效可见
@@ -235,6 +236,7 @@ export async function sendChatMessage(
     event_type: "user_message",
     // 完整画像字段只在会话首轮发送，后续由后端 session memory 接管当前上下文。
     ...profilePayload,
+    ...options,
   });
 }
 
@@ -243,6 +245,7 @@ export async function sendChatMessageStream(
   profile?: OnboardingProfile,
   includeProfile = true,
   onProgress?: (step: AgentTraceStep) => void,
+  options: Record<string, unknown> = {},
 ): Promise<ChatResponse> {
   if (USE_MOCK) {
     const mockSteps: AgentTraceStep[] = [
@@ -323,6 +326,7 @@ export async function sendChatMessageStream(
       message,
       event_type: "user_message",
       ...profilePayload,
+      ...options,
     }),
   });
 

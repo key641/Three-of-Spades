@@ -17,7 +17,7 @@ export function useChat(profile?: OnboardingProfile) {
   const [error, setError] = useState<string | null>(null);
   const hasSentProfile = useRef(false);
 
-  async function send(message: string) {
+  async function send(message: string, options: Record<string, unknown> = {}) {
     const userMsg: ChatMessage = { role: "user", content: message, timestamp: Date.now() };
     setMessages((prev) => [...prev, userMsg]);
     setResponse(null);
@@ -26,9 +26,10 @@ export function useChat(profile?: OnboardingProfile) {
     setError(null);
     try {
       const includeProfile = !hasSentProfile.current;
+      const locationOptions = await getCurrentLocationOptions();
       const res = await sendChatMessageStream(message, profile, includeProfile, (step) => {
         setLiveTrace((prev) => [...prev, step]);
-      });
+      }, { ...locationOptions, ...options });
       hasSentProfile.current = true;
       setResponse(res);
       setLiveTrace(res.agent_trace);
@@ -61,4 +62,29 @@ export function useChat(profile?: OnboardingProfile) {
   }
 
   return { messages, response, liveTrace, loading, error, send, inject, reset };
+}
+
+async function getCurrentLocationOptions(): Promise<Record<string, unknown>> {
+  if (typeof navigator === "undefined" || !navigator.geolocation) {
+    return {};
+  }
+  return new Promise((resolve) => {
+    const timer = window.setTimeout(() => resolve({}), 1200);
+    navigator.geolocation.getCurrentPosition(
+      (position) => {
+        window.clearTimeout(timer);
+        resolve({
+          current_lat: position.coords.latitude,
+          current_lng: position.coords.longitude,
+          start_lat: position.coords.latitude,
+          start_lng: position.coords.longitude,
+        });
+      },
+      () => {
+        window.clearTimeout(timer);
+        resolve({});
+      },
+      { enableHighAccuracy: false, maximumAge: 300000, timeout: 1000 },
+    );
+  });
 }

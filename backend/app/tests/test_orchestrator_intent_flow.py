@@ -1,12 +1,14 @@
 import unittest
 import json
-from unittest.mock import AsyncMock
+from unittest.mock import AsyncMock, MagicMock
 
 from app.agent.intent_enhancer import enhance_intent_from_message
 from app.agent.message_router import MessageIntentType, MessageRoute, TurnType
 from app.agent.orchestrator import AgentOrchestrator
 from app.schemas.chat import ChatRequest
-from app.schemas.route import Route, RouteScoreBreakdown, RouteStop
+from app.schemas.intent import Intent
+from app.schemas.route import Route, RoutePlanResponse, RouteScoreBreakdown, RouteStop
+from app.schemas.user import UserProfile
 
 
 def stub_route_planning_router(orchestrator: AgentOrchestrator) -> None:
@@ -129,6 +131,40 @@ class OrchestratorIntentFlowTest(unittest.TestCase):
             self.assertIn("外滩观景平台", response.message)
             self.assertIn("地铁或骑行", response.message)
             orchestrator.route_service.generate_routes.assert_not_called()
+
+        import asyncio
+
+        asyncio.run(run_case())
+
+    def test_structured_replace_poi_uses_local_replan_without_strategy_regeneration(self) -> None:
+        async def run_case() -> None:
+            orchestrator = AgentOrchestrator()
+            route = build_route()
+            updated = route.model_copy(deep=True)
+            updated.changed_stops = []
+            orchestrator.replan_service.replan = MagicMock(return_value=RoutePlanResponse(routes=[updated]))
+            orchestrator.route_service.generate_routes = MagicMock()
+            state = orchestrator.memory.get_state("s1")
+            state.current_routes = [route]
+            state.last_intent = Intent(city="上海", preferences=["拍照"])
+            state.user_profile = UserProfile(user_id="user_001")
+            orchestrator.memory.save_state(state)
+
+            response = await orchestrator.handle_message(
+                ChatRequest(
+                    session_id="s1",
+                    user_id="user_001",
+                    message="帮我换一家",
+                    event_type="replace_poi",
+                    selected_route_id=route.route_id,
+                    event_payload={"force_replace": True},
+                )
+            )
+
+            orchestrator.replan_service.replan.assert_called_once()
+            orchestrator.route_service.generate_routes.assert_not_called()
+            self.assertEqual(response.agent_trace[0].step, "local_replan")
+            self.assertEqual(response.agent_trace[0].label, "局部替换 POI")
 
         import asyncio
 

@@ -1,5 +1,5 @@
 import math
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from typing import Any, Protocol
 
 from app.schemas.map import ExternalPOICandidate, ExternalPOIStatus, GeoPoint, LiveLegEstimate
@@ -51,6 +51,8 @@ class MockMapProvider:
     """Provider-shaped mock so route logic can later swap in AMap/Baidu/Google."""
 
     source = "mock"
+    QUEUE_CACHE_SECONDS = 120
+    _queue_cache: dict[tuple[str, int, str], tuple[int, float]] = {}
 
     def get_live_travel_time(
         self,
@@ -121,6 +123,7 @@ class MockMapProvider:
         affected_ids = set(self._as_list(payload.get("affected_poi_ids")))
         affected_id = str(payload.get("affected_poi_id", ""))
         is_affected = place_id in affected_ids or (affected_id and place_id == affected_id)
+        now = datetime.now(UTC).replace(microsecond=0)
 
         status = str(payload.get("status", "normal"))
         if payload.get("event_type") == "poi_closed" and is_affected:
@@ -131,7 +134,8 @@ class MockMapProvider:
                 status=status,
                 is_open=False,
                 is_accessible=False,
-                updated_at=self._now(),
+                updated_at=self._format_time(now),
+                valid_until=self._format_time(now + timedelta(minutes=5)),
                 source=self.source,
                 reason=str(payload.get("reason") or payload.get("event_label") or "地点暂不可用"),
             )
@@ -141,12 +145,15 @@ class MockMapProvider:
         if payload.get("event_type") == "queue_spike" and is_affected:
             queue_minutes = queue_minutes or 90
             crowd_level = crowd_level or 0.9
+        if queue_minutes is None and payload.get("enable_live_queue_mock", True):
+            queue_minutes, crowd_level = self._mock_live_queue(place_id, payload, now)
 
         return ExternalPOIStatus(
             place_id=place_id,
-            queue_minutes=int(queue_minutes) if queue_minutes is not None and is_affected else None,
-            live_crowd_level=float(crowd_level) if crowd_level is not None and is_affected else None,
-            updated_at=self._now(),
+            queue_minutes=int(queue_minutes) if queue_minutes is not None and (is_affected or payload.get("enable_live_queue_mock", True)) else None,
+            live_crowd_level=float(crowd_level) if crowd_level is not None and (is_affected or payload.get("enable_live_queue_mock", True)) else None,
+            updated_at=self._format_time(now),
+            valid_until=self._format_time(now + timedelta(seconds=self.QUEUE_CACHE_SECONDS)),
             source=self.source,
             reason=str(payload.get("reason") or payload.get("event_label") or "") if is_affected else "",
         )
@@ -175,7 +182,35 @@ class MockMapProvider:
         return radius_km * 2 * math.atan2(math.sqrt(a), math.sqrt(1 - a))
 
     def _now(self) -> str:
-        return datetime.now(UTC).replace(microsecond=0).isoformat().replace("+00:00", "Z")
+        return self._format_time(datetime.now(UTC).replace(microsecond=0))
+
+    def _format_time(self, value: datetime) -> str:
+        return value.isoformat().replace("+00:00", "Z")
+
+    def _mock_live_queue(self, place_id: str, payload: dict[str, Any], now: datetime) -> tuple[int, float]:
+        base_queue = int(payload.get("base_queue_minutes") or payload.get("queue_time_min") or 0)
+        category = str(payload.get("category") or payload.get("primary_category") or "")
+        seed = str(payload.get("session_id") or payload.get("seed") or "demo")
+        bucket = int(now.timestamp() // self.QUEUE_CACHE_SECONDS)
+        cache_key = (place_id, bucket, seed)
+        cached = self._queue_cache.get(cache_key)
+        if cached:
+            return cached
+
+        hour = now.hour
+        category_bonus = 0
+        if category in {"restaurant", "food"} and (11 <= hour <= 13 or 17 <= hour <= 20):
+            category_bonus = 14
+        elif category in {"cafe"} and 14 <= hour <= 17:
+            category_bonus = 8
+        elif category in {"landmark", "scenic", "gallery", "museum", "culture"} and 16 <= hour <= 20:
+            category_bonus = 6
+
+        stable_noise = abs(hash(f"{place_id}:{bucket}:{seed}")) % 13 - 4
+        queue = max(0, min(120, base_queue + category_bonus + stable_noise))
+        crowd = min(1.0, max(0.05, queue / 90))
+        self._queue_cache[cache_key] = (queue, crowd)
+        return queue, crowd
 
     def _as_list(self, value: Any) -> list[str]:
         if value is None:

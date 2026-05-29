@@ -25,3 +25,17 @@ def test_low_queue_profile_does_not_create_objective_affinity() -> None:
 
     assert "low_queue" not in scores
     assert scores["nature_relax"] > scores["balanced"]
+
+
+def test_chongqing_half_day_tags_have_distinct_intensity() -> None:
+    service = StrategyService()
+    profile = UserProfile(user_id="u", tags=[], preferences=[], preference_weights=StrategyWeights().model_dump())
+    message = "我打算下午和朋友在重庆半日游，不希望一直在室外，能够打卡地标景点还能出片，吃点重庆特色美食。"
+    intent = Intent(city="重庆", duration_hours=4, preferences=["室内", "拍照", "吃好", "citywalk"])
+
+    tags = {tag.tag: tag for tag in service.infer_tags(message, intent, profile)}
+
+    assert tags["indoor_rainy"].intensity >= tags["photo"].intensity
+    assert tags["photo"].intensity > tags["food_first"].intensity
+    assert tags["photo_food"].intensity < tags["photo"].intensity
+    assert len({tag.intensity for tag in tags.values()}) > 1

@@ -4,6 +4,7 @@ from app.services.poi_service import POIService
 from app.services.profile_service import ProfileService
 from app.services.replan_service import ReplanService
 from app.services.route_service import RouteService
+from app.services.map_provider import MockMapProvider
 
 
 def _route_for_replan(preferences: list[str] | None = None):
@@ -244,3 +245,25 @@ def test_warning_only_never_replaces_available_poi() -> None:
     updated = response.routes[0]
     assert affected.poi_id in [stop.poi_id for stop in updated.stops]
     assert not updated.changed_stops
+
+
+def test_mock_live_queue_is_stable_within_cache_window_and_category_sensitive() -> None:
+    provider = MockMapProvider()
+
+    restaurant = provider.get_place_status(
+        "poi_restaurant",
+        {"base_queue_minutes": 10, "category": "restaurant", "seed": "s1"},
+    )
+    same_restaurant = provider.get_place_status(
+        "poi_restaurant",
+        {"base_queue_minutes": 10, "category": "restaurant", "seed": "s1"},
+    )
+    cafe = provider.get_place_status(
+        "poi_cafe",
+        {"base_queue_minutes": 10, "category": "cafe", "seed": "s1"},
+    )
+
+    assert restaurant.queue_minutes == same_restaurant.queue_minutes
+    assert restaurant.valid_until
+    assert cafe.queue_minutes is not None
+    assert restaurant.queue_minutes is not None

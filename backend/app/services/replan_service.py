@@ -125,6 +125,9 @@ class ReplanService:
 
     def _live_status_for_stop(self, stop: RouteStop, event_payload: dict) -> ExternalPOIStatus:
         payload = dict(event_payload)
+        payload.setdefault("base_queue_minutes", stop.queue_minutes)
+        payload.setdefault("category", stop.category)
+        payload.setdefault("primary_category", stop.primary_category)
         affected_category = str(payload.get("affected_category", ""))
         has_explicit_target = payload.get("affected_poi_id") or payload.get("affected_poi_ids")
         if affected_category and not has_explicit_target:
@@ -213,7 +216,11 @@ class ReplanService:
         )
 
     def _live_status_for_poi(self, poi: POI, event_payload: dict) -> ExternalPOIStatus:
-        return self.map_provider.get_place_status(poi.id, event_payload)
+        payload = dict(event_payload)
+        payload.setdefault("base_queue_minutes", poi.queue_minutes)
+        payload.setdefault("category", poi.category)
+        payload.setdefault("primary_category", poi.primary_category)
+        return self.map_provider.get_place_status(poi.id, payload)
 
     def _external_replacements(
         self,
@@ -357,6 +364,8 @@ class ReplanService:
             experience_tags=poi.experience_tags,
             district=poi.district,
             address=poi.address,
+            lat=poi.lat,
+            lng=poi.lng,
             start_time=self._format_time(start_minutes),
             end_time=self._format_time(end_minutes),
             estimated_cost=poi.avg_price,

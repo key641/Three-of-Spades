@@ -50,8 +50,14 @@ class StrategyService:
                 tags[tag] = StrategyTag(tag=tag, intensity=self._intensity(message, evidence, tag), evidence=evidence)
 
         if "photo" in tags and "food_first" in tags:
-            evidence = self._first_hit(message, self.RULES["photo_food"].aliases) or "拍照+美食"
-            tags["photo_food"] = StrategyTag(tag="photo_food", intensity=max(tags["photo"].intensity, tags["food_first"].intensity, 0.75), evidence=evidence)
+            explicit_evidence = self._first_hit(message, self.RULES["photo_food"].aliases)
+            if explicit_evidence:
+                intensity = max(self._intensity(message, explicit_evidence, "photo_food"), 0.85)
+                evidence = explicit_evidence
+            else:
+                intensity = min(max(tags["photo"].intensity, tags["food_first"].intensity) * 0.62, 0.55)
+                evidence = "拍照+美食"
+            tags["photo_food"] = StrategyTag(tag="photo_food", intensity=intensity, evidence=evidence)
 
         for term in profile.tags + profile.preferences:
             for tag, rule in self.RULES.items():
@@ -126,15 +132,47 @@ class StrategyService:
         return 1.0 if rule and self._contains(text, rule.aliases) else 0.0
 
     def _intensity(self, message: str, evidence: str, tag: str) -> float:
-        if any(term in message for term in ["必须", "一定", "最重要", "核心", "必须要"]):
+        if evidence.startswith("画像:"):
+            return 0.35
+
+        window = self._evidence_window(message, evidence)
+        target_text = window or message
+        if tag == "indoor_rainy" and self._contains(message, ("不希望一直在室外", "不想一直在室外", "不要一直在室外", "别一直在室外", "不全在室外")):
+            return 0.88
+        if self._contains(target_text, ("必须", "一定", "最重要", "核心", "必须要")):
             return 1.0
-        if any(term in message for term in ["最好", "很想", "特别", "主要", "希望"]):
+        if self._contains(target_text, ("最好", "很想", "特别", "主要")):
             return 0.85
-        if tag == "photo_food":
-            return 0.85
-        if any(term in message for term in ["想", "能够", "可以", "适合"]):
-            return 0.55
-        return 0.35 if evidence.startswith("画像:") else 0.45
+
+        base_by_tag = {
+            "photo": 0.58,
+            "food_first": 0.56,
+            "indoor_rainy": 0.62,
+            "photo_food": 0.55,
+            "cafe": 0.54,
+        }
+        intensity = base_by_tag.get(tag, 0.48)
+
+        if self._contains(target_text, ("希望", "想", "可以", "能够", "适合")):
+            intensity += 0.08
+        if self._contains(target_text, ("还能", "顺便", "吃点", "一点", "稍微")):
+            intensity -= 0.08
+        if tag == "food_first" and self._contains(target_text, ("吃点", "小吃", "特色美食")):
+            intensity -= 0.06
+        if tag == "photo" and self._contains(target_text, ("打卡", "出片")):
+            intensity += 0.04
+        if tag == "photo_food" and not self._contains(message, self.RULES["photo_food"].aliases):
+            intensity -= 0.12
+
+        return self._clamp(round(intensity, 2))
+
+    def _evidence_window(self, message: str, evidence: str, radius: int = 8) -> str:
+        index = message.find(evidence)
+        if index < 0:
+            return ""
+        start = max(0, index - radius)
+        end = min(len(message), index + len(evidence) + radius)
+        return message[start:end]
 
     def _first_hit(self, text: str, aliases: tuple[str, ...]) -> str:
         return next((alias for alias in aliases if alias in text), "")

@@ -22,9 +22,11 @@ from app.schemas.chat import AgentTraceStep, ChatRequest, ChatResponse
 from app.schemas.intent import Intent
 from app.schemas.poi import POI
 from app.schemas.route import Route
+from app.schemas.route import ReplanRequest
 from app.schemas.route import RoutePlanRequest
 from app.services.poi_service import POIService
 from app.services.profile_service import ProfileService
+from app.services.replan_service import ReplanService
 from app.services.route_service import RouteService
 
 
@@ -42,6 +44,7 @@ class AgentOrchestrator:
         self.profile_service = ProfileService()
         self.poi_service = POIService()
         self.route_service = RouteService()
+        self.replan_service = ReplanService()
 
     async def handle_message(
         self,
@@ -72,6 +75,9 @@ class AgentOrchestrator:
         )
 
         session_state = self.memory.get_state(request.session_id)
+        if self._is_structured_replan_request(request, session_state):
+            return self._handle_structured_replan(request, session_state, trace)
+
         message_route = await self.message_router.classify(request.message, session_state)
         trace.append(
             AgentTraceStep(
@@ -256,6 +262,97 @@ class AgentOrchestrator:
             routes=routes,
             agent_trace=trace,
         )
+
+    def _is_structured_replan_request(self, request: ChatRequest, session_state) -> bool:
+        return bool(
+            session_state.current_routes
+            and request.event_type in {"replace_poi", "avoid_poi", "queue_spike", "traffic_jam", "user_tired", "weather_change"}
+        )
+
+    def _handle_structured_replan(self, request: ChatRequest, session_state, trace: list[AgentTraceStep]) -> ChatResponse:
+        selected_route_id = request.selected_route_id or self._default_route_id(session_state.current_routes)
+        affected_poi_id = request.target_poi_id or self._default_replacement_target(session_state.current_routes, selected_route_id)
+        event_payload = dict(request.event_payload)
+        if affected_poi_id:
+            event_payload.setdefault("affected_poi_id", affected_poi_id)
+        if request.event_type == "replace_poi":
+            event_payload.setdefault("force_replace", True)
+
+        trace.append(
+            AgentTraceStep(
+                step="local_replan",
+                label="局部替换 POI" if request.event_type == "replace_poi" else "局部重规划",
+                status="done",
+                details={
+                    "event_type": request.event_type,
+                    "selected_route_id": selected_route_id,
+                    "affected_poi_id": affected_poi_id,
+                },
+            )
+        )
+        response = self.replan_service.replan(
+            ReplanRequest(
+                session_id=request.session_id,
+                selected_route_id=selected_route_id,
+                event_type=request.event_type,
+                event_label=request.message or "局部调整",
+                current_routes=session_state.current_routes,
+                current_lat=request.current_lat,
+                current_lng=request.current_lng,
+                current_time=request.event_payload.get("current_time"),
+                event_payload=event_payload,
+                intent=session_state.last_intent,
+                user_profile=session_state.user_profile,
+            )
+        )
+        routes = response.routes
+        message = self._build_replan_message(routes, selected_route_id)
+        self.memory.save_turn_result(
+            session_id=request.session_id,
+            user_message=request.message,
+            assistant_message=message,
+            intent=session_state.last_intent or Intent(),
+            user_profile=session_state.user_profile or self.profile_service.get_profile(request.user_id, request),
+            routes=routes,
+            trip_state=session_state.trip_state,
+        )
+        return ChatResponse(
+            session_id=request.session_id,
+            message=message,
+            need_clarification=False,
+            clarifying_question=None,
+            intent=session_state.last_intent,
+            user_profile=session_state.user_profile,
+            routes=routes,
+            agent_trace=trace,
+        )
+
+    def _default_route_id(self, routes: list[Route]) -> str | None:
+        return routes[0].route_id if routes else None
+
+    def _default_replacement_target(self, routes: list[Route], selected_route_id: str | None) -> str | None:
+        route = next((candidate for candidate in routes if candidate.route_id == selected_route_id), routes[0] if routes else None)
+        if route is None or not route.stops:
+            return None
+        replaceable = route.stops[1:] or route.stops
+        target = max(
+            replaceable,
+            key=lambda stop: (
+                stop.queue_minutes,
+                1 if stop.walking_intensity == "high" else 0,
+                stop.estimated_cost,
+            ),
+        )
+        return target.poi_id
+
+    def _build_replan_message(self, routes: list[Route], selected_route_id: str | None) -> str:
+        route = next((candidate for candidate in routes if candidate.route_id == selected_route_id), routes[0] if routes else None)
+        if route is None:
+            return "当前没有可调整的路线，我需要先生成一条路线再帮你换一家。"
+        if route.changed_stops:
+            change = route.changed_stops[0]
+            return f"已在当前路线里把「{change.from_name}」换成「{change.to_name}」，并重新计算了后续交通、排队和评分。"
+        return route.replan_reason or "已复核当前路线，暂时没有找到更合适的替代点。"
 
     def _format_message_route_label(self, message_route) -> str:
         route_label = self._turn_type_label(message_route.turn_type.value if message_route.turn_type else "")

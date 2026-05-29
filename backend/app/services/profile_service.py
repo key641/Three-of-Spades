@@ -64,6 +64,14 @@ class ProfileService:
         data = intent.model_dump()
         if request.city and not intent.city_from_message:
             data["city"] = request.city
+        if request.start_location_name:
+            data["start_location_name"] = request.start_location_name
+        if request.start_lat is not None and request.start_lng is not None:
+            data["start_lat"] = request.start_lat
+            data["start_lng"] = request.start_lng
+        elif request.current_lat is not None and request.current_lng is not None:
+            data["start_lat"] = request.current_lat
+            data["start_lng"] = request.current_lng
 
         scenario = request.scenario or (request.scenarios[0] if request.scenarios else None)
         if scenario:

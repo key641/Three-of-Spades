@@ -103,7 +103,16 @@ export function PlannerPage({ profile, onResetProfile }: PlannerPageProps) {
 
   // P1: ActionBar — 接通 send
   function handleAction(actionKey: string, routeId: string) {
-    send(buildActionMessage(actionKey, routeId));
+    const message = buildActionMessage(actionKey, routeId);
+    if (actionKey === "swap") {
+      send(message, {
+        event_type: "replace_poi",
+        selected_route_id: routeId,
+        event_payload: { force_replace: true },
+      });
+      return;
+    }
+    send(message);
   }
 
   // P2: 重置 profile — 同时清空对话
