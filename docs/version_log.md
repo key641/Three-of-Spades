@@ -55,6 +55,79 @@
 
 ---
 
+## 2026-05-30 - `pending` - `fix(agent): 标准化单位换算并保护局部路线编辑约束`
+
+负责人：Agent / 后端编排 / A 同学
+
+### 更新概览
+
+本次修复两类同源问题：一是 LLM 结构化输出时可能把“1天”写成 `duration_hours=1`，二是点击“换一家 / 替代方案”这类局部路线操作后，LLM 可能把它当成完整新规划，误改预算、开始时间和时长。
+
+修复策略不是只补单个 case，而是新增通用单位标准化层，并在上下文合并层保护局部路线编辑的硬约束。以后“天/半天/分钟/小时/总预算/人均预算/下午两点”等自然语言单位，会统一换算成系统标准字段。
+
+### 主要变更
+
+- 新增 `unit_normalizer`：
+  - `一天 / 一日游 / 1天 -> duration_hours=8`。
+  - `半天 / 半日游 -> duration_hours=4`。
+  - `2天 -> duration_hours=16`。
+  - `120分钟 -> duration_hours=2`。
+  - `下午两点 / 晚上7点 -> 24 小时制 start_time`。
+  - `两个人总预算400 -> budget_per_person=200`。
+  - `两个人人均400 -> budget_per_person=400`。
+
+- 强化 LLM delta prompt：
+  - 明确要求所有结构化字段必须输出系统标准单位，不能直接抽取原文数字。
+  - 增加 few-shot 说明，覆盖一天、总预算、人均预算等易错场景。
+
+- 保护局部路线编辑：
+  - “换一家 / 替代方案 / 等待时间短 / 排队 / 当前路线”等操作默认继承上一轮 `city`、`people_count`、`start_time`、`duration_hours`、`budget_per_person`、`scenario`。
+  - 只有用户明确说“改时间、改预算、改人数、换城市”等硬约束时，才允许覆盖。
+  - 避免 LLM 把“餐厅排队 90 分钟”误当作新的 2 小时餐饮规划。
+
+- 沉淀通用修 bug 原则：
+  - 新增 `docs/skills/generalized-bugfix/SKILL.md` 草案。
+  - 约定以后修 bug 先抽象问题类别，再做通用修复，不能只修单个触发样例。
+
+### 涉及文件
+
+- `backend/app/agent/unit_normalizer.py`
+- `backend/app/agent/intent_context.py`
+- `backend/app/agent/orchestrator.py`
+- `backend/app/tests/test_unit_normalizer.py`
+- `backend/app/tests/test_intent_context.py`
+- `docs/skills/generalized-bugfix/SKILL.md`
+- `docs/version_log.md`
+
+### 协作影响
+
+| 角色 | 影响 | 需要关注 |
+| --- | --- | --- |
+| A 同学：Agent / 后端 | 多轮状态变更现在有通用单位标准化兜底，局部路线编辑不会轻易改写硬约束。 | 后续新增结构化字段时，要同步声明标准单位，并补充 normalizer / 测试。 |
+| B 同学：POI / 路线策略 | 收到的 `duration_hours`、`budget_per_person` 更稳定，避免因为 Agent 误把“一天”当 1 小时导致路线只剩一个点。 | 如果发现路线过短，先看 Agent trace 里的 `duration_hours` 和 `apply_query_delta` 是否符合预期。 |
+| C 同学：前端 / UI | 点击“换一家 / 少排队”等局部操作后，后端会默认保留原路线框架。 | 后续最好把 ActionBar 操作从纯自然语言升级为结构化 action，进一步减少 LLM 误解。 |
+
+### 风险与注意事项
+
+- 当前 `unit_normalizer` 覆盖了时间、人数、预算三类核心单位；距离、排队上限等字段未来如果进入正式 schema，需要继续扩展。
+- “排队 90 分钟”现在不会再改行程时长，但如果未来需要表达 `max_queue_minutes`，应新增专门字段，而不是复用 `duration_hours`。
+- `docs/skills/generalized-bugfix` 目前是项目内 skill 草案，还没有安装到全局 Codex skills 目录。
+
+### 建议验证
+
+```bash
+cd backend
+.\.venv\Scripts\python.exe -m unittest app.tests.test_unit_normalizer app.tests.test_intent_context app.tests.test_query_delta app.tests.test_intent_enhancer
+```
+
+```bash
+cd backend
+$env:PYTHONPYCACHEPREFIX='D:\Document\New project\.pytest_cache\pycache_check'
+.\.venv\Scripts\python.exe -m compileall app
+```
+
+---
+
 ## 2026-05-24 - `8ae5b55` - `feat(agent): promote structured delta understanding`
 
 负责人：Agent / 后端编排 / A 同学，前端 trace 调试体验 / C 侧联调

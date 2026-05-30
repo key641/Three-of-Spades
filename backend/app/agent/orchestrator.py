@@ -17,6 +17,7 @@ from app.agent.message_router import MessageIntentType, MessageRouter
 from app.agent.prompts import SYSTEM_PROMPT
 from app.agent.route_detail_handler import RouteDetailHandler
 from app.agent.schemas import IntentDelta, QueryUnderstanding, StateChangeSummary, TripState
+from app.agent.unit_normalizer import normalize_delta_units
 from app.llm.provider import get_llm_client
 from app.schemas.chat import AgentTraceStep, ChatRequest, ChatResponse
 from app.schemas.intent import Intent
@@ -304,7 +305,7 @@ class AgentOrchestrator:
             payload = await self._llm_parse_query_delta(message, session_state)
             understanding = QueryUnderstanding.model_validate(payload.get("understanding", {}))
             delta = IntentDelta.model_validate(payload.get("delta", {}))
-            delta = self._normalize_intent_delta(delta)
+            delta = self._normalize_intent_delta(delta, message)
             trace.append(
                 AgentTraceStep(
                     step="parse_query_delta",
@@ -368,6 +369,13 @@ class AgentOrchestrator:
                         "你是路线规划 Agent 的状态变更解析器，只输出 JSON object。"
                         "你的任务不是重写完整 Intent，而是比较用户本轮消息和上一轮 TripState，输出 QueryUnderstanding 和 IntentDelta。"
                         "本轮用户明确说出的硬约束必须进入 modified_hard_constraints，例如人数、时长、预算、开始时间、城市。"
+                        "所有结构化字段必须输出系统标准单位，不能直接抽用户原文里的数字："
+                        "duration_hours 必须是小时数，1天/一天/一日游=8，半天/半日游=4，2天=16，120分钟=2；"
+                        "budget_per_person 必须是人民币元/人，总预算需要按人数换算成人均预算，人均预算保持原值；"
+                        "people_count 必须是整数人数，两个人/双人/我们俩=2；"
+                        "start_time 必须是 24 小时制 HH:MM，下午两点=14:00，晚上七点=19:00。"
+                        "示例：用户说“改成上海两个人一天”，modified_hard_constraints 应为 {\"city\":\"上海\",\"people_count\":2,\"duration_hours\":8}。"
+                        "示例：用户说“两个人人均400”，budget_per_person 应为 400；用户说“两个人总预算400”，budget_per_person 应为 200。"
                         "用户否定的偏好必须进入 removed_preferences 或 removed_must_include。"
                         "不要发明标签；preferences/avoid_tags/must_include 只能使用允许值。"
                         "如果只是隐含建议升级为显式必须，只写 added_must_include 和 removed_implicit_needs。"
@@ -392,7 +400,7 @@ class AgentOrchestrator:
         content = response["choices"][0]["message"]["content"]
         return self._load_json_object(content)
 
-    def _normalize_intent_delta(self, delta: IntentDelta) -> IntentDelta:
+    def _normalize_intent_delta(self, delta: IntentDelta, message: str = "") -> IntentDelta:
         data = delta.model_dump()
         data["added_preferences"] = self._filter_allowed_preferences(normalize_preferences(data["added_preferences"]))
         data["removed_preferences"] = self._filter_allowed_preferences(normalize_preferences(data["removed_preferences"]))
@@ -404,7 +412,8 @@ class AgentOrchestrator:
         data["removed_must_include"] = self._filter_allowed_needs(data["removed_must_include"])
         data["added_hard_constraints"] = self._filter_hard_constraints(data["added_hard_constraints"])
         data["modified_hard_constraints"] = self._filter_hard_constraints(data["modified_hard_constraints"])
-        return IntentDelta.model_validate(data)
+        normalized = IntentDelta.model_validate(data)
+        return normalize_delta_units(normalized, message) if message else normalized
 
     def _delta_allowed_values(self) -> dict[str, list[str]]:
         return {
