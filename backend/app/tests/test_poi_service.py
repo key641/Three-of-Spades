@@ -1,6 +1,13 @@
+import json
+from collections import Counter
+from pathlib import Path
+
 from app.schemas.intent import Intent
 from app.schemas.user import UserProfile
 from app.services.poi_service import POIService
+
+
+KEY_CITIES = {"上海", "北京", "杭州", "成都", "广州", "深圳", "南京", "苏州"}
 
 
 def test_search_loads_pois_from_json() -> None:
@@ -22,6 +29,10 @@ def test_search_returns_enriched_poi_fields() -> None:
     assert poi.walking_intensity in {"low", "medium", "high"}
     assert poi.highlight_text
     assert poi.highlight_text_tags
+    assert poi.primary_category
+    assert poi.route_roles
+    assert poi.secondary_categories is not None
+    assert poi.experience_tags is not None
 
 
 def test_budget_keeps_expensive_pois_out_of_front_results() -> None:
@@ -105,3 +116,87 @@ def test_user_profile_affects_ranking() -> None:
 
     assert profiled
     assert [poi.id for poi in plain] != [poi.id for poi in profiled]
+
+
+def test_seed_data_covers_key_cities_and_scenarios() -> None:
+    pois = POIService().all_pois()
+    by_city = Counter(poi.city for poi in pois)
+
+    assert all(by_city[city] >= 20 for city in KEY_CITIES)
+    for city in KEY_CITIES:
+        city_pois = [poi for poi in pois if poi.city == city]
+        assert any(poi.category in {"restaurant", "market"} or poi.meal_type in {"local_food", "light_meal", "fine_dining"} for poi in city_pois)
+        assert any(poi.category == "cafe" or poi.meal_type == "cafe" for poi in city_pois)
+        assert any(poi.indoor for poi in city_pois)
+        assert any(poi.photo_friendly >= 0.7 or "拍照" in poi.tags for poi in city_pois)
+        assert any(poi.night_activity >= 0.7 or "night" in poi.suitable_time_slots for poi in city_pois)
+        assert any(poi.avg_price <= 80 or poi.budget_friendly >= 0.8 for poi in city_pois)
+        assert any(poi.walking_intensity == "low" for poi in city_pois)
+
+
+def test_seed_data_has_valid_planning_fields() -> None:
+    payload = json.loads((Path(__file__).resolve().parents[3] / "data" / "seed" / "pois.json").read_text(encoding="utf-8"))
+    ids = {raw["poi_id"] for raw in payload["pois"]}
+
+    for raw in payload["pois"]:
+        location = raw["location"]
+        visit_info = raw["visit_info"]
+        quality = raw["quality"]
+        planning = raw["planning_features"]
+
+        assert raw["poi_id"]
+        assert location["city"]
+        assert -90 <= float(location["lat"]) <= 90
+        assert -180 <= float(location["lng"]) <= 180
+        assert int(visit_info["price_min"]) <= int(visit_info["price_max"])
+        assert 0 <= int(quality["queue_time_min"]) <= 180
+        assert 0 <= float(quality["rating"]) <= 5
+        assert visit_info["open_time"] < "24:00"
+        assert visit_info["close_time"] <= "23:59"
+        assert planning["meal_type"]
+        assert planning["walking_intensity"] in {"low", "medium", "high"}
+        assert all(poi_id in ids for poi_id in planning["nearby_poi_ids"])
+
+
+def test_key_city_searches_do_not_return_empty_results() -> None:
+    service = POIService()
+
+    for city in ["北京", "杭州", "成都"]:
+        pois = service.search(Intent(city=city))
+
+        assert len(pois) >= 12
+        assert all(poi.city == city for poi in pois)
+
+
+def test_common_preference_searches_do_not_return_empty_results() -> None:
+    service = POIService()
+    preferences = [
+        ["少排队"],
+        ["吃好"],
+        ["咖啡"],
+        ["亲子友好"],
+        ["室内", "雨天"],
+        ["晚上", "夜景"],
+        ["安静", "人少"],
+    ]
+
+    for terms in preferences:
+        pois = service.search(Intent(city="北京", preferences=terms), limit=12)
+
+        assert pois, terms
+        assert all(poi.city == "北京" for poi in pois)
+
+
+def test_low_budget_and_avoid_tags_still_keep_candidates() -> None:
+    pois = POIService().search(Intent(city="杭州", budget_per_person=50, avoid_tags=["人流密集", "太贵"]), limit=20)
+
+    assert len(pois) >= 12
+    assert all("人流密集" not in poi.tags for poi in pois)
+
+
+def test_unknown_city_uses_mock_fallback_candidates() -> None:
+    pois = POIService().search(Intent(city="武汉"), limit=12)
+
+    assert len(pois) == 12
+    assert all(poi.city == "武汉" for poi in pois)
+    assert all(poi.source_provider == "mock_fallback" for poi in pois)

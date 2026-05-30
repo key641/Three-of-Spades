@@ -60,6 +60,16 @@ export interface Route {
   stops: RouteStop[];
   reasons: string[];
   replan_reason?: string | null;
+  changed_stops?: Array<{
+    change_type: string;
+    from_poi_id?: string | null;
+    from_name?: string | null;
+    to_poi_id?: string | null;
+    to_name?: string | null;
+    reason: string;
+  }>;
+  live_warnings?: string[];
+  data_sources?: string[];
 }
 
 export interface UserProfile {

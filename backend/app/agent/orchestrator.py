@@ -1026,11 +1026,27 @@ class AgentOrchestrator:
         return value if len(value) <= limit else f"{value[:limit]}..."
 
     def _mock_parse_intent(self, message: str) -> Intent:
-        preferences = ["吃好", "少排队", "拍照", "少走路"]
+        preferences = []
+        if any(term in message for term in ["吃好", "美食", "餐厅", "小吃"]):
+            preferences.append("吃好")
+        if any(term in message for term in ["少排队", "别排队", "不排队", "不想排队"]):
+            preferences.append("少排队")
+        if any(term in message for term in ["拍照", "出片", "打卡", "citywalk", "街区"]):
+            preferences.append("拍照")
+        if any(term in message for term in ["少走路", "轻松", "别太累", "不要太累"]):
+            preferences.append("少走路")
         if "省钱" in message or "便宜" in message:
             preferences.append("更省钱")
         if "亲子" in message or "小孩" in message:
             preferences.append("亲子友好")
+
+        avoid_tags = []
+        if any(term in message for term in ["人多", "拥挤", "人流密集"]):
+            avoid_tags.append("人流密集")
+        if any(term in message for term in ["排队久", "排队太久"]):
+            avoid_tags.append("排队久")
+        if any(term in message for term in ["太贵", "贵"]):
+            avoid_tags.append("太贵")
 
         return Intent(
             city="上海",
@@ -1039,7 +1055,7 @@ class AgentOrchestrator:
             duration_hours=6,
             budget_per_person=300,
             preferences=preferences,
-            avoid_tags=["排队久", "太贵"],
+            avoid_tags=avoid_tags,
             scenario="friends_citywalk",
             need_clarification=False,
         )
