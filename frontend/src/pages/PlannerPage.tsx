@@ -165,7 +165,7 @@ export function PlannerPage({ profile, onResetProfile }: PlannerPageProps) {
               clarifyingQuestion={response?.need_clarification ? (response.clarifying_question ?? null) : null}
               onClarify={(answer) => send(answer)}
             />
-            <AgentTrace steps={loading ? liveTrace : response?.agent_trace ?? liveTrace} loading={loading} />
+            {loading && <AgentTrace steps={liveTrace} loading />}
           </div>
 
           {/* 右栏占位 */}

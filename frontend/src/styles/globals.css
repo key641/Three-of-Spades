@@ -192,6 +192,25 @@ button:disabled { cursor: not-allowed; opacity: 0.5; transform: none; }
   gap: var(--space-md);
 }
 
+.message-block {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  width: 100%;
+}
+
+.message-block-user {
+  align-items: flex-end;
+}
+
+.message-block-assistant {
+  align-items: flex-start;
+}
+
+.message-trace {
+  width: min(100%, 760px);
+}
+
 .bubble {
   max-width: 82%;
   padding: 10px 14px;
@@ -621,6 +640,34 @@ button:disabled { cursor: not-allowed; opacity: 0.5; transform: none; }
 .timeline li:last-child .timeline-line { display: none; }
 
 .timeline-body { flex: 1; padding-bottom: 2px; }
+
+.timeline-transit {
+  display: inline-flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 5px;
+  max-width: 100%;
+  margin: 0 0 6px;
+  color: var(--color-muted);
+  font-size: 11px;
+  line-height: 1.4;
+}
+
+.timeline-transit svg {
+  color: var(--color-primary);
+  flex-shrink: 0;
+}
+
+.timeline-transit span {
+  display: inline-flex;
+  align-items: center;
+}
+
+.timeline-transit span + span::before {
+  content: "·";
+  margin-right: 5px;
+  color: var(--color-muted);
+}
 
 .timeline-body strong {
   display: block;

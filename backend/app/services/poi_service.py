@@ -270,6 +270,7 @@ class POIService:
         profile_terms = self._normalize_terms(user_profile.tags if user_profile else [])
         preference_score = self._match_ratio(intent_terms, candidate.search_text)
         profile_score = self._match_ratio(profile_terms, candidate.search_text)
+        profile_dimension_score = self._profile_dimension_score(candidate, user_profile)
         scenario_score = self._scenario_score(candidate, intent)
         time_score = self._time_score(poi, intent)
 
@@ -280,9 +281,16 @@ class POIService:
             + budget_score * budget_weight
             + preference_score * preference_weight
             + profile_score * 0.2
+            + profile_dimension_score * 0.25
             + scenario_score * 0.1
             + time_score * 0.12
         )
+        if user_profile and poi.id in user_profile.liked_poi_ids:
+            score += 0.4
+        if user_profile and poi.id in user_profile.disliked_poi_ids:
+            score -= 0.8
+        if user_profile and poi.category in user_profile.skipped_categories:
+            score -= 0.5
         if distance_km is not None:
             score += distance_score * 0.45
         if self._has_term(intent_terms + profile_terms, "少排队"):
@@ -300,6 +308,42 @@ class POIService:
         if self._has_term(intent_terms + profile_terms, "少走路") or self._has_term(intent_terms + profile_terms, "轻松"):
             score += self._walking_score(poi) * 0.3
         return score
+
+    def _profile_dimension_score(self, candidate: POICandidate, user_profile: UserProfile | None) -> float:
+        if user_profile is None:
+            return 0
+
+        poi = candidate.poi
+        score_parts: list[float] = []
+
+        category_score = max(
+            user_profile.category_preferences.get(poi.category, 0),
+            user_profile.category_preferences.get(poi.primary_category, 0),
+            *(user_profile.category_preferences.get(category, 0) for category in poi.secondary_categories),
+        )
+        if category_score:
+            score_parts.append(category_score)
+
+        if user_profile.preferred_route_roles:
+            role_hits = len(set(user_profile.preferred_route_roles) & set(poi.route_roles))
+            score_parts.append(min(1, role_hits / max(len(user_profile.preferred_route_roles), 1)))
+
+        if user_profile.preferred_experience_tags:
+            poi_experience = set(poi.experience_tags + poi.tags + poi.highlight_text_tags)
+            experience_hits = len(set(user_profile.preferred_experience_tags) & poi_experience)
+            score_parts.append(min(1, experience_hits / max(len(user_profile.preferred_experience_tags), 1)))
+
+        if user_profile.preferred_time_slots:
+            time_hits = len(set(user_profile.preferred_time_slots) & set(poi.suitable_time_slots))
+            score_parts.append(min(1, time_hits / max(len(user_profile.preferred_time_slots), 1)))
+
+        if user_profile.preferred_transport_modes:
+            transport_hits = len(set(user_profile.preferred_transport_modes) & set(poi.recommended_transport))
+            score_parts.append(min(1, transport_hits / max(len(user_profile.preferred_transport_modes), 1)))
+
+        if not score_parts:
+            return 0
+        return sum(score_parts) / len(score_parts)
 
     def _scenario_score(self, candidate: POICandidate, intent: Intent) -> float:
         if intent.scenario == "friends_citywalk":

@@ -1,9 +1,11 @@
 import json
 import unittest
+import asyncio
 
 from fastapi.testclient import TestClient
 
 from app.api import chat as chat_api
+from app.api.chat import enqueue_stream_event
 from app.main import app
 from app.schemas.chat import AgentTraceStep, ChatRequest, ChatResponse
 
@@ -28,6 +30,22 @@ class FakeStreamingOrchestrator:
 
 
 class ChatStreamTest(unittest.TestCase):
+    def test_enqueue_stream_event_yields_to_waiting_consumer(self) -> None:
+        async def run_case() -> None:
+            queue: asyncio.Queue[dict] = asyncio.Queue()
+            consumed: list[dict] = []
+
+            async def consume_once() -> None:
+                consumed.append(await queue.get())
+
+            consumer_task = asyncio.create_task(consume_once())
+            await enqueue_stream_event(queue, {"type": "progress"})
+
+            self.assertEqual(consumed, [{"type": "progress"}])
+            await consumer_task
+
+        asyncio.run(run_case())
+
     def test_chat_stream_emits_progress_before_final_response(self) -> None:
         original_orchestrator = chat_api.orchestrator
         chat_api.orchestrator = FakeStreamingOrchestrator()

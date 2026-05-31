@@ -71,6 +71,9 @@ function buildMockResponse(message: string): ChatResponse {
             estimated_cost: 36,
             queue_minutes: 10,
             tags: ["精品咖啡", "排队少"],
+            travel_minutes_from_previous: 12,
+            distance_km_from_previous: 1.3,
+            transport_mode_from_previous: "walk/metro",
           },
           {
             poi_id: "p3",
@@ -81,6 +84,9 @@ function buildMockResponse(message: string): ChatResponse {
             estimated_cost: 0,
             queue_minutes: 0,
             tags: ["步行街", "拍照"],
+            travel_minutes_from_previous: 10,
+            distance_km_from_previous: 0.8,
+            transport_mode_from_previous: "walk",
           },
           {
             poi_id: "p4",
@@ -91,6 +97,9 @@ function buildMockResponse(message: string): ChatResponse {
             estimated_cost: 102,
             queue_minutes: 0,
             tags: ["素食", "环境好", "特色"],
+            travel_minutes_from_previous: 18,
+            distance_km_from_previous: 2.4,
+            transport_mode_from_previous: "metro/taxi",
           },
         ],
       },
@@ -211,10 +220,11 @@ export async function sendChatMessage(
   message: string,
   profile?: OnboardingProfile,
   includeProfile = true,
+  sessionId = createChatSessionId(profile?.user_id),
 ): Promise<ChatResponse> {
   if (USE_MOCK) {
     await delay(1200); // 模拟 1.2s 延迟，让 loading 动效可见
-    return buildMockResponse(message);
+    return { ...buildMockResponse(message), session_id: sessionId };
   }
 
   const profilePayload = includeProfile
@@ -229,7 +239,7 @@ export async function sendChatMessage(
     : {};
 
   return postJson<ChatResponse>("/api/chat", {
-    session_id: "session_demo",
+    session_id: sessionId,
     user_id:    profile?.user_id ?? "user_demo",
     message,
     event_type: "user_message",
@@ -243,6 +253,7 @@ export async function sendChatMessageStream(
   profile?: OnboardingProfile,
   includeProfile = true,
   onProgress?: (step: AgentTraceStep) => void,
+  sessionId = createChatSessionId(profile?.user_id),
 ): Promise<ChatResponse> {
   if (USE_MOCK) {
     const mockSteps: AgentTraceStep[] = [
@@ -300,7 +311,7 @@ export async function sendChatMessageStream(
       onProgress?.(step);
     }
     await delay(250);
-    return buildMockResponse(message);
+    return { ...buildMockResponse(message), session_id: sessionId };
   }
 
   const profilePayload = includeProfile
@@ -318,7 +329,7 @@ export async function sendChatMessageStream(
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({
-      session_id: "session_demo",
+      session_id: sessionId,
       user_id:    profile?.user_id ?? "user_demo",
       message,
       event_type: "user_message",
@@ -377,4 +388,12 @@ function parseStreamEvent(line: string): ChatStreamEvent | null {
   const trimmed = line.trim();
   if (!trimmed) return null;
   return JSON.parse(trimmed) as ChatStreamEvent;
+}
+
+export function createChatSessionId(userId = "user_demo"): string {
+  const random =
+    typeof crypto !== "undefined" && "randomUUID" in crypto
+      ? crypto.randomUUID()
+      : `${Date.now()}_${Math.random().toString(36).slice(2)}`;
+  return `session_${userId}_${random}`;
 }

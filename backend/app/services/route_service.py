@@ -19,6 +19,21 @@ class RouteBuildState:
 class RouteService:
     """B-owned module: creates route candidates before final scoring."""
 
+    # 各城市中心坐标 (latitude, longitude)
+    CITY_CENTERS = {
+        "上海": (31.2304, 121.4737),
+        "北京": (39.9042, 116.4074),
+        "广州": (23.1291, 113.2644),
+        "深圳": (22.5431, 114.0579),
+        "成都": (30.5728, 104.0668),
+        "杭州": (30.2741, 120.1551),
+        "南京": (32.0603, 118.7969),
+        "武汉": (30.5928, 114.3055),
+        "西安": (34.3416, 108.9398),
+        "苏州": (31.2989, 120.5954),
+        "重庆": (29.4316, 106.9123),
+    }
+
     OBJECTIVE_TITLES = {
         "balanced": "综合候选路线",
         "low_queue": "少排队候选路线",
@@ -39,6 +54,16 @@ class RouteService:
     def generate_routes(self, request: RoutePlanRequest) -> RoutePlanResponse:
         if not request.candidate_pois:
             return RoutePlanResponse(routes=[])
+
+        # 如果用户没有提供起始位置，使用该城市的中心坐标
+        if request.intent.start_lat is None or request.intent.start_lng is None:
+            city = request.intent.city
+            if city in self.CITY_CENTERS:
+                lat, lng = self.CITY_CENTERS[city]
+                request.intent.start_lat = lat
+                request.intent.start_lng = lng
+                if not request.intent.start_location_name:
+                    request.intent.start_location_name = f"({city}中心)"
 
         objectives = self._select_objectives(request)
         routes: list[Route] = []

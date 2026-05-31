@@ -18,6 +18,21 @@ class ChatRequest(BaseModel):
     avoid_tags: list[str] = Field(default_factory=list)
     budget_level: str | None = None
     preference_weights: dict[str, float] | None = None
+    budget_sensitivity: float | None = None
+    walking_tolerance: float | None = None
+    crowd_tolerance: float | None = None
+    schedule_tightness: float | None = None
+    novelty_preference: float | None = None
+    comfort_preference: float | None = None
+    category_preferences: dict[str, float] | None = None
+    preferred_route_roles: list[str] = Field(default_factory=list)
+    preferred_experience_tags: list[str] = Field(default_factory=list)
+    preferred_time_slots: list[str] = Field(default_factory=list)
+    preferred_transport_modes: list[str] = Field(default_factory=list)
+    liked_poi_ids: list[str] = Field(default_factory=list)
+    disliked_poi_ids: list[str] = Field(default_factory=list)
+    skipped_categories: list[str] = Field(default_factory=list)
+    common_adjust_actions: list[str] = Field(default_factory=list)
 
 
 class AgentTraceStep(BaseModel):
