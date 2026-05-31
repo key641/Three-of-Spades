@@ -1,3 +1,4 @@
+import asyncio
 import inspect
 import json
 import logging
@@ -55,6 +56,7 @@ class AgentOrchestrator:
         self,
         request: ChatRequest,
         progress_callback: Callable[[AgentTraceStep], Awaitable[None] | None] | None = None,
+        routes_callback: Callable[[list[Route]], Awaitable[None] | None] | None = None,
     ) -> ChatResponse:
         trace: list[AgentTraceStep] = []
         emitted_trace_count = 0
@@ -70,6 +72,13 @@ class AgentOrchestrator:
                 result = progress_callback(step)
                 if inspect.isawaitable(result):
                     await result
+
+        async def emit_routes(routes: list[Route]) -> None:
+            if routes_callback is None:
+                return
+            result = routes_callback(routes)
+            if inspect.isawaitable(result):
+                await result
 
         logger.info(
             "chat start session_id=%s user_id=%s event_type=%s message=%s",
@@ -225,9 +234,33 @@ class AgentOrchestrator:
             [poi.name for poi in pois],
         )
 
-        routes = self.route_service.generate_routes(
-            RoutePlanRequest(intent=intent, user_profile=user_profile, strategy_weights=strategy_weights, candidate_pois=pois)
-        ).routes
+        routes: list[Route] = []
+        route_updates: asyncio.Queue[list[Route] | None] = asyncio.Queue()
+        loop = asyncio.get_running_loop()
+        route_request = RoutePlanRequest(
+            intent=intent,
+            user_profile=user_profile,
+            strategy_weights=strategy_weights,
+            candidate_pois=pois,
+        )
+
+        def collect_route(route: Route) -> None:
+            routes.append(route)
+            loop.call_soon_threadsafe(route_updates.put_nowait, list(routes))
+
+        async def generate_route_candidates() -> None:
+            try:
+                await asyncio.to_thread(self.route_service.generate_routes, route_request, collect_route)
+            finally:
+                await route_updates.put(None)
+
+        route_task = asyncio.create_task(generate_route_candidates())
+        while True:
+            route_update = await route_updates.get()
+            if route_update is None:
+                break
+            await emit_routes(route_update)
+        await route_task
         trace.append(AgentTraceStep(step="generate_routes", label="生成多目标路线", status="done"))
         trace[-1].details = {
             "count": len(routes),

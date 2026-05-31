@@ -35,6 +35,18 @@ export function useChat(profile?: OnboardingProfile) {
         (step) => {
           setLiveTrace((prev) => [...prev, step]);
         },
+        (routes) => {
+          setResponse((prev) => ({
+            session_id: sessionIdRef.current,
+            message: prev?.message ?? "",
+            need_clarification: prev?.need_clarification ?? false,
+            clarifying_question: prev?.clarifying_question ?? null,
+            intent: prev?.intent ?? null,
+            user_profile: prev?.user_profile ?? null,
+            agent_trace: prev?.agent_trace ?? [],
+            routes,
+          }));
+        },
         sessionIdRef.current,
       );
       hasSentProfile.current = true;

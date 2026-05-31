@@ -8,20 +8,24 @@ from app.api import chat as chat_api
 from app.api.chat import enqueue_stream_event
 from app.main import app
 from app.schemas.chat import AgentTraceStep, ChatRequest, ChatResponse
+from app.schemas.route import Route, RouteScoreBreakdown
 
 
 class FakeStreamingOrchestrator:
-    async def handle_message(self, request: ChatRequest, progress_callback=None) -> ChatResponse:
+    async def handle_message(self, request: ChatRequest, progress_callback=None, routes_callback=None) -> ChatResponse:
         if progress_callback:
             await progress_callback(AgentTraceStep(step="route_message", label="识别为：补充需求 add_constraint", status="done"))
             await progress_callback(AgentTraceStep(step="apply_query_delta", label="保留 上海、2人；新增 吃饭节点", status="done"))
+        routes = [_route("route_balanced_best")]
+        if routes_callback:
+            await routes_callback(routes)
         return ChatResponse(
             session_id=request.session_id,
             message="我保留了上海、2人，并新增了吃饭节点。",
             need_clarification=False,
             intent=None,
             user_profile=None,
-            routes=[],
+            routes=routes,
             agent_trace=[
                 AgentTraceStep(step="route_message", label="识别为：补充需求 add_constraint", status="done"),
                 AgentTraceStep(step="apply_query_delta", label="保留 上海、2人；新增 吃饭节点", status="done"),
@@ -61,6 +65,8 @@ class ChatStreamTest(unittest.TestCase):
             self.assertEqual(events[0]["step"]["step"], "route_message")
             self.assertIn("补充需求", events[0]["step"]["label"])
             self.assertEqual(events[1]["type"], "progress")
+            self.assertEqual(events[2]["type"], "routes")
+            self.assertEqual(events[2]["routes"][0]["route_id"], "route_balanced_best")
             self.assertEqual(events[-1]["type"], "final")
             self.assertIn("新增了吃饭节点", events[-1]["response"]["message"])
         finally:
@@ -69,3 +75,21 @@ class ChatStreamTest(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+def _route(route_id: str) -> Route:
+    return Route(
+        route_id=route_id,
+        title="综合推荐路线",
+        objective="balanced",
+        summary="测试路线",
+        total_duration_minutes=120,
+        total_cost_per_person=100,
+        total_queue_minutes=5,
+        total_travel_minutes=10,
+        total_distance_km=2.0,
+        score=80,
+        score_breakdown=RouteScoreBreakdown(quality=80, queue=80, budget=80, distance=80, preference=80),
+        stops=[],
+        reasons=["测试"],
+    )

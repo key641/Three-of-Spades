@@ -1,4 +1,5 @@
 import math
+import threading
 from dataclasses import dataclass, field
 from typing import Any
 
@@ -38,10 +39,36 @@ class AmapService:
     def __init__(self, api_key: str | None = None, timeout_seconds: float = 2.5) -> None:
         self.api_key = settings.amap_web_service_key if api_key is None else api_key
         self.timeout_seconds = timeout_seconds
+        self._route_leg_cache: dict[tuple[str, str, str], RouteLeg] = {}
+        self._route_leg_cache_lock = threading.Lock()
+        self._route_leg_inflight: dict[tuple[str, str, str], threading.Event] = {}
 
     def route_leg(self, origin: GeoPoint, destination: GeoPoint, mode: str = "walk") -> RouteLeg:
-        if not self.api_key:
+        cache_key = (self._format_point(origin), self._format_point(destination), self._endpoint_mode(mode))
+        inflight_event: threading.Event | None = None
+        should_fetch = False
+        with self._route_leg_cache_lock:
+            cached = self._route_leg_cache.get(cache_key)
+            if cached is not None:
+                return cached
+            inflight_event = self._route_leg_inflight.get(cache_key)
+            if inflight_event is None:
+                inflight_event = threading.Event()
+                self._route_leg_inflight[cache_key] = inflight_event
+                should_fetch = True
+
+        if not should_fetch:
+            inflight_event.wait()
+            with self._route_leg_cache_lock:
+                cached = self._route_leg_cache.get(cache_key)
+            if cached is not None:
+                return cached
             return self._fallback_leg(origin, destination, mode)
+
+        if not self.api_key:
+            leg = self._fallback_leg(origin, destination, mode)
+            self._store_route_leg(cache_key, leg)
+            return leg
 
         endpoint_mode = self._endpoint_mode(mode)
         try:
@@ -58,9 +85,18 @@ class AmapService:
             response.raise_for_status()
             data = response.json()
             leg = self._parse_route_response(data, mode)
-            return leg or self._fallback_leg(origin, destination, mode)
+            result = leg or self._fallback_leg(origin, destination, mode)
         except (httpx.HTTPError, ValueError, KeyError, TypeError):
-            return self._fallback_leg(origin, destination, mode)
+            result = self._fallback_leg(origin, destination, mode)
+        self._store_route_leg(cache_key, result)
+        return result
+
+    def _store_route_leg(self, cache_key: tuple[str, str, str], leg: RouteLeg) -> None:
+        with self._route_leg_cache_lock:
+            self._route_leg_cache[cache_key] = leg
+            inflight_event = self._route_leg_inflight.pop(cache_key, None)
+            if inflight_event is not None:
+                inflight_event.set()
 
     def _parse_route_response(self, data: dict[str, Any], mode: str) -> RouteLeg | None:
         if data.get("status") != "1":

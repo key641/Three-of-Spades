@@ -253,6 +253,7 @@ export async function sendChatMessageStream(
   profile?: OnboardingProfile,
   includeProfile = true,
   onProgress?: (step: AgentTraceStep) => void,
+  onRoutes?: (routes: ChatResponse["routes"]) => void,
   sessionId = createChatSessionId(profile?.user_id),
 ): Promise<ChatResponse> {
   if (USE_MOCK) {
@@ -309,6 +310,9 @@ export async function sendChatMessageStream(
     for (const step of mockSteps) {
       await delay(220);
       onProgress?.(step);
+      if (step.step === "generate_routes") {
+        onRoutes?.(buildMockResponse(message).routes.slice(0, 1));
+      }
     }
     await delay(250);
     return { ...buildMockResponse(message), session_id: sessionId };
@@ -361,6 +365,8 @@ export async function sendChatMessageStream(
       if (!event) continue;
       if (event.type === "progress") {
         onProgress?.(event.step);
+      } else if (event.type === "routes") {
+        onRoutes?.(event.routes);
       } else if (event.type === "final") {
         finalResponse = event.response;
       } else if (event.type === "error") {
@@ -372,6 +378,8 @@ export async function sendChatMessageStream(
   const remainingEvent = parseStreamEvent(buffer);
   if (remainingEvent?.type === "progress") {
     onProgress?.(remainingEvent.step);
+  } else if (remainingEvent?.type === "routes") {
+    onRoutes?.(remainingEvent.routes);
   } else if (remainingEvent?.type === "final") {
     finalResponse = remainingEvent.response;
   } else if (remainingEvent?.type === "error") {

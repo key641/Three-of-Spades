@@ -109,5 +109,6 @@ export interface ChatResponse {
 
 export type ChatStreamEvent =
   | { type: "progress"; step: AgentTraceStep }
+  | { type: "routes"; routes: Route[] }
   | { type: "final"; response: ChatResponse }
   | { type: "error"; message: string };

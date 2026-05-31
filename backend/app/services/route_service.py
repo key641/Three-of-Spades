@@ -1,6 +1,7 @@
 import math
 import re
 from dataclasses import dataclass
+from collections.abc import Callable
 
 from app.schemas.poi import POI
 from app.schemas.route import Route, RoutePlanRequest, RoutePlanResponse, RouteScoreBreakdown, RouteStop
@@ -51,7 +52,7 @@ class RouteService:
         self.amap_service = amap_service or AmapService()
         self.scoring_service = ScoringService()
 
-    def generate_routes(self, request: RoutePlanRequest) -> RoutePlanResponse:
+    def generate_routes(self, request: RoutePlanRequest, on_route: Callable[[Route], None] | None = None) -> RoutePlanResponse:
         if not request.candidate_pois:
             return RoutePlanResponse(routes=[])
 
@@ -95,6 +96,8 @@ class RouteService:
                 selected.score_breakdown,
             )
             routes.append(selected)
+            if on_route is not None:
+                on_route(selected)
 
         return RoutePlanResponse(routes=routes)
 

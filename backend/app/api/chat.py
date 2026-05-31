@@ -7,6 +7,7 @@ from fastapi.responses import StreamingResponse
 from app.agent.orchestrator import AgentOrchestrator
 from app.schemas.chat import AgentTraceStep
 from app.schemas.chat import ChatRequest, ChatResponse
+from app.schemas.route import Route
 
 router = APIRouter(tags=["chat"])
 orchestrator = AgentOrchestrator()
@@ -30,9 +31,12 @@ async def chat_stream(request: ChatRequest) -> StreamingResponse:
         async def emit_progress(step: AgentTraceStep) -> None:
             await enqueue_stream_event(queue, {"type": "progress", "step": step.model_dump()})
 
+        async def emit_routes(routes: list[Route]) -> None:
+            await enqueue_stream_event(queue, {"type": "routes", "routes": [route.model_dump() for route in routes]})
+
         async def run_agent() -> None:
             try:
-                response = await orchestrator.handle_message(request, progress_callback=emit_progress)
+                response = await orchestrator.handle_message(request, progress_callback=emit_progress, routes_callback=emit_routes)
                 await enqueue_stream_event(queue, {"type": "final", "response": response.model_dump()})
             except Exception as exc:
                 await enqueue_stream_event(queue, {"type": "error", "message": f"{type(exc).__name__}: {exc}"})

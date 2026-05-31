@@ -55,6 +55,66 @@
 
 ---
 
+## 2026-05-31 - `uncommitted` - `feat(stream): 高德路线缓存与路线渐进返回`
+
+负责人：后端路线生成 / 前端流式展示 / A、B、C 同学
+
+### 更新概览
+
+本次更新针对路线生成慢、重复请求高德的问题做优化：后端会按 `origin + destination + mode` 对高德路径结果做内存缓存，重复计算同一段路时直接复用结果；同时流式接口新增路线增量事件，后端每生成出一条可用方案，就先推给前端展示，剩余方案继续在后台生成。
+
+### 主要变更
+
+- `AmapService.route_leg()` 增加内存缓存：
+  - 缓存键为起点、终点和交通模式。
+  - 同一段路并发请求时只放行一个高德请求，其他相同请求等待并复用结果。
+  - 高德不可用时生成的兜底路段也会缓存，避免反复失败重试。
+- `RouteService.generate_routes()` 增加 `on_route` 回调：
+  - 每个目标路线选出最佳方案后立即回调。
+  - 最终仍返回完整 `RoutePlanResponse`，不影响原有调用方。
+- `/api/chat/stream` 新增 `routes` 流式事件：
+  - 前端收到后立即更新路线卡。
+  - 没有路线时继续显示骨架屏，有第一条路线后直接展示真实卡片。
+- 前端 `useChat`、`chatApi`、类型定义同步支持增量路线事件。
+- `RouteCompare` 增加前端渐进露出：
+  - 即使浏览器或后端 final 一次性拿到多条路线，也会先显示第一条，再按节奏补齐后续方案。
+  - 标题会显示“已生成 x / y 条”，让用户知道剩余方案还在出现。
+
+### 涉及文件
+
+- `backend/app/services/amap_service.py`
+- `backend/app/services/route_service.py`
+- `backend/app/agent/orchestrator.py`
+- `backend/app/api/chat.py`
+- `backend/app/tests/test_amap_service.py`
+- `backend/app/tests/test_chat_stream.py`
+- `backend/app/tests/test_route_plan.py`
+- `frontend/src/api/types.ts`
+- `frontend/src/api/chatApi.ts`
+- `frontend/src/hooks/useChat.ts`
+- `frontend/src/components/RouteCompare.tsx`
+- `docs/version_log.md`
+
+### 协作影响
+
+| 角色 | 影响 | 需要关注 |
+| --- | --- | --- |
+| A 同学：Agent / 后端 | 流式接口会在最终回答前多次发送路线增量事件。 | 后续新增耗时步骤时，可以继续用 progress 或 routes 事件提前反馈。 |
+| B 同学：POI / 路线策略 | 高德同路段结果会复用，减少重复请求和等待时间。 | 如果后续接实时路况，需要考虑缓存过期时间；当前 demo 阶段是进程内短期缓存。 |
+| C 同学：前端 / UI | 路线卡可以先展示第一条方案，后续方案逐步补齐；即使一次收到多条也会渐进露出。 | 前端需要把 `routes` 事件视为中间态，最终仍以 `final.response.routes` 为准。 |
+
+### 风险与注意事项
+
+- 当前缓存是进程内内存缓存，服务重启后会清空。
+- 当前没有设置 TTL，适合 demo 阶段减少重复请求；如果接入实时路况，应增加过期时间或按路况模式关闭缓存。
+- 增量路线事件只影响 `/api/chat/stream`，普通 `/api/chat` 仍一次性返回完整结果。
+
+### 建议验证
+
+- `.\backend\.venv\Scripts\python.exe -m unittest app.tests.test_chat_stream`
+- 手动运行 `test_amap_service.py` 中的高德缓存测试，确认同一路段只请求一次。
+- 在 `frontend` 目录运行 `npx.cmd tsc --noEmit`
+
 ## 2026-05-31 - `0308334` - `fix(ui): 每轮保留 Agent 思考过程并中文化字段`
 
 负责人：前端 / Agent trace 展示 / C 同学

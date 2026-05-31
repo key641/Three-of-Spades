@@ -95,6 +95,20 @@ def test_returns_one_top_route_per_objective() -> None:
     assert all("优势是" in route.summary for route in response.routes)
 
 
+def test_generate_routes_emits_each_selected_route_incrementally() -> None:
+    profile = ProfileService().get_profile("user_demo")
+    pois = POIService().search(Intent(), user_profile=profile)
+    emitted = []
+
+    response = RouteService().generate_routes(
+        RoutePlanRequest(intent=Intent(), user_profile=profile, candidate_pois=pois),
+        on_route=emitted.append,
+    )
+
+    assert [route.route_id for route in emitted] == [route.route_id for route in response.routes]
+    assert len(emitted) >= 1
+
+
 def test_route_stop_contains_enriched_poi_fields() -> None:
     response = _plan(Intent(start_lat=31.2304, start_lng=121.4737))
     first_stop = response.routes[0].stops[0]
