@@ -50,6 +50,12 @@ class ProfileService:
             preference_weights=self.DEFAULT_WEIGHTS,
         )
 
+    def get_seed_profile(self, user_id: str) -> UserProfile | None:
+        return self._profile_from_seed(user_id)
+
+    def has_seed_profile(self, user_id: str) -> bool:
+        return user_id in self._seed_profiles
+
     def build_strategy_weights(self, intent: Intent, profile: UserProfile, strategy_tags: list[StrategyTag] | None = None) -> StrategyWeights:
         weights = StrategyWeights.model_validate(profile.preference_weights or {})
         if "少排队" in intent.preferences:

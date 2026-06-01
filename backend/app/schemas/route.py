@@ -40,6 +40,7 @@ class RouteStop(BaseModel):
     amap_distance_meters_from_previous: int | None = None
     amap_duration_minutes_from_previous: int | None = None
     route_leg_source_from_previous: str | None = None
+    route_steps_from_previous: list[str] = Field(default_factory=list)
     reason: str | None = None
 
 

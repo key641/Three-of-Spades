@@ -69,6 +69,7 @@ class POIService:
             key=lambda candidate: self._rank_score(candidate, intent, user_profile, strategy_tags or []),
             reverse=True,
         )
+        ranked = self._diversify_ranked_candidates(ranked, limit)
         return [candidate.poi for candidate in ranked[:limit]]
 
     def all_pois(self, city: str | None = None) -> list[POI]:
@@ -204,7 +205,21 @@ class POIService:
 
     def _fallback_candidates(self, requested_city: str) -> list[POICandidate]:
         fallback_pool = [candidate for candidate in self._candidates if candidate.poi.city == "上海"] or self._candidates
-        return [self._clone_candidate_for_city(candidate, requested_city) for candidate in fallback_pool[: max(self.MIN_DEFAULT_CANDIDATES, 20)]]
+        selected: list[POICandidate] = []
+        by_category: dict[str, list[POICandidate]] = {}
+        for candidate in fallback_pool:
+            by_category.setdefault(candidate.poi.category, []).append(candidate)
+        while len(selected) < max(self.MIN_DEFAULT_CANDIDATES, 20):
+            added = False
+            for candidates in by_category.values():
+                if candidates:
+                    selected.append(candidates.pop(0))
+                    added = True
+                    if len(selected) >= max(self.MIN_DEFAULT_CANDIDATES, 20):
+                        break
+            if not added:
+                break
+        return [self._clone_candidate_for_city(candidate, requested_city) for candidate in selected]
 
     def _clone_candidate_for_city(self, candidate: POICandidate, city: str) -> POICandidate:
         safe_city = city or "未知城市"
@@ -226,6 +241,28 @@ class POIService:
             result.append(candidate)
             seen.add(candidate.poi.id)
         return result
+
+    def _diversify_ranked_candidates(self, ranked: list[POICandidate], limit: int) -> list[POICandidate]:
+        if limit < 12 or len(ranked) <= limit:
+            return ranked
+        category_cap = max(4, min(10, limit // 3))
+        selected: list[POICandidate] = []
+        skipped: list[POICandidate] = []
+        category_counts: dict[str, int] = {}
+        for candidate in ranked:
+            category = candidate.poi.category
+            if category_counts.get(category, 0) < category_cap:
+                selected.append(candidate)
+                category_counts[category] = category_counts.get(category, 0) + 1
+            else:
+                skipped.append(candidate)
+            if len(selected) >= limit:
+                break
+        if len(selected) < limit:
+            selected.extend(candidate for candidate in skipped if candidate.poi.id not in {item.poi.id for item in selected})
+        selected_ids = {candidate.poi.id for candidate in selected}
+        selected.extend(candidate for candidate in ranked if candidate.poi.id not in selected_ids)
+        return selected
 
     def _matches_budget(self, poi: POI, intent: Intent) -> bool:
         return poi.avg_price <= intent.budget_per_person

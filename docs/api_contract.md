@@ -125,6 +125,9 @@ VITE_USE_MOCK_CHAT=false
           "travel_minutes_from_previous": 10,
           "distance_km_from_previous": 1.2,
           "transport_mode_from_previous": "walk",
+          "polyline_from_previous": "121.473700,31.230400;121.499800,31.239700",
+          "route_leg_source_from_previous": "mock_map",
+          "route_steps_from_previous": ["步行 420 米至 人民广场站", "乘坐地铁 2号线 3站 至 陆家嘴站"],
           "reason": "适合拍照和 citywalk 体验"
         }
       ],
@@ -144,6 +147,7 @@ VITE_USE_MOCK_CHAT=false
 - `score_breakdown` 使用 0-100 整数。
 - 前端如果展示为 10 分制，应自行除以 10；如果展示进度条，应直接按百分比使用。
 - `RouteStop.transport_mode_from_previous` 可能返回单一或组合交通方式，例如 `walk`、`metro/taxi`、`metro/bike`、`metro/bus`、`drive/taxi`。前端或 Agent 解释层需要映射为用户可读中文。
+- `RouteStop.route_steps_from_previous` 是上一站到当前站的分段交通说明；mock 地图模式下可能包含“地铁 X号线 / 公交 X路”等模拟线路信息。
 - `RouteStop.reason`、`highlight_text`、`ugc_tip` 可用于路线解释；如果为空，前端应做兜底展示。
 
 ## POST /api/pois/search

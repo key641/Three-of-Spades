@@ -1,4 +1,5 @@
 import json
+import math
 from collections import Counter
 from pathlib import Path
 
@@ -8,7 +9,19 @@ from app.services.poi_service import POIService
 from app.services.strategy_service import StrategyService
 
 
-KEY_CITIES = {"上海", "北京", "杭州", "成都", "广州", "深圳", "南京", "苏州", "武汉", "重庆", "西安", "长沙", "厦门", "青岛", "天津"}
+KEY_CITIES = {"上海", "北京"}
+EXPECTED_CATEGORY_COUNTS = {
+    "restaurant": 70,
+    "cafe": 60,
+    "market": 40,
+    "shopping": 40,
+    "landmark": 40,
+    "museum": 35,
+    "gallery": 35,
+    "park": 35,
+    "night_view": 35,
+    "theater": 30,
+}
 
 
 def test_search_loads_pois_from_json() -> None:
@@ -99,7 +112,7 @@ def test_start_location_prioritizes_nearby_pois() -> None:
     )
 
     assert pois
-    assert any(poi.id in {"poi_001", "poi_003"} for poi in pois[:3])
+    assert all(math.hypot((poi.lat - 31.2243) * 111, (poi.lng - 121.5441) * 95) <= 3 for poi in pois[:3])
 
 
 def test_user_profile_affects_ranking() -> None:
@@ -123,9 +136,12 @@ def test_seed_data_covers_key_cities_and_scenarios() -> None:
     pois = POIService().all_pois()
     by_city = Counter(poi.city for poi in pois)
 
-    assert all(by_city[city] == 100 for city in KEY_CITIES)
+    assert set(by_city) == KEY_CITIES
+    assert all(by_city[city] == sum(EXPECTED_CATEGORY_COUNTS.values()) for city in KEY_CITIES)
     for city in KEY_CITIES:
         city_pois = [poi for poi in pois if poi.city == city]
+        by_category = Counter(poi.category for poi in city_pois)
+        assert by_category == EXPECTED_CATEGORY_COUNTS
         assert any(poi.category in {"restaurant", "market"} or poi.meal_type in {"local_food", "light_meal", "fine_dining"} for poi in city_pois)
         assert any(poi.category == "cafe" or poi.meal_type == "cafe" for poi in city_pois)
         assert any(poi.indoor for poi in city_pois)
@@ -163,7 +179,7 @@ def test_seed_data_has_valid_planning_fields() -> None:
 def test_key_city_searches_do_not_return_empty_results() -> None:
     service = POIService()
 
-    for city in ["北京", "杭州", "成都"]:
+    for city in ["上海", "北京"]:
         pois = service.search(Intent(city=city))
 
         assert len(pois) == 32
@@ -190,7 +206,7 @@ def test_common_preference_searches_do_not_return_empty_results() -> None:
 
 
 def test_low_budget_and_avoid_tags_still_keep_candidates() -> None:
-    pois = POIService().search(Intent(city="杭州", budget_per_person=50, avoid_tags=["人流密集", "太贵"]), limit=20)
+    pois = POIService().search(Intent(city="北京", budget_per_person=50, avoid_tags=["人流密集", "太贵"]), limit=20)
 
     assert len(pois) >= 12
     assert all("人流密集" not in poi.tags for poi in pois)
@@ -209,7 +225,7 @@ def test_photo_food_strategy_prioritizes_photo_friendly_food() -> None:
 def test_nature_strategy_prioritizes_nature_pois() -> None:
     service = POIService()
     profile = UserProfile(user_id="u", tags=[], preferences=[], preference_weights={})
-    intent = Intent(city="杭州", preferences=["自然风景"])
+    intent = Intent(city="北京", preferences=["自然风景"])
     tags = StrategyService().infer_tags("想看自然风景，轻松一点", intent, profile)
     pois = service.search(intent, user_profile=profile, strategy_tags=tags, limit=10)
 

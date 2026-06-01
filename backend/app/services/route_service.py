@@ -44,37 +44,61 @@ class RouteService:
             return RoutePlanResponse(routes=[])
 
         objectives = self._select_objectives(request)
+        return self.generate_routes_for_objectives(request, objectives)
+
+    def generate_routes_for_objectives(
+        self,
+        request: RoutePlanRequest,
+        objectives: list[str],
+        max_stops: int | None = None,
+        routes_per_objective: int = 1,
+    ) -> RoutePlanResponse:
+        if not request.candidate_pois:
+            return RoutePlanResponse(routes=[])
+
         routes: list[Route] = []
         poi_by_id = {poi.id: poi for poi in request.candidate_pois}
 
-        for objective in objectives:
-            candidates = self._build_candidates_for_objective(request.candidate_pois, objective, request)
+        for objective in self._unique_objectives(objectives):
+            if objective not in self.OBJECTIVE_TITLES:
+                continue
+            candidates = self._build_candidates_for_objective(request.candidate_pois, objective, request, max_stops_override=max_stops)
             scored_candidates = self._score_candidates(candidates, objective, request, poi_by_id)
             if not scored_candidates:
                 continue
-            selected = scored_candidates[0]
-            selected.route_id = f"route_{objective}_best"
-            selected.title = self.OBJECTIVE_TITLES[objective].replace("候选路线", "推荐路线")
-            selected.summary = self._summary(
-                objective,
-                len(selected.stops),
-                selected.total_cost_per_person,
-                selected.total_queue_minutes,
-                selected.total_travel_minutes,
-                selected.score,
-                selected.score_breakdown,
-            )
-            selected.reasons = self._reasons(
-                objective,
-                selected.stops,
-                selected.total_cost_per_person,
-                selected.total_queue_minutes,
-                selected.total_distance_km,
-                selected.score_breakdown,
-            )
-            routes.append(selected)
+            for index, selected in enumerate(scored_candidates[: max(routes_per_objective, 1)]):
+                routes.append(self._finalize_route(selected, objective, index))
 
         return RoutePlanResponse(routes=routes)
+
+    def _finalize_route(self, route: Route, objective: str, index: int = 0) -> Route:
+        route.route_id = f"route_{objective}_best" if index == 0 else f"route_{objective}_candidate_{index + 1}"
+        route.title = self.OBJECTIVE_TITLES[objective].replace("候选路线", "推荐路线")
+        route.summary = self._summary(
+            objective,
+            len(route.stops),
+            route.total_cost_per_person,
+            route.total_queue_minutes,
+            route.total_travel_minutes,
+            route.score,
+            route.score_breakdown,
+        )
+        route.reasons = self._reasons(
+            objective,
+            route.stops,
+            route.total_cost_per_person,
+            route.total_queue_minutes,
+            route.total_distance_km,
+            route.score_breakdown,
+        )
+        return route
+
+    def _unique_objectives(self, objectives: list[str]) -> list[str]:
+        result: list[str] = []
+        for objective in objectives:
+            if objective and objective not in result:
+                result.append(objective)
+        return result
 
     def _score_candidates(
         self,
@@ -126,9 +150,12 @@ class RouteService:
                 selected.append(fallback)
         return selected[:3]
 
-    def _build_candidates_for_objective(self, pois: list[POI], objective: str, request: RoutePlanRequest) -> list[Route]:
+    def _build_candidates_for_objective(self, pois: list[POI], objective: str, request: RoutePlanRequest, max_stops_override: int | None = None) -> list[Route]:
         time_limit = max(60, request.intent.duration_hours * 60)
         min_stops, max_stops = self._stop_bounds(request)
+        if max_stops_override is not None:
+            max_stops = min(max_stops, max(1, max_stops_override))
+        min_stops = min(min_stops, max_stops)
         start_pool = self._start_candidates(pois, objective, request)
         routes: list[Route] = []
 
@@ -252,6 +279,7 @@ class RouteService:
             amap_distance_meters_from_previous=route_leg.distance_meters if route_leg else None,
             amap_duration_minutes_from_previous=route_leg.duration_minutes if route_leg else None,
             route_leg_source_from_previous=route_leg.source if route_leg else None,
+            route_steps_from_previous=[step.instruction for step in route_leg.steps] if route_leg else [],
             reason=self._stop_reason(poi, objective, request, start_minutes),
         )
         next_state = RouteBuildState(
@@ -262,13 +290,14 @@ class RouteService:
         )
         return stop, next_state
 
-    def _route_leg(self, current_lat: float | None, current_lng: float | None, poi: POI, mode: str | None) -> RouteLeg | None:
+    def _route_leg(self, current_lat: float | None, current_lng: float | None, poi: POI, mode: str | None, departure_time: str | None = None) -> RouteLeg | None:
         if current_lat is None or current_lng is None or mode is None:
             return None
         return self.amap_service.route_leg(
             origin=GeoPoint(lat=current_lat, lng=current_lng),
             destination=GeoPoint(lat=poi.lat, lng=poi.lng),
             mode=mode,
+            departure_time=departure_time,
         )
 
     def _best_route_leg(
@@ -282,7 +311,7 @@ class RouteService:
         if current_lat is None or current_lng is None or distance_km is None:
             return None
         modes = self._candidate_transport_modes(distance_km, poi, request)
-        legs = [self._route_leg(current_lat, current_lng, poi, mode) for mode in modes]
+        legs = [self._route_leg(current_lat, current_lng, poi, mode, request.intent.start_time) for mode in modes]
         available = [leg for leg in legs if leg is not None]
         if not available:
             return None

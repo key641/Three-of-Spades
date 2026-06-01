@@ -1405,3 +1405,188 @@ print(updated.live_warnings)
 print([(change.from_name, change.to_name, change.reason) for change in updated.changed_stops])
 PY
 ```
+
+## 2026-06-02 - `uncommitted` - `feat(route): add high-fidelity mock data, mock map, and predictive routes`
+
+负责人：POI 数据 / 路线策略 / Mock 地图 / 预制路线 / B 同学
+
+### 更新概览
+
+本次更新围绕 B 侧 Demo 稳定性做了一轮集中增强：重新生成北京、上海两城 POI mock 数据，补齐更可信的 mock 地图路线能力，并新增 mock 天气 + 用户画像的预制路线服务。目标是让路线规划、局部修改和前端预推荐都能在没有真实高德 key、没有真实天气接口的情况下稳定工作，同时返回接近真实地图服务的交通方式、耗时、距离、polyline 和分段说明。
+
+同时新增 `docs/route_strategy_logic.md`，系统整理当前路线策略的召回、排序、评分、普通规划、局部修改和预制路线逻辑，方便 A/B/C 同学对齐。
+
+### 主要变更
+
+- 重新生成 POI mock 数据：
+  - `data/seed/pois.json` 调整为只覆盖上海和北京。
+  - 每城 420 个 POI，共 840 个 POI。
+  - 每城类目数量为：餐厅 70、咖啡 60、市集/小吃 40、购物 40、地标 40、博物馆 35、美术馆 35、公园 35、夜景 35、剧场 30。
+  - 文件顶部新增简洁 `mock_poi_intro`，说明城市、类目和数量。
+  - POI 字段继续覆盖路线策略需要的价格、排队、营业时间、适合时段、室内、雨天、夜间、步行强度、交通建议、路线角色和体验标签。
+
+- 增强 POI 召回：
+  - `POIService.search()` 保持城市过滤、偏好匹配、避开标签、预算过滤和低风险兜底。
+  - 增加召回结果类目多样性处理，避免前几十个候选被餐厅或咖啡单一类目占满。
+  - 城市无数据时仍保留 fallback 机制，但当前主数据只保证北京、上海。
+
+- 新增高仿真 mock 地图：
+  - 新增 `data/seed/mock_map.json`，覆盖北京、上海的 mock 地铁线、公交线、站点、交通参数和高峰时段。
+  - 新增 `MockRouteMapService`，统一返回 `RouteLeg`。
+  - 支持 `walk / metro / bus / taxi`。
+  - 默认 `MAP_ROUTE_PROVIDER=mock`，不配置高德 key 时也能返回稳定路线字段。
+  - 高德 API 仍保留，可通过配置切换。
+  - mock 地图会返回：
+    - `transport_mode_from_previous`
+    - `travel_minutes_from_previous`
+    - `distance_km_from_previous`
+    - `polyline_from_previous`
+    - `route_leg_source_from_previous = "mock_map"`
+    - `route_steps_from_previous`
+  - 地铁优先匹配起终点附近站点，支持同线直达和简单一次换乘；公交用于补充短中距离；无法可靠匹配时回退打车或步行。
+  - 距离和耗时不再是纯直线估算，会按交通方式加入绕路系数、等待时间、进出站时间和高峰倍率。
+
+- 新增 mock 天气数据：
+  - 新增 `data/seed/mock_weather.json`。
+  - 覆盖上海、北京。
+  - 每城包含 `sunny`、`rainy`、`hot`、`cloudy`、`night` 五类场景。
+  - 字段包含 `condition`、`temperature_c`、`rain_probability`、`wind_level`、`comfort_level`、`suggested_preferences`。
+  - 天气偏好转换规则：
+    - 雨天、大风：`室内`、`雨天`、`少走路`。
+    - 高温：`室内`、`少走路`、`咖啡`。
+    - 晴天、阴天且舒适：`citywalk`、`拍照`、`自然风景`。
+    - 夜间：`晚上`、`夜景`。
+
+- 新增预制路线服务：
+  - 新增 `PredictiveRouteService` 和 `PredictiveRouteRequest`。
+  - 输入支持 `user_id`、`city`、`weather_scenario`、`start_time`、`duration_hours`、`start_lat/start_lng`、可选 `user_profile`。
+  - 输出继续复用 `RoutePlanResponse`，不改前端路线结构。
+  - 默认预制时长为 5 小时，更容易生成 3-4 个 POI 的半日路线。
+  - 预制路线强制每条最多 4 个 POI；短时长、雨天、少走路、亲子、老人友好时倾向最多 3 个。
+  - 有画像用户固定生成两个画像目标 + `balanced`。
+  - 新用户不使用默认 fallback 画像，从全部 objective 候选里按评分和差异选择 3 条。
+  - 三条路线会做差异过滤：objective 不重复、POI 组合不完全相同、默认 POI 重合率不超过 50%，不足时放宽到 70%。
+
+- 扩展路线生成入口：
+  - `RouteService.generate_routes()` 继续服务普通规划。
+  - 新增 `RouteService.generate_routes_for_objectives()`，允许预制路线指定 objectives、限制 `max_stops`，并为同一 objective 生成多条候选。
+  - 普通聊天路线规划不受预制路线 POI 数限制影响。
+
+- 补充路线策略文档：
+  - 新增 `docs/route_strategy_logic.md`。
+  - 覆盖普通规划、局部修改、预制路线三条链路。
+  - 详细说明 POI 召回、初排、objective 选择、候选生成、结构约束、交通路段、五维评分、硬惩罚、差异过滤和调试建议。
+
+### 目前的变动逻辑
+
+普通规划当前逻辑：
+
+```text
+用户消息
+-> Orchestrator 解析 Intent、读取 UserProfile
+-> StrategyService 推断策略标签
+-> ProfileService 生成策略权重
+-> POIService 从北京/上海 mock POI 中召回并初排
+-> RouteService 选择 2 个偏好 objective + balanced
+-> 每个 objective 生成多条候选，补 mock_map 交通字段
+-> ScoringService 做五维评分和硬惩罚
+-> 每个 objective 返回 best 路线
+```
+
+局部修改当前逻辑：
+
+```text
+current_routes + selected_route_id + event_type/event_payload
+-> ReplanService 只检查未完成的 future stops
+-> 根据 replace/avoid/queue/weather/tired/traffic 判断是否替换
+-> 优先从本地 POI 找同城市、同角色、同类目替代点
+-> 重建后续 stop 的时间、交通、距离和评分
+-> 返回 changed_stops / live_warnings / replan_reason
+```
+
+预制路线当前逻辑：
+
+```text
+user_id + city + mock weather + 可选 profile
+-> PredictiveRouteService 读取 mock_weather
+-> 天气转偏好，画像转 objective
+-> POIService 召回 48 个候选
+-> RouteService.generate_routes_for_objectives(max_stops<=4, routes_per_objective=3)
+-> 按 objective 和 POI 重合率做差异过滤
+-> 返回最多 3 条 RoutePlanResponse.routes
+```
+
+有画像用户：
+
+```text
+[profile_objective_1, profile_objective_2, "balanced"]
+```
+
+新用户：
+
+```text
+从全部 objective 候选中按 route.score 和差异度选 3 条，不强制包含 balanced
+```
+
+mock 地图当前逻辑：
+
+```text
+RouteService 请求 AmapService.route_leg()
+-> 默认 provider=mock
+-> MockRouteMapService 根据起终点匹配城市、线路和交通方式
+-> metro/bus 可返回线路名、站名、站数、耗时、距离、polyline、steps
+-> 匹配失败稳定 fallback 到 taxi 或 walk
+```
+
+### 涉及文件
+
+- `.env.example`
+- `data/seed/pois.json`
+- `data/seed/mock_map.json`
+- `data/seed/mock_weather.json`
+- `backend/app/config.py`
+- `backend/app/schemas/route.py`
+- `backend/app/services/amap_service.py`
+- `backend/app/services/mock_route_map_service.py`
+- `backend/app/services/poi_service.py`
+- `backend/app/services/profile_service.py`
+- `backend/app/services/route_service.py`
+- `backend/app/services/predictive_route_service.py`
+- `backend/app/tests/test_amap_service.py`
+- `backend/app/tests/test_poi_service.py`
+- `backend/app/tests/test_route_plan.py`
+- `backend/app/tests/test_predictive_route_service.py`
+- `docs/api_contract.md`
+- `docs/route_strategy_logic.md`
+- `frontend/src/api/types.ts`
+
+### 协作影响
+
+| 角色 | 影响 | 需要关注 |
+| --- | --- | --- |
+| A 同学：Agent / 后端 | 默认不配置高德 key 也能拿到稳定 mock_map 路段；后续可把 `PredictiveRouteService` 包成页面初始化或聊天前置推荐接口。 | 新用户预制路线不要调用 `ProfileService` 默认画像；需要传真实 `user_id/city/weather_scenario/start_lat/start_lng`。 |
+| B 同学：POI / 路线策略 | POI 召回、mock 地图、mock 天气和预制路线形成完整闭环；路线策略文档已补齐。 | 当前只保证北京、上海数据质量；扩城市时需要同步 POI、mock_map、mock_weather。 |
+| C 同学：前端 / UI | `RouteStop` 新增 `route_steps_from_previous`，路线卡片可展示地铁/公交/打车/步行步骤；预制路线响应复用现有 Route 结构。 | 前端类型已补字段；如接预制路线，只需要展示 `RoutePlanResponse.routes`，无需新增路线结构。 |
+
+### 风险与注意事项
+
+- mock 地图追求功能一致和体验可信，不代表真实导航精度。
+- 地铁/公交线路参考真实城市结构，但站点、距离、耗时是简化近似。
+- 预制路线当前是服务能力，尚未新增正式 API。
+- 新用户预制路线不使用默认 fallback 画像，这是和普通聊天规划不同的逻辑。
+- 目前 POI 主数据只覆盖北京、上海；其他城市会走 fallback，不适合当前 Demo 主场景。
+- `route_steps_from_previous` 是给前端展示的分段说明，评分仍主要使用稳定数值字段：交通方式、耗时、距离。
+
+### 验证结果
+
+```bash
+cd backend
+PYTHONPATH=. .venv/bin/pytest app/tests/test_predictive_route_service.py -q
+# 7 passed
+```
+
+```bash
+cd backend
+PYTHONPATH=. .venv/bin/pytest app/tests -q
+# 115 passed
+```

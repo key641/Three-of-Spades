@@ -35,11 +35,17 @@ class AmapService:
 
     BASE_URL = "https://restapi.amap.com/v3/direction"
 
-    def __init__(self, api_key: str | None = None, timeout_seconds: float = 2.5) -> None:
+    def __init__(self, api_key: str | None = None, timeout_seconds: float = 2.5, route_provider: str | None = None) -> None:
         self.api_key = settings.amap_web_service_key if api_key is None else api_key
         self.timeout_seconds = timeout_seconds
+        self.route_provider = settings.map_route_provider if route_provider is None else route_provider
 
-    def route_leg(self, origin: GeoPoint, destination: GeoPoint, mode: str = "walk") -> RouteLeg:
+    def route_leg(self, origin: GeoPoint, destination: GeoPoint, mode: str = "walk", departure_time: str | None = None) -> RouteLeg:
+        if self.route_provider == "mock" or (not self.api_key and self.route_provider != "fallback"):
+            from app.services.mock_route_map_service import MockRouteMapService
+
+            return MockRouteMapService().route_leg(origin, destination, mode=mode, departure_time=departure_time)
+
         if not self.api_key:
             return self._fallback_leg(origin, destination, mode)
 

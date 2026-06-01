@@ -143,7 +143,8 @@ def test_route_stop_contains_enriched_poi_fields() -> None:
     assert first_stop.polyline_from_previous
     assert first_stop.amap_distance_meters_from_previous is not None
     assert first_stop.amap_duration_minutes_from_previous is not None
-    assert first_stop.route_leg_source_from_previous in {"amap", "fallback"}
+    assert first_stop.route_leg_source_from_previous in {"amap", "fallback", "mock_map"}
+    assert first_stop.route_steps_from_previous
     assert first_stop.reason
 
 

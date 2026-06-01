@@ -1,0 +1,181 @@
+{
+  "mock_map_intro": [
+    "Mock Map: 上海、北京；支持 walk/metro/bus/taxi。",
+    "上海: metro_lines:4, bus_lines:3, stations:24。",
+    "北京: metro_lines:4, bus_lines:3, stations:24。"
+  ],
+  "schema_version": "1.0.0",
+  "description": "High-fidelity mock map data for Shanghai and Beijing. Values are approximate and designed for stable route planning demos, not real navigation.",
+  "defaults": {
+    "walk": { "speed_kmh": 4.8, "detour_factor": 1.12, "base_wait_minutes": 0, "min_minutes": 5 },
+    "metro": { "speed_kmh": 34, "detour_factor": 1.28, "base_wait_minutes": 6, "station_access_minutes": 6, "transfer_minutes": 7, "min_minutes": 10 },
+    "bus": { "speed_kmh": 18, "detour_factor": 1.35, "base_wait_minutes": 7, "station_access_minutes": 4, "min_minutes": 10 },
+    "taxi": { "speed_kmh": 26, "detour_factor": 1.22, "base_wait_minutes": 4, "min_minutes": 8 }
+  },
+  "cities": {
+    "上海": {
+      "center": { "lat": 31.2304, "lng": 121.4737 },
+      "peak_hours": [
+        { "start": "07:30", "end": "09:30", "taxi_multiplier": 1.45, "bus_multiplier": 1.35, "metro_multiplier": 1.08 },
+        { "start": "17:00", "end": "19:30", "taxi_multiplier": 1.55, "bus_multiplier": 1.45, "metro_multiplier": 1.12 }
+      ],
+      "metro_lines": [
+        {
+          "name": "地铁2号线",
+          "stations": [
+            { "name": "中山公园站", "lat": 31.2183, "lng": 121.4207 },
+            { "name": "静安寺站", "lat": 31.2231, "lng": 121.4466 },
+            { "name": "人民广场站", "lat": 31.2304, "lng": 121.4737 },
+            { "name": "南京东路站", "lat": 31.2383, "lng": 121.4845 },
+            { "name": "陆家嘴站", "lat": 31.2387, "lng": 121.5026 },
+            { "name": "世纪大道站", "lat": 31.2297, "lng": 121.5270 },
+            { "name": "上海科技馆站", "lat": 31.2243, "lng": 121.5441 }
+          ]
+        },
+        {
+          "name": "地铁1号线",
+          "stations": [
+            { "name": "徐家汇站", "lat": 31.1935, "lng": 121.4371 },
+            { "name": "衡山路站", "lat": 31.2047, "lng": 121.4463 },
+            { "name": "陕西南路站", "lat": 31.2151, "lng": 121.4588 },
+            { "name": "人民广场站", "lat": 31.2304, "lng": 121.4737 },
+            { "name": "汉中路站", "lat": 31.2415, "lng": 121.4591 }
+          ]
+        },
+        {
+          "name": "地铁10号线",
+          "stations": [
+            { "name": "上海动物园站", "lat": 31.1968, "lng": 121.3685 },
+            { "name": "交通大学站", "lat": 31.2025, "lng": 121.4352 },
+            { "name": "新天地站", "lat": 31.2197, "lng": 121.4755 },
+            { "name": "豫园站", "lat": 31.2287, "lng": 121.4921 },
+            { "name": "南京东路站", "lat": 31.2383, "lng": 121.4845 },
+            { "name": "四川北路站", "lat": 31.2570, "lng": 121.4847 }
+          ]
+        },
+        {
+          "name": "地铁13号线",
+          "stations": [
+            { "name": "长寿路站", "lat": 31.2466, "lng": 121.4381 },
+            { "name": "南京西路站", "lat": 31.2299, "lng": 121.4594 },
+            { "name": "淮海中路站", "lat": 31.2200, "lng": 121.4649 },
+            { "name": "新天地站", "lat": 31.2197, "lng": 121.4755 },
+            { "name": "世博会博物馆站", "lat": 31.2052, "lng": 121.4881 },
+            { "name": "世博大道站", "lat": 31.1849, "lng": 121.4908 }
+          ]
+        }
+      ],
+      "bus_lines": [
+        {
+          "name": "公交49路",
+          "stops": [
+            { "name": "徐家汇公园站", "lat": 31.1950, "lng": 121.4376 },
+            { "name": "衡山路复兴中路站", "lat": 31.2066, "lng": 121.4476 },
+            { "name": "淮海中路站", "lat": 31.2191, "lng": 121.4628 },
+            { "name": "人民广场站", "lat": 31.2304, "lng": 121.4737 }
+          ]
+        },
+        {
+          "name": "公交隧道八线",
+          "stops": [
+            { "name": "人民广场站", "lat": 31.2304, "lng": 121.4737 },
+            { "name": "陆家嘴环路站", "lat": 31.2387, "lng": 121.5026 },
+            { "name": "世纪大道站", "lat": 31.2297, "lng": 121.5270 },
+            { "name": "上海科技馆站", "lat": 31.2243, "lng": 121.5441 }
+          ]
+        },
+        {
+          "name": "公交21路",
+          "stops": [
+            { "name": "静安寺站", "lat": 31.2231, "lng": 121.4466 },
+            { "name": "南京西路站", "lat": 31.2299, "lng": 121.4594 },
+            { "name": "南京东路站", "lat": 31.2383, "lng": 121.4845 },
+            { "name": "四川北路站", "lat": 31.2570, "lng": 121.4847 }
+          ]
+        }
+      ]
+    },
+    "北京": {
+      "center": { "lat": 39.9042, "lng": 116.4074 },
+      "peak_hours": [
+        { "start": "07:30", "end": "09:30", "taxi_multiplier": 1.5, "bus_multiplier": 1.4, "metro_multiplier": 1.1 },
+        { "start": "17:00", "end": "19:30", "taxi_multiplier": 1.6, "bus_multiplier": 1.5, "metro_multiplier": 1.12 }
+      ],
+      "metro_lines": [
+        {
+          "name": "地铁1号线",
+          "stations": [
+            { "name": "公主坟站", "lat": 39.9074, "lng": 116.3099 },
+            { "name": "木樨地站", "lat": 39.9075, "lng": 116.3374 },
+            { "name": "西单站", "lat": 39.9072, "lng": 116.3740 },
+            { "name": "天安门西站", "lat": 39.9075, "lng": 116.3913 },
+            { "name": "王府井站", "lat": 39.9083, "lng": 116.4116 },
+            { "name": "国贸站", "lat": 39.9095, "lng": 116.4618 }
+          ]
+        },
+        {
+          "name": "地铁2号线",
+          "stations": [
+            { "name": "西直门站", "lat": 39.9402, "lng": 116.3556 },
+            { "name": "车公庄站", "lat": 39.9322, "lng": 116.3545 },
+            { "name": "复兴门站", "lat": 39.9072, "lng": 116.3563 },
+            { "name": "前门站", "lat": 39.9005, "lng": 116.3975 },
+            { "name": "崇文门站", "lat": 39.9017, "lng": 116.4175 },
+            { "name": "东直门站", "lat": 39.9417, "lng": 116.4358 }
+          ]
+        },
+        {
+          "name": "地铁4号线",
+          "stations": [
+            { "name": "圆明园站", "lat": 40.0106, "lng": 116.3106 },
+            { "name": "北京大学东门站", "lat": 39.9921, "lng": 116.3159 },
+            { "name": "中关村站", "lat": 39.9840, "lng": 116.3160 },
+            { "name": "国家图书馆站", "lat": 39.9430, "lng": 116.3252 },
+            { "name": "西直门站", "lat": 39.9402, "lng": 116.3556 },
+            { "name": "西单站", "lat": 39.9072, "lng": 116.3740 }
+          ]
+        },
+        {
+          "name": "地铁10号线",
+          "stations": [
+            { "name": "海淀黄庄站", "lat": 39.9759, "lng": 116.3177 },
+            { "name": "知春路站", "lat": 39.9765, "lng": 116.3392 },
+            { "name": "三元桥站", "lat": 39.9604, "lng": 116.4565 },
+            { "name": "亮马桥站", "lat": 39.9491, "lng": 116.4618 },
+            { "name": "国贸站", "lat": 39.9095, "lng": 116.4618 },
+            { "name": "劲松站", "lat": 39.8844, "lng": 116.4613 }
+          ]
+        }
+      ],
+      "bus_lines": [
+        {
+          "name": "公交1路",
+          "stops": [
+            { "name": "木樨地站", "lat": 39.9075, "lng": 116.3374 },
+            { "name": "西单站", "lat": 39.9072, "lng": 116.3740 },
+            { "name": "天安门西站", "lat": 39.9075, "lng": 116.3913 },
+            { "name": "王府井站", "lat": 39.9083, "lng": 116.4116 }
+          ]
+        },
+        {
+          "name": "公交82路",
+          "stops": [
+            { "name": "前门站", "lat": 39.9005, "lng": 116.3975 },
+            { "name": "故宫东门站", "lat": 39.9186, "lng": 116.4071 },
+            { "name": "什刹海站", "lat": 39.9405, "lng": 116.3864 },
+            { "name": "鼓楼站", "lat": 39.9472, "lng": 116.3934 }
+          ]
+        },
+        {
+          "name": "公交特8路",
+          "stops": [
+            { "name": "国贸站", "lat": 39.9095, "lng": 116.4618 },
+            { "name": "亮马桥站", "lat": 39.9491, "lng": 116.4618 },
+            { "name": "三元桥站", "lat": 39.9604, "lng": 116.4565 },
+            { "name": "知春路站", "lat": 39.9765, "lng": 116.3392 }
+          ]
+        }
+      ]
+    }
+  }
+}

@@ -34,6 +34,7 @@ export interface RouteStop {
   amap_distance_meters_from_previous?: number | null;
   amap_duration_minutes_from_previous?: number | null;
   route_leg_source_from_previous?: string | null;
+  route_steps_from_previous?: string[];
   reason?: string | null;
 }
 
