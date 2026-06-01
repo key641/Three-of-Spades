@@ -1,4 +1,5 @@
-import { useState } from "react";
+import React, { useRef, useState } from "react";
+import { Footprints, UtensilsCrossed, Landmark, Ticket, MapPin, Baby, TreePine, ShoppingBag, Dices, Check } from "lucide-react";
 import type { OnboardingProfile } from "../hooks/useOnboarding";
 import { saveProfile } from "../hooks/useOnboarding";
 
@@ -8,25 +9,62 @@ interface OnboardingPageProps {
 
 // ── 数据配置 ──────────────────────────────────────────────────
 
-const SCENARIOS: { key: string; emoji: string; label: string; desc: string }[] = [
-  { key: "friends_citywalk", emoji: "👫", label: "朋友 citywalk",  desc: "和朋友漫步街头、打卡探店" },
-  { key: "family_trip",      emoji: "👨‍👩‍👧", label: "家庭出行",    desc: "带长辈或小孩，轻松休闲" },
-  { key: "solo_explore",     emoji: "🎒", label: "一个人探索",   desc: "独自发现城市的隐藏角落" },
-  { key: "date_night",       emoji: "💑", label: "约会出行",     desc: "仪式感十足的两人路线" },
-  { key: "foodie_tour",      emoji: "🍜", label: "美食打卡",     desc: "以美食为核心，边吃边逛" },
-  { key: "culture_museum",   emoji: "🏛️", label: "文化艺术游",   desc: "博物馆、美术馆、历史街区" },
+const SCENARIOS: { key: string; icon: React.ReactNode; label: string; desc: string }[] = [
+  { key: "citywalk",    icon: <Footprints size={20} strokeWidth={1.5} />, label: "街头漫游",  desc: "咖啡馆、集市、新店探索" },
+  { key: "foodie",      icon: <UtensilsCrossed size={20} strokeWidth={1.5} />, label: "美食探店",  desc: "打卡餐厅、特色小吃、网红店" },
+  { key: "culture",     icon: <Landmark size={20} strokeWidth={1.5} />, label: "文化艺术",  desc: "博物馆、美术馆、图书馆" },
+  { key: "show_event",  icon: <Ticket size={20} strokeWidth={1.5} />, label: "演出活动",  desc: "演唱会、展览、赛事" },
+  { key: "landmark",    icon: <MapPin size={20} strokeWidth={1.5} />, label: "热门景点",  desc: "城市地标、热门打卡" },
+  { key: "family",      icon: <Baby size={20} strokeWidth={1.5} />, label: "亲子家庭",  desc: "乐园、科普场馆、亲子公园" },
+  { key: "nature",      icon: <TreePine size={20} strokeWidth={1.5} />, label: "自然放松",  desc: "公园、露营、赏花、郊野" },
+  { key: "shopping",    icon: <ShoppingBag size={20} strokeWidth={1.5} />, label: "逛街购物",  desc: "商场、潮流街区、品牌集合店" },
+  { key: "freestyle",   icon: <Dices size={20} strokeWidth={1.5} />, label: "随心而行",  desc: "随机探索" },
 ];
 
-const PREF_TAGS: { key: string; emoji: string; label: string }[] = [
-  { key: "少排队",   emoji: "⚡", label: "少排队" },
-  { key: "吃好",     emoji: "🍽️", label: "吃好" },
-  { key: "性价比",   emoji: "💰", label: "性价比高" },
-  { key: "citywalk", emoji: "🚶", label: "citywalk" },
-  { key: "网红打卡", emoji: "📸", label: "网红打卡" },
-  { key: "安静",     emoji: "🌿", label: "环境安静" },
-  { key: "亲子友好", emoji: "👶", label: "亲子友好" },
-  { key: "有特色",   emoji: "✨", label: "有特色" },
-  { key: "交通方便", emoji: "🚇", label: "交通方便" },
+// 偏好标签 — 按维度分组
+const PREF_GROUPS: { group: string; emoji: string; tags: { key: string; label: string }[] }[] = [
+  {
+    group: "时间效率",
+    emoji: "⏱",
+    tags: [
+      { key: "少排队",    label: "少排队" },
+      { key: "路程紧凑",  label: "路程紧凑" },
+      { key: "节奏慢",    label: "节奏慢" },
+      { key: "特种兵", label: "特种兵" },
+    ],
+  },
+  {
+    group: "出行方式",
+    emoji: "🚇",
+    tags: [
+      { key: "公交方便",  label: "公交方便" },
+      { key: "少换乘",    label: "少换乘" },
+      { key: "步行citywalk",  label: "步行citywalk" },
+      { key: "自驾出行",    label: "自驾出行" },
+    ],
+  },
+  {
+    group: "消费偏好",
+    emoji: "💰",
+    tags: [
+      { key: "性价比高",  label: "性价比高" },
+      { key: "服务优先",  label: "服务优先" },
+      { key: "体验优先",  label: "体验优先" },
+    ],
+  },
+  {
+    group: "体验风格",
+    emoji: "✨",
+    tags: [
+      { key: "人少景美",  label: "人少景美" },
+      { key: "热门打卡",  label: "热门打卡" },
+      { key: "新鲜事物",  label: "新鲜事物" },
+      { key: "小众特色",  label: "小众特色" },
+      { key: "适合拍照",  label: "适合拍照" },
+      { key: "室内为主",  label: "室内为主" },
+      { key: "亲子友好",  label: "亲子友好" },
+    ],
+  },
 ];
 
 const AVOID_TAGS: { key: string; emoji: string; label: string }[] = [
@@ -35,31 +73,89 @@ const AVOID_TAGS: { key: string; emoji: string; label: string }[] = [
   { key: "贵",     emoji: "💸", label: "消费贵" },
   { key: "辣",     emoji: "🌶️", label: "辣的食物" },
   { key: "需排队", emoji: "⏳", label: "需要排队" },
+  { key: "太远",   emoji: "📏", label: "距离太远" },
+  { key: "体力消耗大", emoji: "💦", label: "体力消耗大" },
 ];
 
-const BUDGETS: { key: "low" | "mid" | "high"; label: string; desc: string; range: string }[] = [
-  { key: "low",  label: "省钱游",  desc: "主打性价比",   range: "人均 ≤ ¥100" },
-  { key: "mid",  label: "舒适游",  desc: "品质与价格均衡", range: "人均 ¥100 ~ ¥300" },
-  { key: "high", label: "享受游",  desc: "不将就，体验优先", range: "人均 > ¥300" },
-];
+const TOTAL_STEPS = 2;
 
-const CITIES = ["上海", "北京", "广州", "深圳", "成都", "杭州", "南京", "武汉", "西安"];
+// ── 自定义标签输入组件 ────────────────────────────────────────
+interface CustomTagInputProps {
+  placeholder: string;
+  onAdd: (tag: string) => void;
+  isAvoid?: boolean;
+}
 
-const TOTAL_STEPS = 3;
+function CustomTagInput({ placeholder, onAdd, isAvoid = false }: CustomTagInputProps) {
+  const [editing, setEditing] = useState(false);
+  const [value, setValue] = useState("");
+  const inputRef = useRef<HTMLInputElement>(null);
 
-// ── 组件 ─────────────────────────────────────────────────────
+  function handleOpen() {
+    setEditing(true);
+    setTimeout(() => inputRef.current?.focus(), 50);
+  }
+
+  function handleConfirm() {
+    const trimmed = value.trim();
+    if (trimmed) {
+      onAdd(trimmed);
+      setValue("");
+    }
+    setEditing(false);
+  }
+
+  function handleKeyDown(e: React.KeyboardEvent) {
+    if (e.key === "Enter") { e.preventDefault(); handleConfirm(); }
+    if (e.key === "Escape") { setValue(""); setEditing(false); }
+  }
+
+  if (!editing) {
+    return (
+      <button
+        type="button"
+        className={`ob-tag ob-tag-add${isAvoid ? " avoid" : ""}`}
+        onClick={handleOpen}
+      >
+        + 自定义
+      </button>
+    );
+  }
+
+  return (
+    <span className="ob-tag-input-wrap">
+      <input
+        ref={inputRef}
+        className="ob-tag-input"
+        value={value}
+        onChange={(e) => setValue(e.target.value)}
+        onKeyDown={handleKeyDown}
+        onBlur={handleConfirm}
+        placeholder={placeholder}
+        maxLength={12}
+      />
+    </span>
+  );
+}
+
+// ── 主组件 ───────────────────────────────────────────────────
 
 export function OnboardingPage({ onDone }: OnboardingPageProps) {
   const [step, setStep] = useState(1);
-  const [scenarios,  setScenarios]  = useState<string[]>([]);
-  const [prefs,      setPrefs]      = useState<string[]>([]);
-  const [avoids,     setAvoids]     = useState<string[]>([]);
-  const [budgetLevel, setBudgetLevel] = useState<"low" | "mid" | "high">("mid");
-  const [city,       setCity]       = useState("上海");
-  const [nickname,   setNickname]   = useState("");
+  const [scenarios,   setScenarios]   = useState<string[]>([]);
+  const [prefs,       setPrefs]       = useState<string[]>([]);
+  const [avoids,      setAvoids]      = useState<string[]>([]);
 
   function toggleTag(list: string[], setList: (v: string[]) => void, key: string) {
     setList(list.includes(key) ? list.filter((t) => t !== key) : [...list, key]);
+  }
+
+  function addCustomPref(tag: string) {
+    if (!prefs.includes(tag)) setPrefs((prev) => [...prev, tag]);
+  }
+
+  function addCustomAvoid(tag: string) {
+    if (!avoids.includes(tag)) setAvoids((prev) => [...prev, tag]);
   }
 
   function canNext() {
@@ -70,13 +166,11 @@ export function OnboardingPage({ onDone }: OnboardingPageProps) {
 
   function handleFinish() {
     const profile = saveProfile({
-      nickname: nickname.trim() || "旅行者",
-      city,
-      scenarios,                                  // 完整多选列表
-      scenario: scenarios[0] ?? "friends_citywalk", // 后端兼容字段
+      scenarios,
+      scenario: scenarios[0] ?? "citywalk",
       preferences: prefs,
       avoid_tags: avoids,
-      budget_level: budgetLevel,
+      budget_level: "flex",
     });
     onDone(profile);
   }
@@ -93,18 +187,18 @@ export function OnboardingPage({ onDone }: OnboardingPageProps) {
         {/* ── Step 1：选择出行场景 ── */}
         {step === 1 && (
           <div className="ob-step">
-            <div className="ob-step-tag">第 1 步 / 共 3 步</div>
-            <h1 className="ob-title">你平时喜欢怎么玩？</h1>
+            <div className="ob-step-tag">第 1 步 / 共 2 步</div>
+            <h1 className="ob-title">你平时出门喜欢怎么玩？</h1>
             <p className="ob-subtitle">可多选，仅作参考 — 不会限制你的路线选择，随时可以改</p>
             <div className="ob-scenario-grid">
-              {SCENARIOS.map(({ key, emoji, label, desc }) => (
+              {SCENARIOS.map(({ key, icon, label, desc }) => (
                 <button
                   key={key}
                   type="button"
-                  className={`ob-scenario-card${scenarios.includes(key) ? " selected" : ""}`}
+                  className={`ob-scenario-card${scenarios.includes(key) ? " selected" : ""}${key === "freestyle" ? " ob-scenario-card--full" : ""}`}
                   onClick={() => toggleTag(scenarios, setScenarios, key)}
                 >
-                  <span className="ob-scenario-emoji">{emoji}</span>
+                  <span className="ob-scenario-icon">{icon}</span>
                   <span className="ob-scenario-label">{label}</span>
                   <span className="ob-scenario-desc">{desc}</span>
                 </button>
@@ -113,28 +207,57 @@ export function OnboardingPage({ onDone }: OnboardingPageProps) {
           </div>
         )}
 
-        {/* ── Step 2：偏好标签 + 避开标签 ── */}
+        {/* ── Step 2：结构化偏好 + 避开 ── */}
         {step === 2 && (
           <div className="ob-step">
-            <div className="ob-step-tag">第 2 步 / 共 3 步</div>
+            <div className="ob-step-tag">第 2 步 / 共 2 步</div>
             <h1 className="ob-title">你的出行偏好</h1>
             <p className="ob-subtitle">至少选 1 个，帮助 AI 排出更准的路线（可多选）</p>
 
-            <div className="ob-section-label">✅ 我喜欢</div>
-            <div className="ob-tag-grid">
-              {PREF_TAGS.map(({ key, emoji, label }) => (
-                <button
-                  key={key}
-                  type="button"
-                  className={`ob-tag${prefs.includes(key) ? " selected" : ""}`}
-                  onClick={() => toggleTag(prefs, setPrefs, key)}
-                >
-                  {emoji} {label}
-                </button>
-              ))}
-            </div>
+            {/* ✅ 我喜欢 — 分维度展示 */}
+            <div className="ob-pref-section-label">✅ 我喜欢</div>
+            {PREF_GROUPS.map(({ group, emoji, tags }) => (
+              <div key={group} className="ob-pref-group">
+                <div className="ob-pref-group-title">{emoji} {group}</div>
+                <div className="ob-tag-grid">
+                  {tags.map(({ key, label }) => (
+                    <button
+                      key={key}
+                      type="button"
+                      className={`ob-tag${prefs.includes(key) ? " selected" : ""}`}
+                      onClick={() => toggleTag(prefs, setPrefs, key)}
+                    >
+                      {label}
+                    </button>
+                  ))}
+                  {/* 自定义输入只在最后一组(体验风格)显示，避免每组都有 */}
+                  {group === "体验风格" && (
+                    <CustomTagInput placeholder="输入偏好…" onAdd={addCustomPref} />
+                  )}
+                </div>
+              </div>
+            ))}
 
-            <div className="ob-section-label" style={{ marginTop: 24 }}>🚫 我想避开</div>
+            {/* 已选自定义偏好标签展示 */}
+            {prefs.filter((p) => !PREF_GROUPS.flatMap((g) => g.tags).map((t) => t.key).includes(p)).length > 0 && (
+              <div className="ob-tag-grid" style={{ marginTop: 4 }}>
+                {prefs
+                  .filter((p) => !PREF_GROUPS.flatMap((g) => g.tags).map((t) => t.key).includes(p))
+                  .map((p) => (
+                    <button
+                      key={p}
+                      type="button"
+                      className="ob-tag selected"
+                      onClick={() => setPrefs((prev) => prev.filter((x) => x !== p))}
+                    >
+                      {p} ×
+                    </button>
+                  ))}
+              </div>
+            )}
+
+            {/* 🚫 我想避开 */}
+            <div className="ob-pref-section-label" style={{ marginTop: 28 }}>🚫 我想避开</div>
             <div className="ob-tag-grid">
               {AVOID_TAGS.map(({ key, emoji, label }) => (
                 <button
@@ -146,64 +269,29 @@ export function OnboardingPage({ onDone }: OnboardingPageProps) {
                   {emoji} {label}
                 </button>
               ))}
+              <CustomTagInput placeholder="输入要避开的…" onAdd={addCustomAvoid} isAvoid />
             </div>
+
+            {/* 已选自定义避开标签展示 */}
+            {avoids.filter((a) => !AVOID_TAGS.map((t) => t.key).includes(a)).length > 0 && (
+              <div className="ob-tag-grid" style={{ marginTop: 4 }}>
+                {avoids
+                  .filter((a) => !AVOID_TAGS.map((t) => t.key).includes(a))
+                  .map((a) => (
+                    <button
+                      key={a}
+                      type="button"
+                      className="ob-tag selected-avoid"
+                      onClick={() => setAvoids((prev) => prev.filter((x) => x !== a))}
+                    >
+                      {a} ×
+                    </button>
+                  ))}
+              </div>
+            )}
           </div>
         )}
 
-        {/* ── Step 3：预算 + 城市 + 昵称 ── */}
-        {step === 3 && (
-          <div className="ob-step">
-            <div className="ob-step-tag">第 3 步 / 共 3 步</div>
-            <h1 className="ob-title">最后一点设置</h1>
-            <p className="ob-subtitle">帮助 AI 更精准地匹配路线与价位</p>
-
-            {/* 预算选择 */}
-            <div className="ob-section-label">人均预算</div>
-            <div className="ob-budget-grid">
-              {BUDGETS.map(({ key, label, desc, range }) => (
-                <button
-                  key={key}
-                  type="button"
-                  className={`ob-budget-card${budgetLevel === key ? " selected" : ""}`}
-                  onClick={() => setBudgetLevel(key)}
-                >
-                  <span className="ob-budget-label">{label}</span>
-                  <span className="ob-budget-desc">{desc}</span>
-                  <span className="ob-budget-range">{range}</span>
-                </button>
-              ))}
-            </div>
-
-            {/* 城市 */}
-            <div className="ob-section-label" style={{ marginTop: 24 }}>所在城市</div>
-            <div className="ob-city-grid">
-              {CITIES.map((c) => (
-                <button
-                  key={c}
-                  type="button"
-                  className={`ob-tag${city === c ? " selected" : ""}`}
-                  onClick={() => setCity(c)}
-                >
-                  {c}
-                </button>
-              ))}
-            </div>
-
-            {/* 昵称（可选） */}
-            <div className="ob-section-label" style={{ marginTop: 24 }}>
-              你的昵称
-              <span className="ob-optional">（可选）</span>
-            </div>
-            <input
-              className="ob-input"
-              type="text"
-              placeholder="例如：爱吃的小明"
-              maxLength={20}
-              value={nickname}
-              onChange={(e) => setNickname(e.target.value)}
-            />
-          </div>
-        )}
       </div>
 
       {/* 底部操作区 */}
@@ -232,7 +320,7 @@ export function OnboardingPage({ onDone }: OnboardingPageProps) {
             className="ob-btn-done"
             onClick={handleFinish}
           >
-            🚀 开始规划路线
+            ✅ 保存我的出行偏好
           </button>
         )}
       </div>

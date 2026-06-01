@@ -1,7 +1,7 @@
 import { useRef, useState } from "react";
-import { sendChatMessageStream } from "../api/chatApi";
+import { resetChatSession, sendChatMessageStream } from "../api/chatApi";
 import type { AgentTraceStep, ChatResponse } from "../api/types";
-import type { OnboardingProfile } from "./useOnboarding";
+import type { OnboardingProfile, TripConstraints } from "./useOnboarding";
 
 export interface ChatMessage {
   role: "user" | "assistant";
@@ -9,27 +9,61 @@ export interface ChatMessage {
   timestamp: number;
 }
 
-export function useChat(profile?: OnboardingProfile) {
+export function useChat() {
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [response, setResponse] = useState<ChatResponse | null>(null);
   const [liveTrace, setLiveTrace] = useState<AgentTraceStep[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const hasSentProfile = useRef(false);
+  const requestSeqRef = useRef(0);
+  const inFlightRef = useRef(false);
+  const lastProfileSigRef = useRef<string | null>(null);
 
-  async function send(message: string) {
-    const userMsg: ChatMessage = { role: "user", content: message, timestamp: Date.now() };
-    setMessages((prev) => [...prev, userMsg]);
+  function buildProfileSignature(profile?: OnboardingProfile) {
+    if (!profile) return null;
+    return JSON.stringify({
+      user_id: profile.user_id,
+      scenarios: profile.scenarios,
+      preferences: profile.preferences,
+      avoid_tags: profile.avoid_tags,
+      budget_level: profile.budget_level,
+      preference_weights: profile.preference_weights,
+    });
+  }
+
+  async function send(message: string, profile?: OnboardingProfile, trip?: TripConstraints, silent = false) {
+    if (inFlightRef.current) return;
+
+    if (!silent) {
+      const userMsg: ChatMessage = { role: "user", content: message, timestamp: Date.now() };
+      setMessages((prev) => [...prev, userMsg]);
+    }
     setResponse(null);
     setLiveTrace([]);
     setLoading(true);
     setError(null);
+    inFlightRef.current = true;
+
+    const requestSeq = ++requestSeqRef.current;
+
     try {
-      const includeProfile = !hasSentProfile.current;
+      const profileSig = buildProfileSignature(profile);
+      const includeProfile =
+        !hasSentProfile.current ||
+        (profileSig !== null && profileSig !== lastProfileSigRef.current);
       const res = await sendChatMessageStream(message, profile, includeProfile, (step) => {
         setLiveTrace((prev) => [...prev, step]);
-      });
-      hasSentProfile.current = true;
+      }, trip);
+
+      if (includeProfile) {
+        hasSentProfile.current = true;
+        lastProfileSigRef.current = profileSig;
+      }
+
+      // 仅接收最新请求，避免响应乱序覆盖。
+      if (requestSeq !== requestSeqRef.current) return;
+
       setResponse(res);
       setLiveTrace(res.agent_trace);
       const assistantMsg: ChatMessage = {
@@ -39,9 +73,13 @@ export function useChat(profile?: OnboardingProfile) {
       };
       setMessages((prev) => [...prev, assistantMsg]);
     } catch (requestError) {
+      if (requestSeq !== requestSeqRef.current) return;
       setError(requestError instanceof Error ? requestError.message : "请求失败，请检查后端是否启动");
     } finally {
-      setLoading(false);
+      if (requestSeq === requestSeqRef.current) {
+        setLoading(false);
+        inFlightRef.current = false;
+      }
     }
   }
 
@@ -57,7 +95,12 @@ export function useChat(profile?: OnboardingProfile) {
     setResponse(null);
     setLiveTrace([]);
     setError(null);
+    setLoading(false);
     hasSentProfile.current = false;
+    lastProfileSigRef.current = null;
+    requestSeqRef.current += 1;
+    inFlightRef.current = false;
+    resetChatSession();
   }
 
   return { messages, response, liveTrace, loading, error, send, inject, reset };

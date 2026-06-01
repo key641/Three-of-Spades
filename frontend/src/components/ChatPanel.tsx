@@ -1,4 +1,5 @@
-import { useEffect, useRef } from "react";
+import React, { useEffect, useRef } from "react";
+import { MapPin, AlertTriangle } from "lucide-react";
 import type { ChatMessage } from "../hooks/useChat";
 
 interface ChatPanelProps {
@@ -9,6 +10,8 @@ interface ChatPanelProps {
   clarifyingQuestion?: string | null;
   /** 用户点击快捷答案或输入后触发 */
   onClarify?: (answer: string) => void;
+  /** 插入到第一条 user 消息气泡之后（追问卡片） */
+  afterFirstUserMessage?: React.ReactNode;
 }
 
 // 常见追问的快捷回答
@@ -32,6 +35,7 @@ export function ChatPanel({
   error,
   clarifyingQuestion,
   onClarify,
+  afterFirstUserMessage,
 }: ChatPanelProps) {
   const bottomRef = useRef<HTMLDivElement>(null);
 
@@ -42,7 +46,7 @@ export function ChatPanel({
   if (messages.length === 0 && !loading && !error) {
     return (
       <div style={{ textAlign: "center", padding: "32px 0", color: "var(--color-muted)" }}>
-        <div style={{ fontSize: 40, marginBottom: 12 }}>🗺️</div>
+        <MapPin size={32} strokeWidth={1.5} style={{ marginBottom: 12, color: "var(--color-accent)" }} />
         <p style={{ margin: 0, fontSize: "var(--font-body)" }}>
           告诉我你想去哪儿、几个人、大概预算
           <br />
@@ -52,12 +56,21 @@ export function ChatPanel({
     );
   }
 
+  // 找到第一条 user 消息的索引，追问卡片插入其后
+  const firstUserIdx = messages.findIndex((m) => m.role === "user");
+
   return (
     <div className="message-list">
-      {messages.map((msg) => (
-        <div key={msg.timestamp} className={`bubble bubble-${msg.role}`}>
-          {msg.content}
-        </div>
+      {messages.map((msg, idx) => (
+        <React.Fragment key={msg.timestamp}>
+          <div className={`bubble bubble-${msg.role}`}>
+            {msg.content}
+          </div>
+          {/* 第一条 user 消息后插入追问内容 */}
+          {afterFirstUserMessage && idx === firstUserIdx && (
+            <>{afterFirstUserMessage}</>
+          )}
+        </React.Fragment>
       ))}
 
       {/* loading 时显示打字动效 */}
@@ -80,7 +93,7 @@ export function ChatPanel({
           }}
         >
           <p style={{ margin: "0 0 10px", fontSize: "var(--font-body)", color: "var(--color-text)" }}>
-            🤔 {clarifyingQuestion}
+            {clarifyingQuestion}
           </p>
           <div className="chips" style={{ padding: 0 }}>
             {guessClarifyChips(clarifyingQuestion).map((chip) => (
@@ -100,7 +113,7 @@ export function ChatPanel({
 
       {/* 错误提示 */}
       {error && (
-        <div className="error-toast">⚠️ {error}</div>
+        <div className="error-toast"><AlertTriangle size={13} style={{ flexShrink: 0 }} /> {error}</div>
       )}
 
       <div ref={bottomRef} />
