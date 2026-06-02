@@ -1,5 +1,6 @@
 from app.schemas.intent import Intent
 from app.schemas.route import RoutePlanRequest
+from app.services.amap_service import GeoPoint, RouteLeg
 from app.services.poi_service import POIService
 from app.services.profile_service import ProfileService
 from app.services.route_service import RouteService
@@ -230,3 +231,43 @@ def test_less_walking_transport_avoids_long_walks() -> None:
         for route in response.routes
         for stop in route.stops
     )
+
+
+def test_beijing_and_shanghai_routes_prefer_public_transit_when_convenient() -> None:
+    cases = [
+        Intent(city="北京", start_lat=39.9072, start_lng=116.3740, preferences=["吃好", "citywalk"], duration_hours=4, start_time="18:00"),
+        Intent(city="上海", start_lat=31.2231, start_lng=121.4466, preferences=["吃好", "citywalk"], duration_hours=4, start_time="18:00"),
+    ]
+
+    for intent in cases:
+        response = _plan(intent)
+        modes = {
+            stop.transport_mode_from_previous
+            for route in response.routes
+            for stop in route.stops
+        }
+        assert modes & {"metro", "bus"}, intent.city
+
+
+def test_transit_choice_keeps_taxi_when_public_transit_is_much_slower() -> None:
+    service = RouteService()
+    profile = ProfileService().get_profile("user_demo")
+    request = RoutePlanRequest(intent=Intent(preferences=["少走路"]), user_profile=profile)
+    taxi = service.amap_service.route_leg(
+        origin=GeoPoint(lat=39.9072, lng=116.3740),
+        destination=GeoPoint(lat=39.9095, lng=116.4618),
+        mode="taxi",
+        departure_time="18:00",
+    )
+    public = RouteLeg(
+        mode="metro",
+        distance_meters=taxi.distance_meters,
+        duration_minutes=taxi.duration_minutes * 3,
+        polyline=taxi.polyline,
+        steps=taxi.steps,
+        source=taxi.source,
+    )
+
+    chosen = service._choose_public_transit_first([public, taxi], request)
+
+    assert chosen.mode == "taxi"

@@ -92,6 +92,23 @@ def test_mock_bus_route_contains_bus_line() -> None:
     assert "站 至" in instructions
 
 
+def test_mock_metro_fallback_generates_transit_steps_instead_of_taxi() -> None:
+    service = MockRouteMapService()
+
+    leg = service.route_leg(
+        origin=GeoPoint(lat=39.9072, lng=116.3740),
+        destination=GeoPoint(lat=39.9186, lng=116.4071),
+        mode="metro",
+    )
+
+    instructions = " ".join(step.instruction for step in leg.steps)
+    assert leg.source == "mock_map"
+    assert leg.mode == "metro"
+    assert "乘坐地铁" in instructions
+    assert "站 至" in instructions
+    assert "打车" not in instructions
+
+
 def test_mock_taxi_peak_time_is_slower_than_normal_time() -> None:
     service = MockRouteMapService()
     origin = GeoPoint(lat=39.9072, lng=116.3740)

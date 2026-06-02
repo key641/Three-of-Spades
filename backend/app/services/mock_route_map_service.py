@@ -10,6 +10,8 @@ class MockRouteMapService:
     """High-fidelity mock map router for stable demo route legs."""
 
     source = "mock_map"
+    MAX_SYNTHETIC_ACCESS_KM = 1.8
+    MAX_SYNTHETIC_EGRESS_KM = 1.8
 
     def __init__(self, data_path: Path | None = None) -> None:
         self.data_path = data_path or Path(__file__).resolve().parents[3] / "data" / "seed" / "mock_map.json"
@@ -28,9 +30,9 @@ class MockRouteMapService:
         normalized_mode = self._normalize_mode(mode)
         city_name, city = self._nearest_city(origin, destination)
         if normalized_mode == "metro":
-            return self._metro_leg(origin, destination, city_name, city, departure_time) or self._taxi_leg(origin, destination, city_name, city, departure_time)
+            return self._metro_leg(origin, destination, city_name, city, departure_time) or self._synthetic_transit_leg(origin, destination, city, departure_time, mode="metro")
         if normalized_mode == "bus":
-            return self._bus_leg(origin, destination, city_name, city, departure_time) or self._taxi_leg(origin, destination, city_name, city, departure_time)
+            return self._bus_leg(origin, destination, city_name, city, departure_time) or self._synthetic_transit_leg(origin, destination, city, departure_time, mode="bus")
         if normalized_mode == "taxi":
             return self._taxi_leg(origin, destination, city_name, city, departure_time)
         return self._walk_leg(origin, destination, city_name, city, departure_time)
@@ -87,6 +89,47 @@ class MockRouteMapService:
         if direct:
             return self._transit_leg(origin, destination, direct, city, departure_time, mode="bus")
         return None
+
+    def _synthetic_transit_leg(
+        self,
+        origin: GeoPoint,
+        destination: GeoPoint,
+        city: dict[str, Any],
+        departure_time: str | None,
+        mode: str,
+    ) -> RouteLeg | None:
+        station_key = "stations" if mode == "metro" else "stops"
+        lines = city.get("metro_lines" if mode == "metro" else "bus_lines", [])
+        candidates: list[dict[str, Any]] = []
+        for line in lines:
+            stations = line.get(station_key, [])
+            if len(stations) < 2:
+                continue
+            start_index, start, start_km = self._nearest_station(origin, stations)
+            end_index, end, end_km = self._nearest_station(destination, stations)
+            if start_index == end_index:
+                continue
+            if start_km > self.MAX_SYNTHETIC_ACCESS_KM or end_km > self.MAX_SYNTHETIC_EGRESS_KM:
+                continue
+            low, high = sorted((start_index, end_index))
+            line_points = stations[low : high + 1]
+            if start_index > end_index:
+                line_points = list(reversed(line_points))
+            candidates.append(
+                {
+                    "line": line,
+                    "start": start,
+                    "end": end,
+                    "start_index": start_index,
+                    "end_index": end_index,
+                    "line_points": line_points,
+                    "score": start_km + end_km + abs(end_index - start_index) * 0.2,
+                }
+            )
+        if not candidates:
+            return None
+        best = min(candidates, key=lambda item: item["score"])
+        return self._transit_leg(origin, destination, best, city, departure_time, mode=mode)
 
     def _transit_leg(
         self,

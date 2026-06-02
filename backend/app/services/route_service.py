@@ -347,7 +347,7 @@ class RouteService:
         available = [leg for leg in legs if leg is not None]
         if not available:
             return None
-        return min(available, key=lambda leg: self._transport_score(leg, request))
+        return self._choose_public_transit_first(available, request)
 
     def _distance_from_leg(self, route_leg: RouteLeg | None, fallback_distance: float | None) -> float | None:
         if route_leg is not None:
@@ -792,16 +792,37 @@ class RouteService:
         return "taxi"
 
     def _candidate_transport_modes(self, distance_km: float, poi: POI, request: RoutePlanRequest) -> list[str]:
-        modes = ["walk", "taxi", "metro"]
+        if distance_km <= 0.8 and not self._prefers_less_walking(request):
+            modes = ["walk", "metro", "bus", "taxi"]
+        elif distance_km > 8:
+            modes = ["metro", "bus", "taxi"]
+        else:
+            modes = ["metro", "bus", "taxi", "walk"]
         for mode in poi.recommended_transport:
             normalized = self._normalize_transport_mode(mode)
             if normalized not in modes:
-                modes.append(normalized)
-        if distance_km <= 0.8 and not self._prefers_less_walking(request):
-            return ["walk", "taxi"]
-        if distance_km > 8:
-            return [mode for mode in modes if mode != "walk"]
+                if normalized in {"metro", "bus"}:
+                    modes.insert(0, normalized)
+                else:
+                    modes.append(normalized)
         return modes
+
+    def _choose_public_transit_first(self, legs: list[RouteLeg], request: RoutePlanRequest) -> RouteLeg:
+        taxi = next((leg for leg in legs if self._normalize_transport_mode(leg.mode) == "taxi"), None)
+        public_legs = [leg for leg in legs if self._normalize_transport_mode(leg.mode) in {"metro", "bus"}]
+        if public_legs:
+            best_public = min(public_legs, key=lambda leg: self._transport_score(leg, request))
+            if taxi is None or self._public_transit_is_convenient(best_public, taxi, request):
+                return best_public
+        return min(legs, key=lambda leg: self._transport_score(leg, request))
+
+    def _public_transit_is_convenient(self, public_leg: RouteLeg, taxi_leg: RouteLeg, request: RoutePlanRequest) -> bool:
+        slack_minutes = 20 if self._prefers_less_walking(request) else 30
+        ratio = 2.5 if self._prefers_less_walking(request) else 3.0
+        return (
+            public_leg.duration_minutes <= taxi_leg.duration_minutes + slack_minutes
+            or public_leg.duration_minutes <= taxi_leg.duration_minutes * ratio
+        )
 
     def _transport_score(self, leg: RouteLeg, request: RoutePlanRequest) -> float:
         score = leg.duration_minutes
@@ -810,9 +831,9 @@ class RouteService:
         if self._prefers_less_walking(request) and mode == "walk" and distance_km > 1:
             score += distance_km * 18
         if mode == "taxi":
-            score += 2
+            score += 12
         if mode in {"metro", "bus"}:
-            score += 4
+            score -= 6
         return score
 
     def _prefers_less_walking(self, request: RoutePlanRequest | None) -> bool:
@@ -821,7 +842,7 @@ class RouteService:
         terms = set(request.intent.preferences + request.user_profile.tags + request.user_profile.preferences)
         if self._has_any(terms, ["少走路", "轻松", "室内", "亲子", "老人"]):
             return True
-        return request.intent.duration_hours <= 4 and request.intent.scenario in {"friends_citywalk", "family_trip"}
+        return request.intent.duration_hours <= 4 and request.intent.scenario in {"family_trip"}
 
     def _normalize_transport_mode(self, mode: str) -> str:
         if "walk" in mode or "步行" in mode:
