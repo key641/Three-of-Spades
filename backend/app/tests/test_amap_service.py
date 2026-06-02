@@ -17,6 +17,7 @@ def test_mock_route_leg_contains_map_ready_fields_without_key() -> None:
     assert leg.duration_minutes > 0
     assert leg.polyline
     assert leg.steps
+    assert "预计" in leg.steps[0].instruction
 
 
 def test_legacy_fallback_route_leg_can_still_be_forced() -> None:
@@ -48,8 +49,25 @@ def test_mock_metro_route_contains_line_station_and_stop_count() -> None:
     assert "人民广场站" in instructions
     assert "陆家嘴站" in instructions
     assert "站" in instructions
+    assert "预计" in instructions
     assert "分钟" in instructions
     assert "公里" in instructions or "米" in instructions
+
+
+def test_mock_metro_route_uses_user_readable_step_shape() -> None:
+    service = MockRouteMapService()
+
+    leg = service.route_leg(
+        origin=GeoPoint(lat=31.2231, lng=121.4466),
+        destination=GeoPoint(lat=31.2304, lng=121.4737),
+        mode="metro",
+    )
+
+    instructions = [step.instruction for step in leg.steps]
+    assert leg.source == "mock_map"
+    assert any(("步行约" in instruction and "至" in instruction) or "进站" in instruction for instruction in instructions)
+    assert any("乘坐地铁" in instruction and "站 至" in instruction for instruction in instructions)
+    assert any("出站后" in instruction or "出站后到达目的地" in instruction for instruction in instructions)
 
 
 def test_mock_bus_route_contains_bus_line() -> None:
@@ -65,6 +83,7 @@ def test_mock_bus_route_contains_bus_line() -> None:
     assert leg.source == "mock_map"
     assert leg.mode == "bus"
     assert "公交49路" in instructions
+    assert "站 至" in instructions
 
 
 def test_mock_taxi_peak_time_is_slower_than_normal_time() -> None:

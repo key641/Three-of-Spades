@@ -20,14 +20,14 @@ class POICandidate:
 class POIService:
     """B-owned module: filters POI candidates by intent and strategy tags."""
 
-    MIN_DEFAULT_CANDIDATES = 32
+    MIN_DEFAULT_CANDIDATES = 40
 
     def __init__(self, data_path: Path | None = None) -> None:
         self.data_path = data_path or Path(__file__).resolve().parents[3] / "data" / "seed" / "pois.json"
         self._candidates = self._load_candidates()
         self.strategy_service = StrategyService()
 
-    def search(self, intent: Intent, user_profile: UserProfile | None = None, limit: int = 32, strategy_tags: list[StrategyTag] | None = None) -> list[POI]:
+    def search(self, intent: Intent, user_profile: UserProfile | None = None, limit: int = 40, strategy_tags: list[StrategyTag] | None = None) -> list[POI]:
         city_matches = [candidate for candidate in self._candidates if candidate.poi.city == intent.city]
         if not city_matches:
             city_matches = self._fallback_candidates(intent.city)

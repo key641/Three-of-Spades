@@ -100,12 +100,32 @@ class OrchestratorIntentFlowTest(unittest.TestCase):
             state = orchestrator.memory.get_state("s1")
             self.assertEqual(state.last_intent.city, "上海")
             self.assertEqual(state.last_intent.duration_hours, 8)
+            self.assertEqual(state.last_intent.start_location_name, "静安寺站")
+            self.assertEqual(state.last_intent.start_lat, 31.2231)
+            self.assertEqual(state.last_intent.start_lng, 121.4466)
             self.assertEqual(state.recent_messages[0].role, "user")
             self.assertEqual(state.recent_messages[-1].content, "已生成上海一日游路线。")
 
         import asyncio
 
         asyncio.run(run_case())
+
+    def test_default_city_start_is_added_for_beijing_without_overriding_explicit_start(self) -> None:
+        orchestrator = AgentOrchestrator()
+
+        beijing, default_start = orchestrator._apply_default_city_start(Intent(city="北京"))
+        explicit, explicit_default = orchestrator._apply_default_city_start(
+            Intent(city="北京", start_location_name="故宫", start_lat=39.9163, start_lng=116.3972)
+        )
+
+        self.assertEqual(default_start["name"], "西单站")
+        self.assertEqual(beijing.start_location_name, "西单站")
+        self.assertEqual(beijing.start_lat, 39.9072)
+        self.assertEqual(beijing.start_lng, 116.3740)
+        self.assertIsNone(explicit_default)
+        self.assertEqual(explicit.start_location_name, "故宫")
+        self.assertEqual(explicit.start_lat, 39.9163)
+        self.assertEqual(explicit.start_lng, 116.3972)
 
     def test_route_detail_question_uses_saved_routes_without_replanning(self) -> None:
         async def run_case() -> None:

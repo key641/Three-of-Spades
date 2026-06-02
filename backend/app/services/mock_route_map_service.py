@@ -45,7 +45,7 @@ class MockRouteMapService:
             polyline=self._polyline([origin, destination]),
             steps=[
                 RouteLegStep(
-                    instruction=f"步行约 {self._display_meters(distance_meters)} 米（约 {minutes} 分钟）到达目的地",
+                    instruction=f"步行约 {self._display_meters(distance_meters)} 米，预计 {minutes} 分钟到达目的地",
                     distance_meters=distance_meters,
                     duration_minutes=minutes,
                 )
@@ -64,7 +64,7 @@ class MockRouteMapService:
             polyline=self._polyline([origin, midpoint, destination]),
             steps=[
                 RouteLegStep(
-                    instruction=f"打车约 {self._display_km(distance_meters)} 公里（约 {minutes} 分钟）到达目的地",
+                    instruction=f"打车约 {self._display_km(distance_meters)} 公里，预计 {minutes} 分钟到达目的地",
                     distance_meters=distance_meters,
                     duration_minutes=minutes,
                 )
@@ -333,20 +333,20 @@ class MockRouteMapService:
     def _access_instruction(self, distance_meters: int, minutes: int, station_name: str, mode: str) -> str:
         action = "进站" if mode == "metro" else "上车"
         if distance_meters <= 80:
-            return f"从附近的 {station_name} {action}（步行约 {minutes} 分钟）"
-        return f"步行约 {self._display_meters(distance_meters)} 米（约 {minutes} 分钟）至 {station_name}"
+            return f"从附近的{station_name}{action}，步行约 {minutes} 分钟"
+        return f"步行约 {self._display_meters(distance_meters)} 米至 {station_name}，约 {minutes} 分钟"
 
     def _egress_instruction(self, distance_meters: int, minutes: int, mode: str) -> str:
         if distance_meters <= 80:
-            return f"{'出站' if mode == 'metro' else '下车'}后到达目的地（步行约 {minutes} 分钟）"
-        return f"步行约 {self._display_meters(distance_meters)} 米（约 {minutes} 分钟）到达目的地"
+            return f"{'出站' if mode == 'metro' else '下车'}后到达目的地，步行约 {minutes} 分钟"
+        return f"{'出站后' if mode == 'metro' else '下车后'}步行约 {self._display_meters(distance_meters)} 米到达目的地，约 {minutes} 分钟"
 
     def _transit_instruction(self, verb: str, line_name: str, stop_count: int, end_name: str, distance_meters: int, minutes: int) -> str:
         if line_name.startswith(verb):
             label = line_name
         else:
             label = f"{verb}{line_name}"
-        return f"乘坐{label} {stop_count}站（约 {self._display_km(distance_meters)} 公里，约 {minutes} 分钟）至 {end_name}"
+        return f"乘坐{label} {stop_count}站 至 {end_name}，约 {self._display_km(distance_meters)} 公里，预计 {minutes} 分钟"
 
     def _display_meters(self, distance_meters: int) -> int:
         if distance_meters < 100:

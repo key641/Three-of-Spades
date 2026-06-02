@@ -36,6 +36,11 @@ logger = logging.getLogger("app.agent.orchestrator")
 class AgentOrchestrator:
     """A-owned module: coordinates intent, profile, POI search, and route planning."""
 
+    DEFAULT_CITY_STARTS = {
+        "上海": {"name": "静安寺站", "lat": 31.2231, "lng": 121.4466},
+        "北京": {"name": "西单站", "lat": 39.9072, "lng": 116.3740},
+    }
+
     def __init__(self) -> None:
         self.memory = SessionMemory()
         self.llm_client = get_llm_client()
@@ -139,6 +144,23 @@ class AgentOrchestrator:
             )
         )
         await emit_pending_trace()
+        intent, default_start = self._apply_default_city_start(intent)
+        if default_start:
+            trace.append(
+                AgentTraceStep(
+                    step="apply_default_start",
+                    label=f"使用{intent.city}默认起点：{default_start['name']}",
+                    status="done",
+                    details={
+                        "city": intent.city,
+                        "start_location_name": default_start["name"],
+                        "start_lat": default_start["lat"],
+                        "start_lng": default_start["lng"],
+                        "reason": "用户未提供起点坐标，使用 demo 城市商圈默认起点。",
+                    },
+                )
+            )
+            await emit_pending_trace()
         logger.info("chat intent session_id=%s intent=%s", request.session_id, intent.model_dump())
 
         user_profile = self.profile_service.get_profile(request.user_id, request)
@@ -262,6 +284,21 @@ class AgentOrchestrator:
             routes=routes,
             agent_trace=trace,
         )
+
+    def _apply_default_city_start(self, intent: Intent) -> tuple[Intent, dict[str, object] | None]:
+        if intent.start_lat is not None and intent.start_lng is not None:
+            return intent, None
+        default_start = self.DEFAULT_CITY_STARTS.get(intent.city)
+        if default_start is None:
+            return intent, None
+        updated = intent.model_copy(
+            update={
+                "start_location_name": intent.start_location_name or default_start["name"],
+                "start_lat": default_start["lat"],
+                "start_lng": default_start["lng"],
+            }
+        )
+        return updated, default_start
 
     def _is_structured_replan_request(self, request: ChatRequest, session_state) -> bool:
         return bool(
