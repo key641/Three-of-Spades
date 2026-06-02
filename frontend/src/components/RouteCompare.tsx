@@ -34,25 +34,63 @@ function RouteCardSkeleton() {
 export function RouteCompare({ routes, loading = false, onAction }: RouteCompareProps) {
   const swiperRef = useRef<HTMLDivElement>(null);
   const [activeIndex, setActiveIndex] = useState(0);
+  const [visibleRouteIds, setVisibleRouteIds] = useState<string[]>([]);
+  const routeIdSignature = routes.map((route) => route.route_id).join("|");
+
+  useEffect(() => {
+    if (routes.length === 0) {
+      setVisibleRouteIds([]);
+      return;
+    }
+    setVisibleRouteIds((prev) => {
+      const currentIds = new Set(routes.map((route) => route.route_id));
+      const kept = prev.filter((routeId) => currentIds.has(routeId));
+      return kept.length > 0 ? kept : [routes[0].route_id];
+    });
+  }, [routeIdSignature, routes]);
+
+  useEffect(() => {
+    if (routes.length <= 1) return;
+    const timer = window.setInterval(() => {
+      setVisibleRouteIds((prev) => {
+        const currentIds = new Set(routes.map((route) => route.route_id));
+        const kept = prev.filter((routeId) => currentIds.has(routeId));
+        const nextRoute = routes.find((route) => !kept.includes(route.route_id));
+        if (!nextRoute) {
+          window.clearInterval(timer);
+          return kept;
+        }
+        return [...kept, nextRoute.route_id];
+      });
+    }, 900);
+    return () => window.clearInterval(timer);
+  }, [routeIdSignature, routes]);
+
+  const visibleRoutes = routes.filter((route) => visibleRouteIds.includes(route.route_id));
 
   useEffect(() => {
     const el = swiperRef.current;
     if (!el) return;
     const handleScroll = () => {
-      const slideWidth = el.scrollWidth / (routes.length || 1);
+      const slideWidth = el.scrollWidth / (visibleRoutes.length || 1);
       const index = Math.round(el.scrollLeft / slideWidth);
       setActiveIndex(index);
     };
     el.addEventListener("scroll", handleScroll, { passive: true });
     return () => el.removeEventListener("scroll", handleScroll);
-  }, [routes.length]);
+  }, [visibleRoutes.length]);
 
-  const showSkeletons = loading && routes.length === 0;
-  const showRoutes = routes.length > 0;
+  const showSkeletons = loading && visibleRoutes.length === 0;
+  const showRoutes = visibleRoutes.length > 0;
+  const routeCountText = showRoutes
+    ? visibleRoutes.length < routes.length
+      ? `（已生成 ${visibleRoutes.length} / ${routes.length} 条）`
+      : `（${visibleRoutes.length} 条）`
+    : "";
 
   return (
     <section className="route-section">
-      <h2>规划方案 {showRoutes ? `（${routes.length} 条）` : ""}</h2>
+      <h2>规划方案 {routeCountText}</h2>
 
       <div className="route-swiper" ref={swiperRef}>
         {showSkeletons && (
@@ -62,23 +100,23 @@ export function RouteCompare({ routes, loading = false, onAction }: RouteCompare
             <div className="route-slide"><RouteCardSkeleton /></div>
           </>
         )}
-        {showRoutes && routes.map((route) => (
+        {showRoutes && visibleRoutes.map((route) => (
           <div className="route-slide" key={route.route_id}>
             <RouteCard route={route} onAction={onAction} />
           </div>
         ))}
       </div>
 
-      {showRoutes && routes.length > 1 && (
+      {showRoutes && visibleRoutes.length > 1 && (
         <div className="swiper-dots">
-          {routes.map((_, i) => (
+          {visibleRoutes.map((_, i) => (
             <span
               key={i}
               className={`dot${i === activeIndex ? " active" : ""}`}
               onClick={() => {
                 const el = swiperRef.current;
                 if (!el) return;
-                const slideWidth = el.scrollWidth / routes.length;
+                const slideWidth = el.scrollWidth / visibleRoutes.length;
                 el.scrollTo({ left: slideWidth * i, behavior: "smooth" });
               }}
             />

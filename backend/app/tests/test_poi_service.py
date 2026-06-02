@@ -132,6 +132,28 @@ def test_user_profile_affects_ranking() -> None:
     assert [poi.id for poi in plain] != [poi.id for poi in profiled]
 
 
+def test_algorithm_profile_dimensions_affect_poi_ranking() -> None:
+    service = POIService()
+    museum = next(candidate for candidate in service._candidates if candidate.poi.city == "上海" and candidate.poi.category == "museum")
+    restaurant = next(candidate for candidate in service._candidates if candidate.poi.city == "上海" and candidate.poi.category == "restaurant")
+    intent = Intent(city="上海")
+
+    museum_profile = UserProfile(
+        user_id="u1",
+        category_preferences={"museum": 1.0, "restaurant": 0.0},
+        preferred_route_roles=["main_activity"],
+        preferred_experience_tags=["展览"],
+    )
+    restaurant_profile = UserProfile(
+        user_id="u2",
+        category_preferences={"museum": 0.0, "restaurant": 1.0},
+        preferred_route_roles=["meal"],
+    )
+
+    assert service._rank_score(museum, intent, museum_profile) > service._rank_score(museum, intent, restaurant_profile)
+    assert service._rank_score(restaurant, intent, restaurant_profile) > service._rank_score(restaurant, intent, museum_profile)
+
+
 def test_seed_data_covers_key_cities_and_scenarios() -> None:
     pois = POIService().all_pois()
     by_city = Counter(poi.city for poi in pois)

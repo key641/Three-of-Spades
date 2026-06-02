@@ -1,3 +1,4 @@
+import asyncio
 import inspect
 import json
 import logging
@@ -13,16 +14,19 @@ from app.agent.intent_enhancer import (
     normalize_avoid_tags,
     normalize_preferences,
 )
-from app.agent.message_router import MessageIntentType, MessageRouter
+from app.agent.unit_normalizer import extract_standard_unit_fields
+from app.agent.clarification_policy import ClarificationDecision, ClarificationPolicy
+from app.agent.message_router import MessageIntentType, MessageRouter, PlanningMode
 from app.agent.prompts import SYSTEM_PROMPT
+from app.agent.replan_intent_parser import ReplanIntentParser
 from app.agent.route_detail_handler import RouteDetailHandler
 from app.agent.schemas import IntentDelta, QueryUnderstanding, StateChangeSummary, TripState
+from app.agent.unit_normalizer import normalize_delta_units
 from app.llm.provider import get_llm_client
 from app.schemas.chat import AgentTraceStep, ChatRequest, ChatResponse
 from app.schemas.intent import Intent
 from app.schemas.poi import POI
-from app.schemas.route import Route
-from app.schemas.route import ReplanRequest
+from app.schemas.route import ReplanRequest, Route
 from app.schemas.route import RoutePlanRequest
 from app.services.poi_service import POIService
 from app.services.profile_service import ProfileService
@@ -45,6 +49,8 @@ class AgentOrchestrator:
         self.memory = SessionMemory()
         self.llm_client = get_llm_client()
         self.message_router = MessageRouter(self.llm_client)
+        self.clarification_policy = ClarificationPolicy()
+        self.replan_intent_parser = ReplanIntentParser()
         self.route_detail_handler = RouteDetailHandler()
         self.profile_service = ProfileService()
         self.poi_service = POIService()
@@ -55,6 +61,7 @@ class AgentOrchestrator:
         self,
         request: ChatRequest,
         progress_callback: Callable[[AgentTraceStep], Awaitable[None] | None] | None = None,
+        routes_callback: Callable[[list[Route]], Awaitable[None] | None] | None = None,
     ) -> ChatResponse:
         trace: list[AgentTraceStep] = []
         emitted_trace_count = 0
@@ -70,6 +77,13 @@ class AgentOrchestrator:
                 result = progress_callback(step)
                 if inspect.isawaitable(result):
                     await result
+
+        async def emit_routes(routes: list[Route]) -> None:
+            if routes_callback is None:
+                return
+            result = routes_callback(routes)
+            if inspect.isawaitable(result):
+                await result
 
         logger.info(
             "chat start session_id=%s user_id=%s event_type=%s message=%s",
@@ -94,6 +108,15 @@ class AgentOrchestrator:
         )
         await emit_pending_trace()
 
+        route_clarification = self.clarification_policy.evaluate(
+            request=request,
+            intent=Intent(),
+            message_route=message_route,
+            session_state=session_state,
+        )
+        if route_clarification.clarification_type == "intent_disambiguation":
+            return self._handle_clarification(request, session_state, trace, route_clarification)
+
         if message_route.intent_type == MessageIntentType.ROUTE_DETAIL_QUESTION:
             response = self.route_detail_handler.answer(request.message, request.session_id, session_state)
             response.agent_trace = [*trace, *response.agent_trace]
@@ -101,6 +124,11 @@ class AgentOrchestrator:
 
         if message_route.intent_type == MessageIntentType.GENERAL_CHAT:
             return await self._handle_direct_llm_chat(request, trace)
+
+        if message_route.planning_mode == PlanningMode.PARTIAL_REPLAN and session_state.current_routes:
+            partial_response = self._handle_partial_replan(request, session_state, trace)
+            if partial_response:
+                return partial_response
 
         intent = await self._parse_intent(request.message, trace)
         await emit_pending_trace()
@@ -163,16 +191,31 @@ class AgentOrchestrator:
             await emit_pending_trace()
         logger.info("chat intent session_id=%s intent=%s", request.session_id, intent.model_dump())
 
-        user_profile = self.profile_service.get_profile(request.user_id, request)
+        clarification = self.clarification_policy.evaluate(
+            request=request,
+            intent=intent,
+            message_route=message_route,
+            session_state=session_state,
+        )
+        if clarification.need_clarification:
+            return self._handle_clarification(request, session_state, trace, clarification, intent)
+
+        user_profile = self._profile_for_turn(request, session_state, intent)
         trace.append(
             AgentTraceStep(
                 step="get_user_profile",
-                label="读取用户画像",
+                label="读取并更新用户画像",
                 status="done",
                 details={
                     "preferences": user_profile.preferences,
                     "avoid_tags": user_profile.avoid_tags,
                     "tags": user_profile.tags,
+                    "budget_sensitivity": user_profile.budget_sensitivity,
+                    "walking_tolerance": user_profile.walking_tolerance,
+                    "crowd_tolerance": user_profile.crowd_tolerance,
+                    "category_preferences": user_profile.category_preferences,
+                    "preferred_route_roles": user_profile.preferred_route_roles,
+                    "preferred_experience_tags": user_profile.preferred_experience_tags,
                 },
             )
         )
@@ -236,15 +279,34 @@ class AgentOrchestrator:
             [poi.name for poi in pois],
         )
 
-        routes = self.route_service.generate_routes(
-            RoutePlanRequest(
-                intent=intent,
-                user_profile=user_profile,
-                strategy_weights=strategy_weights,
-                strategy_tags=strategy_tags,
-                candidate_pois=pois,
-            )
-        ).routes
+        routes: list[Route] = []
+        route_updates: asyncio.Queue[list[Route] | None] = asyncio.Queue()
+        loop = asyncio.get_running_loop()
+        route_request = RoutePlanRequest(
+            intent=intent,
+            user_profile=user_profile,
+            strategy_weights=strategy_weights,
+            strategy_tags=strategy_tags,
+            candidate_pois=pois,
+        )
+
+        def collect_route(route: Route) -> None:
+            routes.append(route)
+            loop.call_soon_threadsafe(route_updates.put_nowait, list(routes))
+
+        async def generate_route_candidates() -> None:
+            try:
+                await asyncio.to_thread(self.route_service.generate_routes, route_request, collect_route)
+            finally:
+                await route_updates.put(None)
+
+        route_task = asyncio.create_task(generate_route_candidates())
+        while True:
+            route_update = await route_updates.get()
+            if route_update is None:
+                break
+            await emit_routes(route_update)
+        await route_task
         trace.append(AgentTraceStep(step="generate_routes", label="生成多目标路线", status="done"))
         trace[-1].details = {
             "count": len(routes),
@@ -412,17 +474,145 @@ class AgentOrchestrator:
             "intent_type_label": self._intent_type_label(intent_type),
             "turn_type": turn_type,
             "turn_type_label": self._turn_type_label(turn_type or ""),
+            "planning_mode": message_route.planning_mode.value if message_route.planning_mode else None,
+            "candidate_planning_modes": [mode.value for mode in message_route.candidate_planning_modes],
             "inherit_previous": message_route.inherit_previous,
             "preserve_scenario": message_route.preserve_scenario,
             "references_previous_route": message_route.references_previous_route,
             "question_type": message_route.detail_type,
             "confidence": round(message_route.confidence, 2),
+            "raw_confidence": message_route.raw_confidence,
+            "confidence_source": message_route.confidence_source,
+            "confidence_reasons": message_route.confidence_reasons,
+            "reason": message_route.reason,
+            "evidence": message_route.evidence,
         }
+
+    def _handle_partial_replan(
+        self,
+        request: ChatRequest,
+        session_state,
+        trace: list[AgentTraceStep],
+    ) -> ChatResponse | None:
+        parsed_event = self.replan_intent_parser.parse(request.message, session_state.current_routes)
+        if parsed_event is None:
+            return None
+
+        intent = session_state.last_intent or Intent()
+        user_profile = session_state.user_profile or self.profile_service.get_profile(request.user_id, request)
+        trip_state = session_state.trip_state or TripState.from_intent(intent)
+        replan_request = ReplanRequest(
+            session_id=request.session_id,
+            event_type=parsed_event.event_type,
+            event_label=parsed_event.event_label,
+            current_routes=session_state.current_routes,
+            selected_route_id=parsed_event.selected_route_id,
+            current_poi_id=parsed_event.current_poi_id,
+            locked_poi_ids=trip_state.locked_stop_ids,
+            event_payload=parsed_event.event_payload,
+            intent=intent,
+            user_profile=user_profile,
+        )
+        replan_response = self.replan_service.replan(replan_request)
+        message = self._format_partial_replan_message(replan_response.routes)
+        trace.append(
+            AgentTraceStep(
+                step="partial_replan",
+                label="基于原方案局部重规划",
+                status="done",
+                details={
+                    "event_type": parsed_event.event_type,
+                    "event_label": parsed_event.event_label,
+                    "selected_route_id": parsed_event.selected_route_id,
+                    "current_poi_id": parsed_event.current_poi_id,
+                },
+            )
+        )
+        self.memory.save_turn_result(
+            session_id=request.session_id,
+            user_message=request.message,
+            assistant_message=message,
+            intent=intent,
+            user_profile=user_profile,
+            routes=replan_response.routes,
+            trip_state=trip_state,
+        )
+        return ChatResponse(
+            session_id=request.session_id,
+            message=message,
+            need_clarification=False,
+            clarifying_question=None,
+            intent=intent,
+            user_profile=user_profile,
+            routes=replan_response.routes,
+            agent_trace=trace,
+        )
+
+    def _handle_clarification(
+        self,
+        request: ChatRequest,
+        session_state,
+        trace: list[AgentTraceStep],
+        decision: ClarificationDecision,
+        intent: Intent | None = None,
+    ) -> ChatResponse:
+        trace.append(
+            AgentTraceStep(
+                step="clarify_intent",
+                label="需要澄清用户需求",
+                status="done",
+                details=decision.model_dump(),
+            )
+        )
+        message = decision.question
+        self.memory.save_turn_result(
+            session_id=request.session_id,
+            user_message=request.message,
+            assistant_message=message,
+            intent=intent or session_state.last_intent,
+            user_profile=session_state.user_profile,
+            routes=session_state.current_routes,
+            trip_state=session_state.trip_state,
+        )
+        return ChatResponse(
+            session_id=request.session_id,
+            message=message,
+            need_clarification=True,
+            clarifying_question=message,
+            intent=intent,
+            user_profile=session_state.user_profile,
+            routes=session_state.current_routes,
+            agent_trace=trace,
+        )
+
+    def _format_partial_replan_message(self, routes: list[Route]) -> str:
+        if not routes:
+            return "我尝试基于原方案做局部重规划，但当前没有可调整的路线。"
+        route = routes[0]
+        reason = route.replan_reason or "已基于原方案完成局部重规划。"
+        changes = [f"{change.from_name or change.from_poi_id}换成{change.to_name or change.to_poi_id}" for change in route.changed_stops]
+        warning_text = "；".join(route.live_warnings[:2])
+        parts = [reason]
+        if changes:
+            parts.append("调整：" + "、".join(changes))
+        if warning_text:
+            parts.append("提醒：" + warning_text)
+        parts.append(f"当前路线人均约 {route.total_cost_per_person} 元，排队约 {route.total_queue_minutes} 分钟。")
+        return "\n".join(parts)
+
+    def _profile_for_turn(self, request: ChatRequest, session_state, intent: Intent):
+        has_request_profile = self.profile_service._request_has_profile_fields(request)
+        if session_state.user_profile and not has_request_profile:
+            base_profile = session_state.user_profile
+        else:
+            base_profile = self.profile_service.get_profile(request.user_id, request)
+        return self.profile_service.update_from_chat(base_profile, intent, message=request.message)
 
     def _intent_type_label(self, intent_type: str) -> str:
         return {
             "new_plan": "新规划",
             "modify_plan": "修改已有路线",
+            "replan": "局部重规划",
             "route_detail_question": "路线追问",
             "general_chat": "普通聊天",
         }.get(intent_type, intent_type)
@@ -464,7 +654,7 @@ class AgentOrchestrator:
             payload = await self._llm_parse_query_delta(message, session_state)
             understanding = QueryUnderstanding.model_validate(payload.get("understanding", {}))
             delta = IntentDelta.model_validate(payload.get("delta", {}))
-            delta = self._normalize_intent_delta(delta)
+            delta = self._normalize_intent_delta(delta, message, session_state)
             trace.append(
                 AgentTraceStep(
                     step="parse_query_delta",
@@ -528,6 +718,13 @@ class AgentOrchestrator:
                         "你是路线规划 Agent 的状态变更解析器，只输出 JSON object。"
                         "你的任务不是重写完整 Intent，而是比较用户本轮消息和上一轮 TripState，输出 QueryUnderstanding 和 IntentDelta。"
                         "本轮用户明确说出的硬约束必须进入 modified_hard_constraints，例如人数、时长、预算、开始时间、城市。"
+                        "所有结构化字段必须输出系统标准单位，不能直接抽用户原文里的数字："
+                        "duration_hours 必须是小时数，1天/一天/一日游=8，半天/半日游=4，2天=16，120分钟=2；"
+                        "budget_per_person 必须是人民币元/人，总预算需要按人数换算成人均预算，人均预算保持原值；"
+                        "people_count 必须是整数人数，两个人/双人/我们俩=2；"
+                        "start_time 必须是 24 小时制 HH:MM，下午两点=14:00，晚上七点=19:00。"
+                        "示例：用户说“改成上海两个人一天”，modified_hard_constraints 应为 {\"city\":\"上海\",\"people_count\":2,\"duration_hours\":8}。"
+                        "示例：用户说“两个人人均400”，budget_per_person 应为 400；用户说“两个人总预算400”，budget_per_person 应为 200。"
                         "用户否定的偏好必须进入 removed_preferences 或 removed_must_include。"
                         "不要发明标签；preferences/avoid_tags/must_include 只能使用允许值。"
                         "如果只是隐含建议升级为显式必须，只写 added_must_include 和 removed_implicit_needs。"
@@ -552,7 +749,7 @@ class AgentOrchestrator:
         content = response["choices"][0]["message"]["content"]
         return self._load_json_object(content)
 
-    def _normalize_intent_delta(self, delta: IntentDelta) -> IntentDelta:
+    def _normalize_intent_delta(self, delta: IntentDelta, message: str = "", session_state=None) -> IntentDelta:
         data = delta.model_dump()
         data["added_preferences"] = self._filter_allowed_preferences(normalize_preferences(data["added_preferences"]))
         data["removed_preferences"] = self._filter_allowed_preferences(normalize_preferences(data["removed_preferences"]))
@@ -564,7 +761,27 @@ class AgentOrchestrator:
         data["removed_must_include"] = self._filter_allowed_needs(data["removed_must_include"])
         data["added_hard_constraints"] = self._filter_hard_constraints(data["added_hard_constraints"])
         data["modified_hard_constraints"] = self._filter_hard_constraints(data["modified_hard_constraints"])
-        return IntentDelta.model_validate(data)
+        data = self._guard_relative_budget_change(data, message, session_state)
+        normalized = IntentDelta.model_validate(data)
+        return normalize_delta_units(normalized, message) if message else normalized
+
+    def _guard_relative_budget_change(self, data: dict, message: str, session_state=None) -> dict:
+        if not message or "budget_per_person" not in (data["added_hard_constraints"] | data["modified_hard_constraints"]):
+            return data
+
+        explicit_fields = extract_standard_unit_fields(message) | extract_explicit_trip_fields(message)
+        if "budget_per_person" in explicit_fields:
+            return data
+
+        data["added_hard_constraints"].pop("budget_per_person", None)
+        data["modified_hard_constraints"].pop("budget_per_person", None)
+        if self._message_requests_lower_budget(message) and "更省钱" not in data["added_preferences"]:
+            data["added_preferences"].append("更省钱")
+        return data
+
+    def _message_requests_lower_budget(self, message: str) -> bool:
+        terms = ["降低人均消费", "降低消费", "降低预算", "省钱", "便宜", "预算低", "人均低", "少花", "花少点"]
+        return any(term in message for term in terms)
 
     def _delta_allowed_values(self) -> dict[str, list[str]]:
         return {

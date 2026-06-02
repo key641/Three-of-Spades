@@ -1,5 +1,5 @@
 import { useRef, useState } from "react";
-import { sendChatMessageStream } from "../api/chatApi";
+import { createChatSessionId, sendChatMessageStream } from "../api/chatApi";
 import type { AgentTraceStep, ChatResponse } from "../api/types";
 import type { OnboardingProfile } from "./useOnboarding";
 
@@ -7,6 +7,7 @@ export interface ChatMessage {
   role: "user" | "assistant";
   content: string;
   timestamp: number;
+  agentTrace?: AgentTraceStep[];
 }
 
 export function useChat(profile?: OnboardingProfile) {
@@ -16,6 +17,7 @@ export function useChat(profile?: OnboardingProfile) {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const hasSentProfile = useRef(false);
+  const sessionIdRef = useRef(createChatSessionId(profile?.user_id));
 
   async function send(message: string, options: Record<string, unknown> = {}) {
     const userMsg: ChatMessage = { role: "user", content: message, timestamp: Date.now() };
@@ -27,9 +29,28 @@ export function useChat(profile?: OnboardingProfile) {
     try {
       const includeProfile = !hasSentProfile.current;
       const locationOptions = await getCurrentLocationOptions();
-      const res = await sendChatMessageStream(message, profile, includeProfile, (step) => {
-        setLiveTrace((prev) => [...prev, step]);
-      }, { ...locationOptions, ...options });
+      const res = await sendChatMessageStream(
+        message,
+        profile,
+        includeProfile,
+        (step) => {
+          setLiveTrace((prev) => [...prev, step]);
+        },
+        { ...locationOptions, ...options },
+        (routes) => {
+          setResponse((prev) => ({
+            session_id: sessionIdRef.current,
+            message: prev?.message ?? "",
+            need_clarification: prev?.need_clarification ?? false,
+            clarifying_question: prev?.clarifying_question ?? null,
+            intent: prev?.intent ?? null,
+            user_profile: prev?.user_profile ?? null,
+            agent_trace: prev?.agent_trace ?? [],
+            routes,
+          }));
+        },
+        sessionIdRef.current,
+      );
       hasSentProfile.current = true;
       setResponse(res);
       setLiveTrace(res.agent_trace);
@@ -37,6 +58,7 @@ export function useChat(profile?: OnboardingProfile) {
         role: "assistant",
         content: res.message,
         timestamp: Date.now(),
+        agentTrace: res.agent_trace,
       };
       setMessages((prev) => [...prev, assistantMsg]);
     } catch (requestError) {
@@ -59,6 +81,7 @@ export function useChat(profile?: OnboardingProfile) {
     setLiveTrace([]);
     setError(null);
     hasSentProfile.current = false;
+    sessionIdRef.current = createChatSessionId(profile?.user_id);
   }
 
   return { messages, response, liveTrace, loading, error, send, inject, reset };

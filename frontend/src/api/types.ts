@@ -75,8 +75,25 @@ export interface Route {
 
 export interface UserProfile {
   user_id?: string;
+  tags?: string[];
   preferences?: string[];
   avoid_tags?: string[];
+  preference_weights?: Record<string, number>;
+  budget_sensitivity?: number;
+  walking_tolerance?: number;
+  crowd_tolerance?: number;
+  schedule_tightness?: number;
+  novelty_preference?: number;
+  comfort_preference?: number;
+  category_preferences?: Record<string, number>;
+  preferred_route_roles?: string[];
+  preferred_experience_tags?: string[];
+  preferred_time_slots?: string[];
+  preferred_transport_modes?: string[];
+  liked_poi_ids?: string[];
+  disliked_poi_ids?: string[];
+  skipped_categories?: string[];
+  common_adjust_actions?: string[];
   [key: string]: unknown;
 }
 
@@ -93,5 +110,6 @@ export interface ChatResponse {
 
 export type ChatStreamEvent =
   | { type: "progress"; step: AgentTraceStep }
+  | { type: "routes"; routes: Route[] }
   | { type: "final"; response: ChatResponse }
   | { type: "error"; message: string };

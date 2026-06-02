@@ -9,6 +9,7 @@ export interface AgentThinkingSummary {
 
 const STEP_SUMMARY: Record<string, string> = {
   route_message: "正在判断这句话属于新规划、补充需求还是路线追问",
+  clarify_intent: "发现需求还不够清晰，正在准备一个轻量追问",
   parse_intent: "正在把自然语言整理成路线规划意图",
   apply_session_context: "正在继承上一轮的城市、人数、时长和主场景",
   apply_query_delta: "正在合并本轮新增或修改的旅行状态",
@@ -20,15 +21,69 @@ const STEP_SUMMARY: Record<string, string> = {
   direct_llm_chat: "识别为非路线问题并直接回复",
 };
 
+const NEXT_STEP_HINTS: Record<string, string> = {
+  route_message: "等待后端解析结构化出行需求",
+  parse_intent: "等待后端合并上一轮上下文",
+  apply_session_context: "等待后端确认本轮状态变化",
+  apply_query_delta: "等待后端读取用户画像",
+  get_user_profile: "等待后端生成偏好权重",
+  build_strategy_weights: "等待后端召回候选地点",
+  search_pois: "等待后端生成候选路线",
+  generate_routes: "等待后端总结路线方案",
+  summarize_routes: "等待最终回复返回",
+  clarify_intent: "等待澄清问题返回",
+  direct_llm_chat: "等待最终回复返回",
+};
+
 const FIELD_LABELS: Record<string, string> = {
   city: "城市",
   people_count: "人数",
-  start_time: "开始时间",
+  start_time: "出发时间",
   duration_hours: "时长",
-  budget_per_person: "预算",
-  scenario: "场景",
-  meal_stop: "吃饭节点",
-  rest_stop: "休息节点",
+  budget_per_person: "人均预算",
+  scenario: "出行场景",
+  target_route_ref: "目标路线",
+  target_stop_ref: "目标站点",
+  intent_type: "意图类型",
+  turn_type: "本轮类型",
+  planning_mode: "规划方式",
+  candidate_planning_modes: "可能的规划方式",
+  raw_confidence: "原始置信度",
+  confidence_source: "置信度来源",
+  confidence_reasons: "置信度说明",
+  reason: "判断理由",
+  evidence: "依据原话",
+  clarification_type: "澄清类型",
+  missing_field: "缺少信息",
+  priority: "优先级",
+  question: "追问问题",
+  can_continue_with_defaults: "能否默认继续",
+  candidate_intents: "候选意图",
+  meal_stop: "用餐安排",
+  rest_stop: "休息安排",
+  llm_structured_delta: "LLM 结构化解析",
+  rule_fallback_delta: "规则兜底解析",
+  initial_intent_snapshot: "初始意图记录",
+  quality: "品质",
+  queue: "排队",
+  budget: "预算",
+  distance: "距离",
+  preference: "偏好",
+  budget_sensitivity: "预算敏感度",
+  walking_tolerance: "步行耐受",
+  crowd_tolerance: "人群耐受",
+  schedule_tightness: "节奏偏好",
+  novelty_preference: "新鲜感偏好",
+  comfort_preference: "舒适度偏好",
+  category_preferences: "品类偏好",
+  preferred_route_roles: "路线结构偏好",
+  preferred_experience_tags: "体验偏好",
+  preferred_time_slots: "时段偏好",
+  preferred_transport_modes: "交通偏好",
+  liked_poi_ids: "喜欢的地点",
+  disliked_poi_ids: "不喜欢的地点",
+  skipped_categories: "跳过的品类",
+  common_adjust_actions: "常见调整",
 };
 
 export function buildThinkingSummary(steps: AgentTraceStep[], loading = false): AgentThinkingSummary {
@@ -163,7 +218,44 @@ function humanizeLabel(label: string): string {
 }
 
 function labelValue(value: string): string {
-  return FIELD_LABELS[value] ?? value;
+  const valueLabels: Record<string, string> = {
+    new_plan: "新规划",
+    modify_plan: "修改已有路线",
+    replan: "局部重规划",
+    route_detail_question: "路线追问",
+    general_chat: "普通聊天",
+    add_constraint: "补充需求",
+    modify_constraint: "修改条件",
+    remove_constraint: "移除条件",
+    route_detail: "路线追问",
+    full_replan: "全量重规划",
+    partial_replan: "局部重规划",
+    missing_required_field: "缺少必要信息",
+    intent_disambiguation: "确认意图",
+    required: "必要信息",
+    routing: "意图路由",
+    current: "当前路线",
+    route_modify: "路线修改",
+    route_modify_place_replace: "替换路线中的一个地点",
+    restaurant_alternative_short_wait: "等待时间短的餐厅替代方案",
+    half_day_tour: "半日游",
+    city_day_trip: "城市一日游",
+    friends_citywalk: "朋友 Citywalk",
+    foodie_tour: "美食路线",
+    balanced: "综合平衡",
+    low_queue: "少排队优先",
+    budget_saver: "省钱优先",
+    food_first: "美食优先",
+  };
+  return FIELD_LABELS[value] ?? valueLabels[value] ?? value;
+}
+
+export function getLiveProgressLabel(steps: AgentTraceStep[]): string {
+  const last = steps[steps.length - 1];
+  if (!last) return "正在等待后端开始处理";
+  if (last.status === "fallback") return "后端正在使用兜底逻辑继续处理";
+  if (last.status === "error") return "后端处理遇到异常，正在收尾";
+  return NEXT_STEP_HINTS[last.step] ?? "等待后端返回下一步进度";
 }
 
 function asText(value: unknown): string | null {

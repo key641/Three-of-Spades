@@ -1,4 +1,4 @@
-# 版本更新协作文档
+﻿# 版本更新协作文档
 
 这份文档用于长期记录团队每次重要更新，帮助不同协作者快速了解：
 
@@ -51,6 +51,630 @@
 ### 建议验证
 
 - 
+```
+
+---
+
+## 2026-05-31 - `5c38be4` - `feat(stream): 高德路线缓存与路线渐进返回`
+
+负责人：后端路线生成 / 前端流式展示 / A、B、C 同学
+
+### 更新概览
+
+本次更新针对路线生成慢、重复请求高德的问题做优化：后端会按 `origin + destination + mode` 对高德路径结果做内存缓存，重复计算同一段路时直接复用结果；同时流式接口新增路线增量事件，后端每生成出一条可用方案，就先推给前端展示，剩余方案继续在后台生成。
+
+### 主要变更
+
+- `AmapService.route_leg()` 增加内存缓存：
+  - 缓存键为起点、终点和交通模式。
+  - 同一段路并发请求时只放行一个高德请求，其他相同请求等待并复用结果。
+  - 高德不可用时生成的兜底路段也会缓存，避免反复失败重试。
+- `RouteService.generate_routes()` 增加 `on_route` 回调：
+  - 每个目标路线选出最佳方案后立即回调。
+  - 最终仍返回完整 `RoutePlanResponse`，不影响原有调用方。
+- `/api/chat/stream` 新增 `routes` 流式事件：
+  - 前端收到后立即更新路线卡。
+  - 没有路线时继续显示骨架屏，有第一条路线后直接展示真实卡片。
+- 前端 `useChat`、`chatApi`、类型定义同步支持增量路线事件。
+- `RouteCompare` 增加前端渐进露出：
+  - 即使浏览器或后端 final 一次性拿到多条路线，也会先显示第一条，再按节奏补齐后续方案。
+  - 标题会显示“已生成 x / y 条”，让用户知道剩余方案还在出现。
+
+### 涉及文件
+
+- `backend/app/services/amap_service.py`
+- `backend/app/services/route_service.py`
+- `backend/app/agent/orchestrator.py`
+- `backend/app/api/chat.py`
+- `backend/app/tests/test_amap_service.py`
+- `backend/app/tests/test_chat_stream.py`
+- `backend/app/tests/test_route_plan.py`
+- `frontend/src/api/types.ts`
+- `frontend/src/api/chatApi.ts`
+- `frontend/src/hooks/useChat.ts`
+- `frontend/src/components/RouteCompare.tsx`
+- `docs/version_log.md`
+
+### 协作影响
+
+| 角色 | 影响 | 需要关注 |
+| --- | --- | --- |
+| A 同学：Agent / 后端 | 流式接口会在最终回答前多次发送路线增量事件。 | 后续新增耗时步骤时，可以继续用 progress 或 routes 事件提前反馈。 |
+| B 同学：POI / 路线策略 | 高德同路段结果会复用，减少重复请求和等待时间。 | 如果后续接实时路况，需要考虑缓存过期时间；当前 demo 阶段是进程内短期缓存。 |
+| C 同学：前端 / UI | 路线卡可以先展示第一条方案，后续方案逐步补齐；即使一次收到多条也会渐进露出。 | 前端需要把 `routes` 事件视为中间态，最终仍以 `final.response.routes` 为准。 |
+
+### 风险与注意事项
+
+- 当前缓存是进程内内存缓存，服务重启后会清空。
+- 当前没有设置 TTL，适合 demo 阶段减少重复请求；如果接入实时路况，应增加过期时间或按路况模式关闭缓存。
+- 增量路线事件只影响 `/api/chat/stream`，普通 `/api/chat` 仍一次性返回完整结果。
+
+### 建议验证
+
+- `.\backend\.venv\Scripts\python.exe -m unittest app.tests.test_chat_stream`
+- 手动运行 `test_amap_service.py` 中的高德缓存测试，确认同一路段只请求一次。
+- 在 `frontend` 目录运行 `npx.cmd tsc --noEmit`
+
+## 2026-05-31 - `0308334` - `fix(ui): 每轮保留 Agent 思考过程并中文化字段`
+
+负责人：前端 / Agent trace 展示 / C 同学
+
+### 更新概览
+
+修复上一轮对话的 Agent 思考过程在下一轮开始时消失的问题，并继续把 trace details 中的英文字段翻译成通俗中文。现在每条 assistant 消息会携带自己的 Agent trace，后续发送新消息时不会覆盖旧轮次的思考过程。
+
+### 主要变更
+
+- `useChat` 在最终响应返回后，把 `agent_trace` 写入当前 assistant 消息。
+- `ChatPanel` 在每条 assistant 消息下方展示对应轮次的 `AgentTrace`。
+- `AgentTrace` 优化 details 展示：
+  - 去掉重复机器字段。
+  - 增加更多字段和值的中文映射。
+  - `done/fallback/error` 状态显示为中文。
+- 运行中的 trace 仍使用 `liveTrace` 实时展示，完成后沉淀到消息历史中。
+
+### 涉及文件
+
+- `frontend/src/hooks/useChat.ts`
+- `frontend/src/components/ChatPanel.tsx`
+- `frontend/src/components/AgentTrace.tsx`
+- `frontend/src/utils/agentThinking.ts`
+- `frontend/src/utils/traceIcons.ts`
+- `frontend/src/styles/globals.css`
+- `frontend/src/api/chatApi.ts`
+- `docs/version_log.md`
+
+### 协作影响
+
+| 角色 | 影响 | 需要关注 |
+| --- | --- | --- |
+| A 同学：Agent / 后端 | 每轮 trace 都会长期展示，便于定位意图和状态合并问题。 | 新增 trace 字段时最好给出可读 label 或同步前端映射。 |
+| B 同学：POI / 路线策略 | 旧轮次的召回、路线生成信息不会被下一轮覆盖。 | 调路线为空或评分异常时，可以回看对应轮次 trace。 |
+| C 同学：前端 / UI | Agent 思考过程现在绑定在消息维度，而不是全局单份状态。 | 后续可考虑折叠默认策略和移动端高度优化。 |
+
+### 风险与注意事项
+
+- trace 是可解释过程记录，不是模型原始推理内容。
+- 如果后端返回新的英文枚举，前端仍需要继续补中文映射。
+
+### 建议验证
+
+- 连续发送两轮消息，第一轮 assistant 下方的 Agent 思考过程仍保留。
+- 展开 trace，常见字段应显示中文且无明显重复。
+
+---
+
+## 2026-05-31 - `0308334` - `feat(route-ui): 路线卡展示站点间交通信息`
+
+负责人：路线策略 / 前端展示 / B、C 同学
+
+### 更新概览
+
+路线时间线现在会在相邻站点之间展示交通方式、预计耗时和距离，方便用户理解每一段怎么走。后端在用户没有提供起点坐标时，会使用城市中心坐标作为默认起点，避免首段路线缺少交通字段。
+
+### 主要变更
+
+- `RouteService` 增加城市中心默认起点：
+  - 当 `start_lat/start_lng` 为空时，按城市补一个中心坐标。
+  - 这样首个 POI 也能生成 `travel_minutes_from_previous`、`distance_km_from_previous`、`transport_mode_from_previous` 等字段。
+- `RouteTimeline` 增加路段交通展示：
+  - 从第二个站点开始展示从上一站过来的交通方式。
+  - 支持步行、地铁、公交、打车、驾车、骑行等中文映射。
+  - 展示预计分钟数和公里 / 米级距离。
+- mock 数据补充站点间交通字段，便于前端独立预览。
+
+### 涉及文件
+
+- `backend/app/services/route_service.py`
+- `frontend/src/components/RouteTimeline.tsx`
+- `frontend/src/styles/globals.css`
+- `frontend/src/api/chatApi.ts`
+- `docs/version_log.md`
+
+### 协作影响
+
+| 角色 | 影响 | 需要关注 |
+| --- | --- | --- |
+| A 同学：Agent / 后端 | 路线解释和前端展示都能读取更完整的路段信息。 | 如果用户提供真实出发点，应优先使用真实坐标而不是城市中心。 |
+| B 同学：POI / 路线策略 | 默认起点会影响首段交通耗时和总路程。 | 后续可把默认起点改成用户画像里的常用出发地。 |
+| C 同学：前端 / UI | 路线卡时间线会显示相邻点交通方式、耗时和距离。 | 如果新增交通方式枚举，需要同步中文映射。 |
+
+### 风险与注意事项
+
+- 城市中心只是 demo 默认值，不代表用户真实出发点。
+- 地图可视化阶段仍应鼓励用户补充出发位置，以提升首段交通准确性。
+
+### 建议验证
+
+- 前端路线卡中，从第二站开始能看到“步行/地铁/打车 + 分钟 + 距离”。
+- 后端无起点坐标时，路线 stop 中仍有 `travel_minutes_from_previous` 和 `distance_km_from_previous`。
+
+---
+
+## 2026-05-31 - `0308334` - `fix(stream): Agent 思考步骤实时刷出`
+
+负责人：Agent / 后端编排 / 前端联调
+
+### 更新概览
+
+修复 Agent 思考过程中只有第一步能实时显示，后续“继承上一轮上下文、解析状态变更、召回 POI、生成路线”等步骤要等规划完成后才一起出现的问题。现在后端每推送一个流式事件后会主动让出事件循环，让前端可以及时收到进度。
+
+### 主要变更
+
+- `/api/chat/stream` 新增 `enqueue_stream_event()`：
+  - 写入 progress/final/error/done 事件后执行一次事件循环让出。
+  - 避免同步路线生成逻辑把已经进入队列的进度事件憋到最后。
+- 新增流式测试：
+  - 验证入队后等待中的消费者能立即拿到 progress。
+  - 保留原有“progress 早于 final”的接口测试。
+
+### 涉及文件
+
+- `backend/app/api/chat.py`
+- `backend/app/tests/test_chat_stream.py`
+- `docs/version_log.md`
+
+### 协作影响
+
+| 角色 | 影响 | 需要关注 |
+| --- | --- | --- |
+| A 同学：Agent / 后端 | 流式事件会更及时推到前端。 | 后续新增长耗时步骤时，继续通过 progress_callback 发 trace。 |
+| B 同学：POI / 路线策略 | POI 召回和路线生成前后的 trace 会更早展示。 | 如果某个策略步骤耗时长，建议拆出更细粒度 trace。 |
+| C 同学：前端 / UI | AgentTrace 不需要改逻辑即可实时显示更多步骤。 | 如果仍有卡顿，优先看浏览器 Network 的流式 chunk 是否及时到达。 |
+
+### 风险与注意事项
+
+- 这是流式刷新节奏优化，不改变最终路线结果。
+- 若某个单独同步函数内部耗时很长，只有函数前后的 trace 能实时展示；函数内部还需要额外埋点才能更细。
+
+### 建议验证
+
+- `.\.venv\Scripts\python.exe -m unittest app.tests.test_chat_stream`
+
+---
+
+## 2026-05-31 - `0308334` - `fix(agent): 相对省钱诉求不再覆盖硬预算`
+
+负责人：Agent / 后端编排 / A 同学
+
+### 更新概览
+
+修复用户要求“重新规划、降低人均消费”后，人均预算从上一轮 200 被错误改回默认 300 的问题。现在没有明确金额的相对省钱诉求，只会作为“更省钱”偏好参与路线评分，不会改写 `budget_per_person` 硬约束。
+
+### 主要变更
+
+- 在状态变更归一化层增加预算保护：
+  - 如果用户没有明确说出金额，例如“降低人均消费”“更省钱一点”，会移除 LLM 误写入的 `budget_per_person`。
+  - 同时补充“更省钱”偏好，让路线策略按省钱目标重新排序。
+  - 如果用户明确说“人均150以内”“总预算300”，仍允许更新硬预算。
+- 新增回归测试覆盖：
+  - 相对省钱诉求不能把上一轮预算 200 改成默认 300。
+  - 明确金额诉求可以把预算改成指定值。
+
+### 涉及文件
+
+- `backend/app/agent/orchestrator.py`
+- `backend/app/tests/test_orchestrator_intent_flow.py`
+- `docs/version_log.md`
+
+### 协作影响
+
+| 角色 | 影响 | 需要关注 |
+| --- | --- | --- |
+| A 同学：Agent / 后端 | LLM 状态变更结果会被预算保护层校验。 | 后续相对表达不要直接落硬字段，先落偏好或策略目标。 |
+| B 同学：POI / 路线策略 | “更省钱”会通过偏好和权重影响候选排序。 | 如果需要更激进降价，需要用户给明确金额或后续定义预算降幅策略。 |
+| C 同学：前端 / UI | trace 中不会再显示预算从 200 变 300 的错误变更。 | 可以提示用户“要不要设定具体人均预算”。 |
+
+### 风险与注意事项
+
+- 当前不会自动把 200 降成某个固定数值，因为“降低”没有明确目标金额；系统只会把目标改成省钱优先。
+- 后续如果需要“自动降低 20%”这类策略，应作为单独产品规则设计。
+
+### 建议验证
+
+- `.\.venv\Scripts\python.exe -m unittest app.tests.test_orchestrator_intent_flow.OrchestratorIntentFlowTest.test_relative_budget_request_does_not_raise_previous_budget_to_default app.tests.test_orchestrator_intent_flow.OrchestratorIntentFlowTest.test_explicit_budget_amount_can_change_previous_budget`
+- `.\.venv\Scripts\python.exe -m unittest app.tests.test_unit_normalizer app.tests.test_intent_context`
+
+---
+
+## 2026-05-31 - `0308334` - `fix(agent): 明确重规划意图不再重复澄清`
+
+负责人：Agent / 后端编排 / A 同学
+
+### 更新概览
+
+修复用户已经明确点击或输入“重新生成路线”“只替换这个地点”后，系统仍把它当成全量重规划 / 局部重规划之间的歧义并继续追问的问题。现在模型仍负责主判定，后端只在用户原话非常明确时做校准兜底。
+
+### 主要变更
+
+- 强化 `MessageRouter` 的 LLM 路由提示词：
+  - 明确 `full_replan` 与 `partial_replan` 的边界。
+  - 要求输出 `reason` 和 `evidence`，方便 trace 解释判断依据。
+  - 只有真正不确定时才输出 `candidate_planning_modes`。
+- 增强 `IntentConfidenceCalibrator`：
+  - 对“重新生成路线 / 重新规划 / 换一条路线”等明确全量重规划表达，清空候选意图并提升置信度。
+  - 对“只替换这个地点 / 只换这个地点”等明确局部替换表达，校准为局部重规划并清空候选意图。
+- Agent trace 和前端字段补充“判断理由”“依据原话”的中文展示。
+
+### 涉及文件
+
+- `backend/app/agent/message_router.py`
+- `backend/app/agent/intent_confidence.py`
+- `backend/app/agent/orchestrator.py`
+- `backend/app/tests/test_message_router.py`
+- `frontend/src/components/AgentTrace.tsx`
+- `frontend/src/utils/agentThinking.ts`
+- `docs/version_log.md`
+
+### 协作影响
+
+| 角色 | 影响 | 需要关注 |
+| --- | --- | --- |
+| A 同学：Agent / 后端 | 明确重规划表达会直接进入对应链路，不再触发意图澄清。 | 后续新增按钮文案时，要把明确表达纳入路由 few-shot 或校准词表。 |
+| B 同学：POI / 路线策略 | 明确“重新生成路线”会直接进入路线生成，减少无效等待。 | 如果用户表达模糊，仍可能先澄清再生成。 |
+| C 同学：前端 / UI | trace 可展示判断理由和依据原话。 | 快捷按钮文案应尽量使用明确表达，例如“重新生成路线”“只替换这个地点”。 |
+
+### 风险与注意事项
+
+- 后端校准只处理非常明确的短语，不替代 LLM 主分类。
+- “换个便宜点的”这类仍保留为歧义候选，因为它可能是整条路线更省钱，也可能是只换当前店。
+
+### 建议验证
+
+- `.\.venv\Scripts\python.exe -m unittest app.tests.test_message_router app.tests.test_intent_confidence app.tests.test_clarification_policy`
+- `npx.cmd tsc --noEmit`
+
+---
+
+## 2026-05-31 - `0308334` - `fix(agent): 校准意图置信度并解释来源`
+
+负责人：Agent / 后端编排 / A 同学
+
+### 更新概览
+
+修复 Agent trace 中意图置信度经常显示 `0%` 的问题。现在置信度不再只依赖 LLM 自报字段；当 LLM 未返回置信度、返回多个候选规划方式、或字段存在冲突时，后端会进行可解释校准，并在 trace 中展示来源和原因。
+
+### 主要变更
+
+- 新增 `IntentConfidenceCalibrator`：
+  - LLM 未返回 `confidence` 时，根据 query、上下文、是否引用路线等信号补合理分数。
+  - 存在多个候选规划方式时自动降到低置信度区间，触发澄清。
+  - 保留 `raw_confidence`，并输出 `confidence_source` 和 `confidence_reasons`。
+- `MessageRouter.classify()` 统一经过校准层：
+  - LLM 路由结果标记为 `LLM 返回` 或 `后端校准`。
+  - 规则兜底结果标记为 `规则兜底`。
+- Agent trace 增加置信度来源和说明字段，前端同步中文展示。
+
+### 涉及文件
+
+- `backend/app/agent/intent_confidence.py`
+- `backend/app/agent/message_router.py`
+- `backend/app/agent/orchestrator.py`
+- `backend/app/tests/test_intent_confidence.py`
+- `frontend/src/components/AgentTrace.tsx`
+- `frontend/src/utils/agentThinking.ts`
+- `docs/version_log.md`
+
+### 协作影响
+
+| 角色 | 影响 | 需要关注 |
+| --- | --- | --- |
+| A 同学：Agent / 后端 | 置信度现在是后端可解释校准结果，不再默认 0。 | 后续新增意图时要补充校准规则和降分原因。 |
+| B 同学：POI / 路线策略 | 低置信度会先澄清，减少误入路线生成。 | 如果没有召回路线，先看 trace 是否因为低置信度停住。 |
+| C 同学：前端 / UI | trace 会多显示置信度来源和说明。 | 可以把 `confidence_reasons` 做成更友好的提示。 |
+
+### 风险与注意事项
+
+- 这不是机器学习校准分，而是 demo 阶段的工程可解释置信度。
+- 真正线上应结合标注数据、top1/top2 分布、用户纠错行为做离线校准。
+
+### 建议验证
+
+- `.\.venv\Scripts\python.exe -m unittest app.tests.test_intent_confidence app.tests.test_message_router app.tests.test_clarification_policy`
+- `npx.cmd tsc --noEmit`
+
+---
+
+## 2026-05-31 - `0308334` - `feat(agent): 接入意图澄清策略层`
+
+负责人：Agent / 后端编排 / A 同学
+
+### 更新概览
+
+根据 `docs/intent_clarification_plan.md` 落地最小可用澄清机制。系统现在会先判断用户 query 的意图类型和置信度，再决定是否继续规划；当缺少路线生成必要信息，或无法在全量重规划、局部重规划等链路之间稳定判断时，会先发起轻量追问，避免替用户做不清晰的决定。
+
+### 主要变更
+
+- 新增 `ClarificationPolicy`：
+  - 支持必要字段缺失澄清，例如新规划缺城市。
+  - 支持意图低置信度澄清，例如无法区分“整条路线更省钱”和“只换当前某个点”。
+  - 非必要字段如出发点、预算、人数不阻塞路线生成。
+- `MessageRoute` 新增 `candidate_planning_modes`：
+  - fallback 路由能标记多种可能处理链路。
+  - 例如“换个便宜点的”会标记为 `full_replan / partial_replan` 候选，交给澄清策略确认。
+- `AgentOrchestrator` 接入澄清分支：
+  - 需要澄清时直接返回 `need_clarification=true`。
+  - 不再继续调用 LLM 解析、POI 召回或路线生成。
+  - Agent trace 新增 `clarify_intent` 步骤。
+- 前端 trace 文案补充澄清相关字段中文展示。
+
+### 涉及文件
+
+- `backend/app/agent/clarification_policy.py`
+- `backend/app/agent/message_router.py`
+- `backend/app/agent/orchestrator.py`
+- `backend/app/tests/test_clarification_policy.py`
+- `backend/app/tests/test_message_router.py`
+- `backend/app/tests/test_orchestrator_intent_flow.py`
+- `frontend/src/components/AgentTrace.tsx`
+- `frontend/src/utils/agentThinking.ts`
+- `frontend/src/utils/traceIcons.ts`
+- `docs/version_log.md`
+
+### 协作影响
+
+| 角色 | 影响 | 需要关注 |
+| --- | --- | --- |
+| A 同学：Agent / 后端 | 意图路由后新增澄清策略层，避免低置信度时误执行。 | 后续新增意图类型时，要同步补充澄清策略和候选链路。 |
+| B 同学：POI / 路线策略 | 信息不够时不会再强行进入 POI 召回和路线生成。 | 调试路线为空时先看 trace 是否停在 `clarify_intent`。 |
+| C 同学：前端 / UI | 后端会返回 `need_clarification=true` 和澄清问题。 | 前端可把它当普通 assistant 消息展示，后续可做快捷选项。 |
+
+### 风险与注意事项
+
+- 当前澄清策略是 demo 级规则层，优先覆盖城市缺失、目标过泛、重规划歧义。
+- 后续如果接更多场景，需要为不同场景补充“必问字段”和“可默认字段”。
+
+### 建议验证
+
+- `.\.venv\Scripts\python.exe -m unittest app.tests.test_clarification_policy app.tests.test_message_router app.tests.test_orchestrator_intent_flow.OrchestratorIntentFlowTest.test_missing_required_city_returns_clarification_without_planning app.tests.test_orchestrator_intent_flow.OrchestratorIntentFlowTest.test_low_confidence_between_replan_modes_asks_before_parsing_or_planning`
+- `npx.cmd tsc --noEmit`
+
+---
+
+## 2026-05-31 - `0308334` - `feat(profile): 扩展用户画像维度并接入 POI 排序`
+
+负责人：Agent / 后端编排 / A 同学
+
+### 更新概览
+
+用户画像从“偏好标签 + 避开标签 + 五类权重”扩展为更贴近路线算法的结构化画像。新的画像字段会从 seed/runtime JSON 读取，并参与 POI 排序，不只是展示字段。
+
+### 主要变更
+
+- `UserProfile` 新增长期画像维度：
+  - 行为敏感度：预算敏感、步行耐受、人群耐受、节奏紧凑度、新鲜感偏好、舒适度偏好。
+  - 算法偏好：品类偏好、路线角色偏好、体验标签偏好、时段偏好、交通偏好。
+  - 历史行为：喜欢 POI、不喜欢 POI、跳过品类、常见调整动作。
+- `ChatRequest` 支持接收这些细画像字段，后续前端 onboarding 或真实画像系统可以逐步补充。
+- `ProfileService` 现在会：
+  - 从 `data/seed/user_profiles.json` 读取 `preference_profile`、`category_preferences`、`history_behavior`。
+  - 从对话偏好中推导路线角色、体验标签、交通/时段偏好。
+  - 用预算、步行、人群、舒适度、新鲜感等长期画像更新策略权重。
+- `POIService` 召回排序新增画像维度分：
+  - 品类、路线角色、体验标签、时段、交通匹配会加分。
+  - 喜欢过的 POI 加分，不喜欢的 POI 和跳过品类降权。
+- `docs/team_plan.md` 补充“用户画像维度”说明，方便 A/B/C 对齐字段含义。
+
+### 涉及文件
+
+- `backend/app/schemas/user.py`
+- `backend/app/schemas/chat.py`
+- `backend/app/services/profile_service.py`
+- `backend/app/services/poi_service.py`
+- `backend/app/tests/test_profile_request_sync.py`
+- `backend/app/tests/test_poi_service.py`
+- `frontend/src/api/types.ts`
+- `docs/team_plan.md`
+- `docs/version_log.md`
+
+### 协作影响
+
+| 角色 | 影响 | 需要关注 |
+| --- | --- | --- |
+| A 同学：Agent / 后端 | 画像字段更完整，长期画像和本次要求仍保持分离。 | 后续接数据库时按这些字段建表或 JSON 列即可。 |
+| B 同学：POI / 路线策略 | POI 排序开始消费品类、路线角色、体验标签、时段、交通、历史行为。 | 调参时可以直接看 `user_profile` 细字段，不必只依赖文本标签。 |
+| C 同学：前端 / UI | 接口返回的 `user_profile` 字段更多，类型已兼容。 | onboarding 暂时不用一次性采全，后续可逐步增加入口。 |
+
+### 风险与注意事项
+
+- 这仍是 demo 级画像更新，不做复杂置信度和衰减；用户明确表达长期偏好时才写 runtime JSON。
+- 真实线上需要补充画像字段的来源、置信度、更新时间和删除机制。
+
+### 建议验证
+
+- `.\.venv\Scripts\python.exe -m unittest app.tests.test_profile_request_sync`
+- 直接调用 `app.tests.test_poi_service.test_algorithm_profile_dimensions_affect_poi_ranking`
+
+---
+
+## 2026-05-31 - `0308334` - `feat(profile): 接入 JSON 用户画像运行时存储`
+
+负责人：Agent / 后端编排 / A 同学
+
+### 更新概览
+
+在上一版 `update_from_chat()` 画像更新入口基础上，接入 demo 阶段可用的 JSON 运行时存储。用户在对话中体现出的偏好和避开项会写入 `data/runtime/user_profiles.json`，后端重启后仍可读取。
+
+### 主要变更
+
+- `ProfileService` 新增 `runtime_data_path`：
+  - 默认路径：`data/runtime/user_profiles.json`。
+  - 读取顺序：本轮请求画像 > runtime JSON 画像 > seed 画像 > 默认画像。
+- `update_from_chat()` 现在会：
+  - 合并 `preferences`、`tags`、`avoid_tags`。
+  - 根据本轮意图更新权重。
+  - 仅在用户明确表达长期偏好时，将更新后的 `UserProfile` 写入 runtime JSON。
+- 长期画像和本次行程要求已拆开：
+  - onboarding 首轮画像会作为长期画像基线写入 JSON。
+  - “以后 / 长期 / 一直 / 默认 / 我喜欢 / 我不喜欢 / 记住”等表达会更新长期画像。
+  - “这次 / 本次 / 今天 / 当前路线 / 刚刚 / 临时”等表达只影响当前会话，不覆盖长期画像。
+- `data/runtime/.gitignore` 忽略真实运行时画像文件，避免把演示用户数据误提交。
+
+### 涉及文件
+
+- `backend/app/services/profile_service.py`
+- `backend/app/tests/test_profile_request_sync.py`
+- `data/runtime/.gitignore`
+
+### 协作影响
+
+| 角色 | 影响 | 需要关注 |
+| --- | --- | --- |
+| A 同学：Agent / 后端 | 画像已从 session 级升级为 JSON 持久化。 | 后续可把 JSON 存储替换为 SQLite/数据库仓库。 |
+| B 同学：POI / 路线策略 | 下一轮路线可读取用户历史偏好和避开项。 | 召回和评分侧继续使用 `user_profile.preferences/avoid_tags/preference_weights`。 |
+| C 同学：前端 / UI | 不需要改接口；首轮仍传 onboarding 画像。 | 演示时可打开 `data/runtime/user_profiles.json` 查看画像变化。 |
+
+### 风险与注意事项
+
+- JSON 文件适合 demo，不适合高并发多用户生产环境。
+- `data/runtime/user_profiles.json` 被忽略，不会随 git 提交。
+
+### 建议验证
+
+- `.\.venv\Scripts\python.exe -m unittest app.tests.test_profile_request_sync`
+
+---
+
+## 2026-05-30 - `0308334` - `feat(agent): 区分全量重规划和局部重规划`
+
+负责人：Agent / 后端编排 / A 同学
+
+### 更新概览
+
+本次把“重新规划”拆成两种处理模式：`full_replan` 表示基于新偏好重新生成候选路线，`partial_replan` 表示在原方案基础上局部替换或调整。这样“更省钱、少排队”不会误走局部替换，“换一家、不喜欢这家、下雨、堵车、排队 90 分钟”可以直接进入 B 侧的局部重规划链路。
+
+### 主要变更
+
+- `MessageRouter` 新增 `PlanningMode`：
+  - `full_replan`：整体偏好变化，继续走 `RouteService.generate_routes()`。
+  - `partial_replan`：局部点位或突发事件调整，走 `ReplanService.replan()`。
+- 新增 `ReplanIntentParser`：
+  - 解析“换一家 / 不喜欢这家 / 排队 90 分钟 / 下雨 / 堵车 / 关门 / 累了”等话术。
+  - 输出 `event_type`、`selected_route_id`、`current_poi_id`、`event_payload`。
+- `AgentOrchestrator` 新增局部重规划分支：
+  - 有上一轮路线且 `planning_mode=partial_replan` 时，不再完整重新生成路线。
+  - 直接构造 `ReplanRequest` 并调用 `ReplanService.replan()`。
+- `docs/team_plan.md` 补充全量重规划和局部重规划边界说明。
+
+### 涉及文件
+
+- `backend/app/agent/message_router.py`
+- `backend/app/agent/replan_intent_parser.py`
+- `backend/app/agent/orchestrator.py`
+- `backend/app/tests/test_message_router.py`
+- `backend/app/tests/test_replan_intent_parser.py`
+- `backend/app/tests/test_orchestrator_intent_flow.py`
+- `docs/team_plan.md`
+
+### 协作影响
+
+| 角色 | 影响 | 需要关注 |
+| --- | --- | --- |
+| A 同学：Agent / 后端 | 意图层现在会输出全量/局部两种重规划模式。 | 后续新增话术时先判断改动范围，再扩展规则或 prompt。 |
+| B 同学：POI / 路线策略 | 局部重规划会直接进入 `ReplanService.replan()`，全量重规划仍进入路线生成。 | `ReplanService` 需要继续增强目标 POI 定位和替换候选质量。 |
+| C 同学：前端 / UI | “换一家”等按钮对应局部重规划，“更省钱/少排队”对应全量重规划。 | 后续可展示 `replan_reason`、`changed_stops`、`live_warnings`。 |
+
+### 风险与注意事项
+
+- 目前局部重规划事件解析以规则为主，能覆盖 Demo 常见话术；更复杂表达后续可加 LLM 兜底。
+- 若当前 session 没有已生成路线，即使识别到局部重规划，也会回退到普通规划链路。
+
+### 建议验证
+
+- `.\.venv\Scripts\python.exe -m unittest app.tests.test_message_router app.tests.test_replan_intent_parser app.tests.test_orchestrator_intent_flow.OrchestratorIntentFlowTest.test_partial_replan_uses_replan_service_without_full_regeneration app.tests.test_intent_context app.tests.test_unit_normalizer app.tests.test_replan_service`
+- `npm.cmd run build`
+
+---
+
+## 2026-05-30 - `ce294de` - `fix(agent): 标准化单位换算并保护局部路线编辑约束`
+
+负责人：Agent / 后端编排 / A 同学
+
+### 更新概览
+
+本次修复两类同源问题：一是 LLM 结构化输出时可能把“1天”写成 `duration_hours=1`，二是点击“换一家 / 替代方案”这类局部路线操作后，LLM 可能把它当成完整新规划，误改预算、开始时间和时长。
+
+修复策略不是只补单个 case，而是新增通用单位标准化层，并在上下文合并层保护局部路线编辑的硬约束。以后“天/半天/分钟/小时/总预算/人均预算/下午两点”等自然语言单位，会统一换算成系统标准字段。
+
+### 主要变更
+
+- 新增 `unit_normalizer`：
+  - `一天 / 一日游 / 1天 -> duration_hours=8`。
+  - `半天 / 半日游 -> duration_hours=4`。
+  - `2天 -> duration_hours=16`。
+  - `120分钟 -> duration_hours=2`。
+  - `下午两点 / 晚上7点 -> 24 小时制 start_time`。
+  - `两个人总预算400 -> budget_per_person=200`。
+  - `两个人人均400 -> budget_per_person=400`。
+
+- 强化 LLM delta prompt：
+  - 明确要求所有结构化字段必须输出系统标准单位，不能直接抽取原文数字。
+  - 增加 few-shot 说明，覆盖一天、总预算、人均预算等易错场景。
+
+- 保护局部路线编辑：
+  - “换一家 / 替代方案 / 等待时间短 / 排队 / 当前路线”等操作默认继承上一轮 `city`、`people_count`、`start_time`、`duration_hours`、`budget_per_person`、`scenario`。
+  - 只有用户明确说“改时间、改预算、改人数、换城市”等硬约束时，才允许覆盖。
+  - 避免 LLM 把“餐厅排队 90 分钟”误当作新的 2 小时餐饮规划。
+
+- 沉淀通用修 bug 原则：
+  - 新增 `docs/skills/generalized-bugfix/SKILL.md` 草案。
+  - 约定以后修 bug 先抽象问题类别，再做通用修复，不能只修单个触发样例。
+
+### 涉及文件
+
+- `backend/app/agent/unit_normalizer.py`
+- `backend/app/agent/intent_context.py`
+- `backend/app/agent/orchestrator.py`
+- `backend/app/tests/test_unit_normalizer.py`
+- `backend/app/tests/test_intent_context.py`
+- `docs/skills/generalized-bugfix/SKILL.md`
+- `docs/version_log.md`
+
+### 协作影响
+
+| 角色 | 影响 | 需要关注 |
+| --- | --- | --- |
+| A 同学：Agent / 后端 | 多轮状态变更现在有通用单位标准化兜底，局部路线编辑不会轻易改写硬约束。 | 后续新增结构化字段时，要同步声明标准单位，并补充 normalizer / 测试。 |
+| B 同学：POI / 路线策略 | 收到的 `duration_hours`、`budget_per_person` 更稳定，避免因为 Agent 误把“一天”当 1 小时导致路线只剩一个点。 | 如果发现路线过短，先看 Agent trace 里的 `duration_hours` 和 `apply_query_delta` 是否符合预期。 |
+| C 同学：前端 / UI | 点击“换一家 / 少排队”等局部操作后，后端会默认保留原路线框架。 | 后续最好把 ActionBar 操作从纯自然语言升级为结构化 action，进一步减少 LLM 误解。 |
+
+### 风险与注意事项
+
+- 当前 `unit_normalizer` 覆盖了时间、人数、预算三类核心单位；距离、排队上限等字段未来如果进入正式 schema，需要继续扩展。
+- “排队 90 分钟”现在不会再改行程时长，但如果未来需要表达 `max_queue_minutes`，应新增专门字段，而不是复用 `duration_hours`。
+- `docs/skills/generalized-bugfix` 目前是项目内 skill 草案，还没有安装到全局 Codex skills 目录。
+
+### 建议验证
+
+```bash
+cd backend
+.\.venv\Scripts\python.exe -m unittest app.tests.test_unit_normalizer app.tests.test_intent_context app.tests.test_query_delta app.tests.test_intent_enhancer
+```
+
+```bash
+cd backend
+$env:PYTHONPYCACHEPREFIX='D:\Document\New project\.pytest_cache\pycache_check'
+.\.venv\Scripts\python.exe -m compileall app
 ```
 
 ---

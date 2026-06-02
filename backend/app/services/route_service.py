@@ -1,6 +1,7 @@
 import math
 import re
 from dataclasses import dataclass
+from collections.abc import Callable
 
 from app.schemas.poi import POI
 from app.schemas.route import Route, RoutePlanRequest, RoutePlanResponse, RouteScoreBreakdown, RouteStop
@@ -19,6 +20,21 @@ class RouteBuildState:
 
 class RouteService:
     """B-owned module: creates route candidates before final scoring."""
+
+    # 各城市中心坐标 (latitude, longitude)
+    CITY_CENTERS = {
+        "上海": (31.2304, 121.4737),
+        "北京": (39.9042, 116.4074),
+        "广州": (23.1291, 113.2644),
+        "深圳": (22.5431, 114.0579),
+        "成都": (30.5728, 104.0668),
+        "杭州": (30.2741, 120.1551),
+        "南京": (32.0603, 118.7969),
+        "武汉": (30.5928, 114.3055),
+        "西安": (34.3416, 108.9398),
+        "苏州": (31.2989, 120.5954),
+        "重庆": (29.4316, 106.9123),
+    }
 
     OBJECTIVE_TITLES = {
         "balanced": "综合候选路线",
@@ -39,12 +55,24 @@ class RouteService:
         self.scoring_service = ScoringService()
         self.strategy_service = StrategyService()
 
-    def generate_routes(self, request: RoutePlanRequest) -> RoutePlanResponse:
+    def generate_routes(self, request: RoutePlanRequest, on_route: Callable[[Route], None] | None = None) -> RoutePlanResponse:
         if not request.candidate_pois:
             return RoutePlanResponse(routes=[])
 
+        # Demo only has reliable map/POI coverage for Shanghai and Beijing.
+        # Other cities may use cloned fallback POIs, so assigning real city centers
+        # can make every candidate too far away to fit the time window.
+        if request.intent.start_lat is None or request.intent.start_lng is None:
+            city = request.intent.city
+            if city in {"上海", "北京"} and city in self.CITY_CENTERS:
+                lat, lng = self.CITY_CENTERS[city]
+                request.intent.start_lat = lat
+                request.intent.start_lng = lng
+                if not request.intent.start_location_name:
+                    request.intent.start_location_name = f"({city}中心)"
+
         objectives = self._select_objectives(request)
-        return self.generate_routes_for_objectives(request, objectives)
+        return self.generate_routes_for_objectives(request, objectives, on_route=on_route)
 
     def generate_routes_for_objectives(
         self,
@@ -52,6 +80,7 @@ class RouteService:
         objectives: list[str],
         max_stops: int | None = None,
         routes_per_objective: int = 1,
+        on_route: Callable[[Route], None] | None = None,
     ) -> RoutePlanResponse:
         if not request.candidate_pois:
             return RoutePlanResponse(routes=[])
@@ -67,7 +96,10 @@ class RouteService:
             if not scored_candidates:
                 continue
             for index, selected in enumerate(scored_candidates[: max(routes_per_objective, 1)]):
-                routes.append(self._finalize_route(selected, objective, index))
+                finalized = self._finalize_route(selected, objective, index)
+                routes.append(finalized)
+                if on_route is not None:
+                    on_route(finalized)
 
         return RoutePlanResponse(routes=routes)
 
