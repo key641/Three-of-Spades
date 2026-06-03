@@ -448,6 +448,7 @@ class RouteService:
         distance = self._distance_score(current_lat, current_lng, poi)
         walking = self._walking_score(poi)
         score = quality * 0.22 + queue * 0.14 + budget * 0.12 + preference * 0.18 + time_fit * 0.14 + distance * 0.12 + walking * 0.08
+        score += request.poi_relevance_scores.get(poi.id, 0) * 0.45
 
         if objective == "budget":
             score += budget * 0.5
@@ -465,6 +466,9 @@ class RouteService:
             score += (0.35 if poi.indoor else 0) + poi.rainy_day_score * 0.25
         elif objective == "night_friendly":
             score += poi.night_activity * 0.35 + (0.2 if "night" in poi.suitable_time_slots or "evening" in poi.suitable_time_slots else 0)
+        terms = set(request.intent.preferences + request.user_profile.tags + request.user_profile.preferences)
+        if self._has_any(terms, ["citywalk", "拍照", "吃好"]) and (poi.transit_hub_nearby or "metro" in poi.recommended_transport or "bus" in poi.recommended_transport):
+            score += 0.12
         return score
 
     def _preference_match(self, poi: POI, request: RoutePlanRequest) -> float:
@@ -646,6 +650,8 @@ class RouteService:
                 bonus += 0.55
             if counts["main_activity"] == 0 and "main_activity" in poi.route_roles:
                 bonus += 0.35
+            if "transit_anchor" in poi.route_roles:
+                bonus += 0.12
         elif objective == "indoor_rainy":
             if poi.indoor and "main_activity" in poi.route_roles:
                 bonus += 0.55 if counts["indoor_main"] == 0 else 0.25
@@ -817,8 +823,8 @@ class RouteService:
         return min(legs, key=lambda leg: self._transport_score(leg, request))
 
     def _public_transit_is_convenient(self, public_leg: RouteLeg, taxi_leg: RouteLeg, request: RoutePlanRequest) -> bool:
-        slack_minutes = 20 if self._prefers_less_walking(request) else 30
-        ratio = 2.5 if self._prefers_less_walking(request) else 3.0
+        slack_minutes = 25 if self._prefers_less_walking(request) else 42
+        ratio = 2.5 if self._prefers_less_walking(request) else 4.0
         return (
             public_leg.duration_minutes <= taxi_leg.duration_minutes + slack_minutes
             or public_leg.duration_minutes <= taxi_leg.duration_minutes * ratio

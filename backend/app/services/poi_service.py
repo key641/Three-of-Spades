@@ -7,6 +7,8 @@ from typing import Any
 from app.schemas.intent import Intent
 from app.schemas.poi import POI
 from app.schemas.user import StrategyTag, UserProfile
+from app.services.coarse_rank_service import CoarseRankService
+from app.services.recall_service import RecallService
 from app.services.strategy_service import StrategyService
 
 
@@ -26,6 +28,8 @@ class POIService:
         self.data_path = data_path or Path(__file__).resolve().parents[3] / "data" / "seed" / "pois.json"
         self._candidates = self._load_candidates()
         self.strategy_service = StrategyService()
+        self.recall_service = RecallService()
+        self.coarse_rank_service = CoarseRankService(self.strategy_service)
 
     def search(self, intent: Intent, user_profile: UserProfile | None = None, limit: int = 40, strategy_tags: list[StrategyTag] | None = None) -> list[POI]:
         city_matches = [candidate for candidate in self._candidates if candidate.poi.city == intent.city]
@@ -33,23 +37,34 @@ class POIService:
             city_matches = self._fallback_candidates(intent.city)
         min_candidates = min(limit, self.MIN_DEFAULT_CANDIDATES)
 
+        target_pool_size = max(limit * 6, 240)
+        recalled_candidates = self.recall_service.recall(
+            intent=intent,
+            candidates=city_matches,
+            user_profile=user_profile,
+            strategy_tags=strategy_tags or [],
+            target_pool_size=target_pool_size,
+        )
+        if len(recalled_candidates) < min_candidates:
+            recalled_candidates = self._merge_candidates(recalled_candidates, city_matches)
+
         strict_matches = [
             candidate
-            for candidate in city_matches
+            for candidate in recalled_candidates
             if self._matches_preferences(candidate, intent)
             and not self._matches_avoid_tags(candidate, intent)
             and self._is_not_extreme_budget_mismatch(candidate.poi, intent)
         ]
         candidates = strict_matches or [
             candidate
-            for candidate in city_matches
+            for candidate in recalled_candidates
             if not self._matches_avoid_tags(candidate, intent)
             and self._is_not_extreme_budget_mismatch(candidate.poi, intent)
         ]
         if len(candidates) < min_candidates:
             relaxed_matches = [
                 candidate
-                for candidate in city_matches
+                for candidate in recalled_candidates
                 if not self._matches_avoid_tags(candidate, intent)
                 and self._is_not_extreme_budget_mismatch(candidate.poi, intent)
             ]
@@ -57,17 +72,20 @@ class POIService:
         if len(candidates) < min_candidates:
             low_risk_matches = [
                 candidate
-                for candidate in city_matches
+                for candidate in recalled_candidates
                 if not {"long_queue", "high_price"} & set(candidate.poi.risk_flags + candidate.poi.avoid_reasons)
             ]
             candidates = self._merge_candidates(candidates, low_risk_matches)
         if not candidates:
             candidates = city_matches
 
-        ranked = sorted(
+        coarse_limit = max(limit, 60)
+        ranked = self.coarse_rank_service.rank(
             candidates,
-            key=lambda candidate: self._rank_score(candidate, intent, user_profile, strategy_tags or []),
-            reverse=True,
+            intent=intent,
+            user_profile=user_profile,
+            strategy_tags=strategy_tags or [],
+            limit=coarse_limit,
         )
         ranked = self._diversify_ranked_candidates(ranked, limit)
         return [candidate.poi for candidate in ranked[:limit]]
@@ -290,74 +308,7 @@ class POIService:
         user_profile: UserProfile | None,
         strategy_tags: list[StrategyTag] | None = None,
     ) -> float:
-        poi = candidate.poi
-        weights = user_profile.preference_weights if user_profile else {}
-        quality_weight = self._weight(weights, "quality", 0.3)
-        queue_weight = self._weight(weights, "queue", 0.25)
-        distance_weight = self._weight(weights, "distance", 0.2)
-        budget_weight = self._weight(weights, "budget", 0.15)
-        preference_weight = self._weight(weights, "preference", 0.1)
-
-        distance_km = self._distance_from_intent(poi, intent)
-        distance_score = 1 if distance_km is None else max(0, 1 - min(distance_km, 20) / 20)
-        budget_score = max(0, 1 - min(poi.avg_price, intent.budget_per_person) / max(intent.budget_per_person, 1))
-        if poi.avg_price <= intent.budget_per_person:
-            budget_score = max(budget_score, poi.budget_friendly)
-        elif poi.avg_price <= intent.budget_per_person * 1.5:
-            budget_score = max(budget_score, 0.45)
-        elif poi.avg_price > intent.budget_per_person * 2:
-            budget_score *= 0.25
-        queue_score = max(
-            0,
-            1
-            - min(poi.queue_minutes, 90) / 120
-            - min(max(poi.live_crowd_level, poi.crowd_level), 1) * 0.25,
-        )
-        quality_score = self._quality_score(poi)
-
-        intent_terms = self._normalize_terms(intent.preferences)
-        profile_terms = self._normalize_terms(user_profile.tags if user_profile else [])
-        preference_score = self._match_ratio(intent_terms, candidate.search_text)
-        profile_score = self._match_ratio(profile_terms, candidate.search_text)
-        profile_dimension_score = self._profile_dimension_score(candidate, user_profile)
-        scenario_score = self._scenario_score(candidate, intent)
-        time_score = self._time_score(poi, intent)
-
-        score = (
-            quality_score * quality_weight
-            + queue_score * queue_weight
-            + distance_score * distance_weight
-            + budget_score * budget_weight
-            + preference_score * preference_weight
-            + profile_score * 0.2
-            + profile_dimension_score * 0.25
-            + scenario_score * 0.1
-            + time_score * 0.12
-            + self.strategy_service.tag_score(poi, strategy_tags or []) * 0.45
-        )
-        if user_profile and poi.id in user_profile.liked_poi_ids:
-            score += 0.4
-        if user_profile and poi.id in user_profile.disliked_poi_ids:
-            score -= 0.8
-        if user_profile and poi.category in user_profile.skipped_categories:
-            score -= 0.5
-        if distance_km is not None:
-            score += distance_score * 0.45
-        if self._has_term(intent_terms + profile_terms, "少排队"):
-            score += queue_score * 0.25
-        if self._has_term(intent_terms + profile_terms, "吃好"):
-            score += self._meal_score(poi, ["吃好"]) * 0.4
-        if self._has_term(intent_terms + profile_terms, "咖啡"):
-            score += self._meal_score(poi, ["咖啡"]) * 0.4
-        if self._has_term(intent_terms + profile_terms, "轻食") or self._has_term(intent_terms + profile_terms, "小吃"):
-            score += self._meal_score(poi, ["轻食"]) * 0.35
-        if self._has_term(intent_terms + profile_terms, "citywalk"):
-            score += self._term_bonus(candidate, ["citywalk", "拍照", "街区", "散步", "landmark"]) * 0.2
-        if self._has_term(intent_terms + profile_terms, "室内") or self._has_term(intent_terms + profile_terms, "雨天"):
-            score += (1 if poi.indoor else poi.rainy_day_score) * 0.25
-        if self._has_term(intent_terms + profile_terms, "少走路") or self._has_term(intent_terms + profile_terms, "轻松"):
-            score += self._walking_score(poi) * 0.3
-        return score
+        return self.coarse_rank_service.score(candidate, intent, user_profile, strategy_tags or [])
 
     def _profile_dimension_score(self, candidate: POICandidate, user_profile: UserProfile | None) -> float:
         if user_profile is None:

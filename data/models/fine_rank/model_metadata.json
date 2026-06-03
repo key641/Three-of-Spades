@@ -1,0 +1,33 @@
+{
+  "model_type": "DictVectorizer+LogisticRegression",
+  "feature_schema_version": "fine_rank_features_v1",
+  "trained_at": "2026-06-03T17:24:50.373091+00:00",
+  "sample_count": 16000,
+  "missing_users": 0,
+  "missing_pois": 0,
+  "label_positive_rates": {
+    "click": 0.318,
+    "like": 0.194875,
+    "skip": 0.375937
+  },
+  "metrics": {
+    "click": {
+      "train_samples": 12800,
+      "test_samples": 3200,
+      "accuracy": 0.61125,
+      "auc": 0.66015
+    },
+    "like": {
+      "train_samples": 12800,
+      "test_samples": 3200,
+      "accuracy": 0.573125,
+      "auc": 0.610773
+    },
+    "skip": {
+      "train_samples": 12800,
+      "test_samples": 3200,
+      "accuracy": 0.686562,
+      "auc": 0.757341
+    }
+  }
+}

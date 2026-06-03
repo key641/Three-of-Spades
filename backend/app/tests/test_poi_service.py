@@ -5,22 +5,23 @@ from pathlib import Path
 
 from app.schemas.intent import Intent
 from app.schemas.user import UserProfile
+from app.services.coarse_rank_service import CoarseRankService
 from app.services.poi_service import POIService
 from app.services.strategy_service import StrategyService
 
 
 KEY_CITIES = {"上海", "北京"}
 EXPECTED_CATEGORY_COUNTS = {
-    "restaurant": 70,
-    "cafe": 60,
-    "market": 40,
-    "shopping": 40,
-    "landmark": 40,
-    "museum": 35,
-    "gallery": 35,
-    "park": 35,
-    "night_view": 35,
-    "theater": 30,
+    "restaurant": 140,
+    "cafe": 120,
+    "market": 80,
+    "shopping": 80,
+    "landmark": 80,
+    "museum": 70,
+    "gallery": 70,
+    "park": 70,
+    "night_view": 70,
+    "theater": 60,
 }
 
 
@@ -154,6 +155,130 @@ def test_algorithm_profile_dimensions_affect_poi_ranking() -> None:
     assert service._rank_score(restaurant, intent, restaurant_profile) > service._rank_score(restaurant, intent, museum_profile)
 
 
+def test_rank_score_wrapper_delegates_to_coarse_rank_service() -> None:
+    service = POIService()
+    candidate = next(candidate for candidate in service._candidates if candidate.poi.city == "上海")
+    intent = Intent(city="上海", preferences=["citywalk"])
+    profile = UserProfile(user_id="u", tags=["拍照"], preferences=[], preference_weights={})
+
+    assert service._rank_score(candidate, intent, profile) == service.coarse_rank_service.score(candidate, intent, profile, [])
+
+
+def test_coarse_rank_result_contains_feature_breakdown() -> None:
+    service = POIService()
+    ranker = CoarseRankService(service.strategy_service)
+    candidates = [candidate for candidate in service._candidates if candidate.poi.city == "上海"][:5]
+
+    result = ranker.rank_with_features(candidates, Intent(city="上海"), limit=1)[0]
+
+    assert result.candidate in candidates
+    assert result.score > 0
+    assert {
+        "preference_match",
+        "budget_fit",
+        "queue_crowd",
+        "quality",
+        "distance_fit",
+        "time_fit",
+        "avoid_risk",
+        "profile_fit",
+        "scenario_fit",
+        "strategy_tag_match",
+    } <= set(result.features)
+
+
+def test_coarse_rank_preference_match_prioritizes_cafe() -> None:
+    service = POIService()
+    ranker = service.coarse_rank_service
+    cafe = next(candidate for candidate in service._candidates if candidate.poi.city == "上海" and candidate.poi.category == "cafe")
+    museum = next(candidate for candidate in service._candidates if candidate.poi.city == "上海" and candidate.poi.category == "museum")
+    intent = Intent(city="上海", preferences=["咖啡"])
+
+    assert ranker.score(cafe, intent, None, []) > ranker.score(museum, intent, None, [])
+
+
+def test_coarse_rank_budget_fit_prefers_budget_friendly_poi() -> None:
+    service = POIService()
+    ranker = service.coarse_rank_service
+    cheap = next(candidate for candidate in service._candidates if candidate.poi.city == "上海" and candidate.poi.avg_price <= 50)
+    expensive = next(candidate for candidate in service._candidates if candidate.poi.city == "上海" and candidate.poi.avg_price >= 180)
+    intent = Intent(city="上海", budget_per_person=60)
+
+    assert ranker.features(cheap, intent, None)["budget_fit"] > ranker.features(expensive, intent, None)["budget_fit"]
+
+
+def test_coarse_rank_queue_fit_prefers_short_queue() -> None:
+    service = POIService()
+    ranker = service.coarse_rank_service
+    short_queue = next(candidate for candidate in service._candidates if candidate.poi.city == "上海" and candidate.poi.queue_minutes <= 5)
+    long_queue = next(candidate for candidate in service._candidates if candidate.poi.city == "上海" and candidate.poi.queue_minutes >= 45)
+    intent = Intent(city="上海", preferences=["少排队"])
+
+    assert ranker.features(short_queue, intent, None)["queue_crowd"] > ranker.features(long_queue, intent, None)["queue_crowd"]
+
+
+def test_coarse_rank_distance_fit_prefers_nearby_poi() -> None:
+    service = POIService()
+    ranker = service.coarse_rank_service
+    near = next(candidate for candidate in service._candidates if candidate.poi.city == "上海")
+    far = next(
+        candidate
+        for candidate in service._candidates
+        if candidate.poi.city == "上海" and math.hypot(candidate.poi.lat - near.poi.lat, candidate.poi.lng - near.poi.lng) > 0.04
+    )
+    intent = Intent(city="上海", start_lat=near.poi.lat, start_lng=near.poi.lng)
+
+    assert ranker.features(near, intent, None)["distance_fit"] > ranker.features(far, intent, None)["distance_fit"]
+
+
+def test_coarse_rank_time_fit_penalizes_after_last_entry() -> None:
+    service = POIService()
+    ranker = service.coarse_rank_service
+    candidate = next(candidate for candidate in service._candidates if candidate.poi.city == "上海")
+    open_poi = candidate.poi.model_copy(update={"open_time": "09:00", "close_time": "23:00", "last_entry_time": "22:30"})
+    closed_poi = candidate.poi.model_copy(update={"open_time": "09:00", "close_time": "18:00", "last_entry_time": "17:30"})
+    open_candidate = candidate.__class__(poi=open_poi, search_text=candidate.search_text, risk_text=candidate.risk_text)
+    closed_candidate = candidate.__class__(poi=closed_poi, search_text=candidate.search_text, risk_text=candidate.risk_text)
+    intent = Intent(city="上海", start_time="20:00")
+
+    assert ranker.features(open_candidate, intent, None)["time_fit"] > ranker.features(closed_candidate, intent, None)["time_fit"]
+
+
+def test_coarse_rank_avoid_risk_penalizes_risky_text() -> None:
+    service = POIService()
+    ranker = service.coarse_rank_service
+    candidate = next(candidate for candidate in service._candidates if candidate.poi.city == "上海")
+    risky = candidate.__class__(poi=candidate.poi, search_text=candidate.search_text, risk_text="人流密集 排队久")
+    intent = Intent(city="上海", avoid_tags=["人流密集"])
+
+    assert ranker.score(candidate, intent, None, []) > ranker.score(risky, intent, None, [])
+
+
+def test_coarse_rank_profile_fit_supports_category_preferences() -> None:
+    service = POIService()
+    ranker = service.coarse_rank_service
+    museum = next(candidate for candidate in service._candidates if candidate.poi.city == "上海" and candidate.poi.category == "museum")
+    restaurant = next(candidate for candidate in service._candidates if candidate.poi.city == "上海" and candidate.poi.category == "restaurant")
+    intent = Intent(city="上海")
+    museum_profile = UserProfile(user_id="museum_u", category_preferences={"museum": 1.0, "restaurant": 0.0})
+    restaurant_profile = UserProfile(user_id="food_u", category_preferences={"museum": 0.0, "restaurant": 1.0})
+
+    assert ranker.score(museum, intent, museum_profile, []) > ranker.score(restaurant, intent, museum_profile, [])
+    assert ranker.score(restaurant, intent, restaurant_profile, []) > ranker.score(museum, intent, restaurant_profile, [])
+
+
+def test_coarse_rank_top_sixty_keeps_category_diversity() -> None:
+    service = POIService()
+    intent = Intent(city="上海", preferences=["咖啡", "吃好"])
+    city_candidates = [candidate for candidate in service._candidates if candidate.poi.city == "上海"]
+    recalled = service.recall_service.recall(intent, city_candidates, target_pool_size=240)
+    ranked = service.coarse_rank_service.rank(recalled, intent, limit=60)
+
+    assert len(ranked) == 60
+    assert len({candidate.poi.category for candidate in ranked}) >= 4
+    assert max(Counter(candidate.poi.category for candidate in ranked).values()) < 60
+
+
 def test_seed_data_covers_key_cities_and_scenarios() -> None:
     pois = POIService().all_pois()
     by_city = Counter(poi.city for poi in pois)
@@ -274,3 +399,48 @@ def test_unknown_city_uses_mock_fallback_candidates() -> None:
     assert len(pois) == 12
     assert all(poi.city == "哈尔滨" for poi in pois)
     assert all(poi.source_provider == "mock_fallback" for poi in pois)
+
+
+def test_interaction_events_cover_users_and_pois() -> None:
+    root = Path(__file__).resolve().parents[3]
+    events = json.loads((root / "data" / "seed" / "interaction_events.json").read_text(encoding="utf-8"))
+    pois = json.loads((root / "data" / "seed" / "pois.json").read_text(encoding="utf-8"))["pois"]
+    users = json.loads((root / "data" / "seed" / "user_profiles.json").read_text(encoding="utf-8"))["users"]
+    poi_ids = {poi["poi_id"] for poi in pois}
+    user_ids = {user["user_id"] for user in users}
+    by_user = Counter(event["user_id"] for event in events)
+    by_poi = Counter(event["poi_id"] for event in events)
+    positive = sum(1 for event in events if event["event_value"] > 0)
+
+    assert len(events) == 16000
+    assert set(by_user) == user_ids
+    assert set(by_poi) == poi_ids
+    assert all(160 <= count <= 240 for count in by_user.values())
+    assert min(by_poi.values()) >= 4
+    assert 0.55 <= positive / len(events) <= 0.75
+
+
+def test_recall_model_artifacts_exist_and_have_expected_shape() -> None:
+    root = Path(__file__).resolve().parents[3]
+    user_embeddings = json.loads((root / "data" / "models" / "two_tower" / "user_embeddings.json").read_text(encoding="utf-8"))
+    poi_embeddings = json.loads((root / "data" / "models" / "two_tower" / "poi_embeddings.json").read_text(encoding="utf-8"))
+    item_similarity = json.loads((root / "data" / "models" / "cf" / "item_similarity.json").read_text(encoding="utf-8"))
+    first_user_vector = next(iter(user_embeddings["embeddings"].values()))
+    first_poi_vector = next(iter(poi_embeddings["embeddings"].values()))
+
+    assert user_embeddings["dimension"] == 64
+    assert poi_embeddings["dimension"] == 64
+    assert len(first_user_vector) == 64
+    assert len(first_poi_vector) == 64
+    assert len(user_embeddings["embeddings"]) == 80
+    assert len(poi_embeddings["embeddings"]) == 1680
+    assert len(item_similarity["items"]) == 1680
+
+
+def test_default_recall_results_are_not_limited_to_two_categories() -> None:
+    pois = POIService().search(Intent(city="上海"), limit=40)
+
+    assert len({poi.category for poi in pois}) >= 4
+    assert any("main_activity" in poi.route_roles for poi in pois)
+    assert any("meal" in poi.route_roles or "coffee_break" in poi.route_roles for poi in pois)
+    assert any("photo_stop" in poi.route_roles for poi in pois)
