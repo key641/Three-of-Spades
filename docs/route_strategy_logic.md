@@ -15,6 +15,7 @@
 - `backend/app/services/strategy_service.py`：策略标签识别、权重调整、路线目标打分。
 - `backend/app/services/route_service.py`：多目标路线候选生成、路线排序、路线字段补全。
 - `backend/app/services/scoring_service.py`：路线五维评分和硬惩罚。
+- `backend/app/services/route_rerank_service.py`：路线集合级动态重排，按用户偏好、目标和风险调整最终路线顺序。
 - `backend/app/services/replan_service.py`：已生成路线的局部替换和动态重规划。
 - `backend/app/services/predictive_route_service.py`：mock 天气 + 画像预制路线。
 - `backend/app/services/amap_service.py`、`backend/app/services/mock_route_map_service.py`：两点之间路段耗时、距离、交通方式、polyline 和步骤。
@@ -254,7 +255,7 @@ poi_relevance_score = 0.4*p_click + 0.5*p_like - 0.3*p_skip
 3. 用 beam search 扩展 partial route，每轮从可行 POI 中取 top `BRANCH_FACTOR = 8`，保留 top `BEAM_WIDTH = 6` 条 partial route。
 4. 每个 objective 默认生成 `INTERNAL_CANDIDATES_PER_OBJECTIVE = 10` 条内部候选；短时长路线会降到 6 条。
 5. 对候选做 stop 序列去重和高重合过滤，再调用 `ScoringService` 打分。
-6. 普通规划每个 objective 返回第一条 best；预制路线可以拿每个 objective 的 top 3 做差异筛选。
+6. 所有 objective 的 scored candidates 会进入 `RouteRerankService` 做路线层动态重排。
 
 当前默认普通规划最多 3 个 objective，所以内部通常会生成约 18-30 条候选路线，再进入最终路线排序。
 
@@ -315,6 +316,34 @@ poi_relevance_score = 0.4*p_click + 0.5*p_like - 0.3*p_skip
 - `missing_role_bonus`：路线缺主活动、餐饮、拍照、休息等角色时，对能补角色的 POI 加分。
 
 Beam search 结果不足时，会回退到现有 `_build_candidate()` 贪心逻辑补齐，保证强约束或候选很少时仍能返回可用路线。
+
+### 4.5 路线层动态重排
+
+第五阶段新增 `RouteRerankService`，最终排的是路线集合，不是单个 POI，也不是每个 objective 内部的第一名。重排分数是动态权重：
+
+```text
+final_route_score =
+  w_poi_model * poi_model_score_avg
++ w_structure * route_structure_score
++ w_travel * travel_efficiency_score
++ w_objective * objective_match_score
++ w_risk * budget_queue_risk_score
++ w_diversity * diversity_score
+```
+
+基础权重会按用户偏好和画像动态调整：
+
+- `更省钱/低预算` 或高 `budget_sensitivity`：提高预算和排队风险权重。
+- `少走路/轻松/老人/亲子` 或低 `walking_tolerance`：提高交通效率和结构合理性权重。
+- `拍照/citywalk/体验感`：提高 objective match、路线结构和拍照体验权重。
+- `吃好/美食/咖啡探店`：提高餐饮 objective match，并放宽餐饮重复惩罚。
+- `少排队/人少` 或低 `crowd_tolerance`：提高排队、人流风险权重。
+- 高 `novelty_preference`：提高路线集合多样性权重。
+- 高 `comfort_preference`：提高结构完整性和风险稳定性权重。
+
+重排时会逐条选择最终路线。每选中一条后，剩余路线的 `diversity_score` 会根据 POI 重合率重新计算；默认尽量把最终路线重合率控制在 `0.7` 以下。`balanced`、`budget`、`low_walking`、拍照/体验、美食等目标覆盖都是软约束：有对应用户偏好时加权更强，没有时不硬塞无关路线。
+
+`RouteRerankService` 会把推荐原因追加进 `Route.reasons`，例如“更符合少走路偏好，交通段更短”“预算和排队风险更稳”“保留拍照点和主活动，体验更完整”“和其他路线重复点少，提供另一种体验”。
 
 ## 5. 交通路段逻辑
 

@@ -6,6 +6,7 @@ from collections.abc import Callable
 from app.schemas.poi import POI
 from app.schemas.route import Route, RoutePlanRequest, RoutePlanResponse, RouteScoreBreakdown, RouteStop
 from app.services.amap_service import AmapService, GeoPoint, RouteLeg
+from app.services.route_rerank_service import RouteRerankService
 from app.services.scoring_service import ScoringService
 from app.services.strategy_service import StrategyService
 
@@ -65,6 +66,7 @@ class RouteService:
     def __init__(self, amap_service: AmapService | None = None) -> None:
         self.amap_service = amap_service or AmapService()
         self.scoring_service = ScoringService()
+        self.rerank_service = RouteRerankService()
         self.strategy_service = StrategyService()
 
     def generate_routes(self, request: RoutePlanRequest, on_route: Callable[[Route], None] | None = None) -> RoutePlanResponse:
@@ -97,21 +99,42 @@ class RouteService:
         if not request.candidate_pois:
             return RoutePlanResponse(routes=[])
 
-        routes: list[Route] = []
+        scored_routes: list[Route] = []
         poi_by_id = {poi.id: poi for poi in request.candidate_pois}
+        valid_objectives = [objective for objective in self._unique_objectives(objectives) if objective in self.OBJECTIVE_TITLES]
 
-        for objective in self._unique_objectives(objectives):
-            if objective not in self.OBJECTIVE_TITLES:
-                continue
+        for objective in valid_objectives:
             candidates = self._build_candidates_for_objective(request.candidate_pois, objective, request, max_stops_override=max_stops)
             scored_candidates = self._score_candidates(candidates, objective, request, poi_by_id)
-            if not scored_candidates:
-                continue
-            for index, selected in enumerate(scored_candidates[: max(routes_per_objective, 1)]):
-                finalized = self._finalize_route(selected, objective, index)
-                routes.append(finalized)
-                if on_route is not None:
-                    on_route(finalized)
+            scored_routes.extend(scored_candidates)
+
+        reranked = self.rerank_service.rerank(
+            scored_routes,
+            request,
+            poi_by_id,
+            max_routes=max(1, routes_per_objective) * max(len(valid_objectives), 1),
+            max_per_objective=max(1, routes_per_objective),
+        )
+        routes: list[Route] = []
+        objective_counts: dict[str, int] = {}
+        for item in reranked:
+            index = objective_counts.get(item.route.objective, 0)
+            objective_counts[item.route.objective] = index + 1
+            finalized = self._finalize_route(item.route, item.route.objective, index)
+            finalized.score = item.score
+            finalized.reasons = list(dict.fromkeys([*item.reasons, *finalized.reasons]))[:4]
+            finalized.summary = self._summary(
+                finalized.objective,
+                len(finalized.stops),
+                finalized.total_cost_per_person,
+                finalized.total_queue_minutes,
+                finalized.total_travel_minutes,
+                finalized.score,
+                finalized.score_breakdown,
+            )
+            routes.append(finalized)
+            if on_route is not None:
+                on_route(finalized)
 
         return RoutePlanResponse(routes=routes)
 

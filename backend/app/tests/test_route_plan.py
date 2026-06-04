@@ -22,7 +22,6 @@ def test_generate_route_candidates() -> None:
 
     assert len(response.routes) == 3
     assert "balanced" in {route.objective for route in response.routes}
-    assert response.routes[0].objective != "balanced"
     assert len({route.objective for route in response.routes}) == len(response.routes)
     assert all(1 <= len(route.stops) <= 5 for route in response.routes)
     assert all(0 < route.score <= 100 for route in response.routes)
