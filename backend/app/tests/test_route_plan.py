@@ -234,6 +234,36 @@ def test_coffee_crawl_can_repeat_coffee_roles() -> None:
     assert any("coffee_break" in stop.route_roles for stop in food_route.stops)
 
 
+def test_night_route_avoids_plain_cafes_without_explicit_coffee_intent() -> None:
+    response = _plan(Intent(start_time="20:00", duration_hours=4, preferences=["晚上", "夜景"]))
+
+    assert response.routes
+    assert "night_friendly" in {route.objective for route in response.routes}
+    assert all(
+        stop.category != "cafe" and stop.meal_type != "cafe" and "coffee_break" not in stop.route_roles
+        for route in response.routes
+        for stop in route.stops
+    )
+    assert any(
+        stop.category in {"night_view", "theater", "landmark", "shopping"} or "night_end" in stop.route_roles
+        for route in response.routes
+        for stop in route.stops
+    )
+
+
+def test_explicit_night_coffee_allows_only_one_cafe_stop_per_route() -> None:
+    response = _plan(Intent(start_time="20:00", duration_hours=4, preferences=["咖啡探店", "咖啡"]))
+
+    assert response.routes
+    for route in response.routes:
+        coffee_count = sum(
+            1
+            for stop in route.stops
+            if stop.category == "cafe" or stop.meal_type == "cafe" or "coffee_break" in stop.route_roles
+        )
+        assert coffee_count <= 1
+
+
 def test_photo_citywalk_route_has_photo_or_main_activity_structure() -> None:
     response = _plan(Intent(preferences=["citywalk", "拍照"]))
     photo_route = next(route for route in response.routes if route.objective == "photo_citywalk")
@@ -256,6 +286,18 @@ def test_indoor_rainy_route_has_indoor_main_activity() -> None:
     indoor_route = next(route for route in response.routes if route.objective == "indoor_rainy")
 
     assert any(stop.indoor and "main_activity" in stop.route_roles for stop in indoor_route.stops)
+
+
+def test_rainy_hot_context_prefers_indoor_or_low_walking_stops() -> None:
+    response = _plan(Intent(preferences=["雨天", "高温", "室内"], duration_hours=4))
+
+    assert response.routes
+    assert any(stop.indoor for route in response.routes for stop in route.stops)
+    assert all(
+        not (not stop.indoor and stop.walking_intensity == "high")
+        for route in response.routes
+        for stop in route.stops
+    )
 
 
 def test_chongqing_half_day_defaults_to_one_meal_or_coffee_node() -> None:
@@ -301,6 +343,22 @@ def test_beijing_and_shanghai_routes_prefer_public_transit_when_convenient() -> 
             for stop in route.stops
         }
         assert modes & {"metro", "bus"}, intent.city
+
+
+def test_transport_steps_are_concrete_and_readable() -> None:
+    response = _plan(Intent(start_lat=31.2231, start_lng=121.4466, preferences=["吃好", "citywalk"], duration_hours=4))
+
+    assert response.routes
+    for route in response.routes:
+        for stop in route.stops:
+            assert stop.transport_mode_from_previous
+            assert stop.travel_minutes_from_previous is not None
+            assert stop.distance_km_from_previous is not None
+            assert stop.route_leg_source_from_previous
+            assert stop.route_steps_from_previous
+            joined_steps = " ".join(stop.route_steps_from_previous)
+            assert "公共交通" not in joined_steps
+            assert any(term in joined_steps for term in ["步行", "乘坐", "打车", "公交", "地铁"])
 
 
 def test_transit_choice_keeps_taxi_when_public_transit_is_much_slower() -> None:

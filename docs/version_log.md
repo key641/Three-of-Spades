@@ -55,6 +55,179 @@
 
 ---
 
+## 2026-06-05 - `uncommitted` - `feat(route): 增加路线常识约束和交通步骤兜底`
+
+负责人：路线策略 / Mock 地图 / B 同学
+
+### 更新概览
+
+本次更新解决路线生成中“分数高但现实不合理”的问题。路线生成不再只考虑 POI 质量、偏好和距离，而是在候选扩展、路线评分和最终重排里加入时间、天气、人群、餐饮节奏、体力和交通常识。
+
+用户可感知的变化是：夜间夜景路线不会再默认推荐普通咖啡店；雨天、高温、少走路、亲子/老人等场景下，路线会更倾向室内、低步行、交通更顺的点位；每段交通也会稳定带有可读步骤，不会只给空的交通方式。
+
+### 主要变更
+
+- 路线生成新增常识约束：
+  - `RouteService` 增加 `_common_sense_penalty()`、`_is_contextually_reasonable_poi()` 和 `_route_common_sense_penalty()`。
+  - `20:00` 后普通夜游路线不再补普通咖啡店；明确“咖啡/咖啡探店”时允许咖啡，但每条路线最多一个。
+  - 正餐和咖啡拆分判断，避免把“吃好”和“咖啡休息”互相替代。
+  - 雨天、高温、少走路、亲子、老人等场景会降低户外高强度 POI 和连续高强度点位。
+- 路线评分和重排同步兜底：
+  - `ScoringService.hard_penalty()` 增加常识惩罚。
+  - `RouteRerankService` 在最终路线层继续惩罚夜间咖啡、恶劣天气高强度户外、低体力用户高强度路线。
+  - 推荐理由可补充“时间、天气和体力安排更符合实际”。
+- 交通路线增强：
+  - 夜间中长距离更倾向打车，公共交通只有在耗时仍合理时胜出。
+  - 少走路用户继续避免超过 1 公里的步行段。
+  - `AmapService` fallback 也会生成 `route_steps_from_previous`，例如步行、打车、地铁/公交衔接说明。
+- 测试同步：
+  - 新增夜间非咖啡意图不出咖啡、显式夜间咖啡最多一个、雨天高温避开高强度户外、交通步骤具体可读等测试。
+
+### 涉及文件
+
+- `backend/app/services/route_service.py`
+- `backend/app/services/scoring_service.py`
+- `backend/app/services/route_rerank_service.py`
+- `backend/app/services/amap_service.py`
+- `backend/app/tests/test_route_plan.py`
+- `docs/route_strategy_logic.md`
+- `docs/version_log.md`
+
+### 协作影响
+
+| 角色 | 影响 | 需要关注 |
+| --- | --- | --- |
+| A 同学：Agent / 后端 | 路线结果更符合现实语境，夜间/雨天/少走路等偏好不需要额外由 LLM 兜底解释。 | 总结路线时可直接引用 `Route.reasons` 和 stop 交通字段，不要自行编造交通细节。 |
+| B 同学：POI / 路线策略 | 路线生成新增上下文常识分，调参时需要同时看 POI 分、常识惩罚、路线重排原因。 | 扩充 POI 时要维护 `suitable_time_slots`、`night_activity`、`indoor`、`walking_intensity`、`route_roles`。 |
+| C 同学：前端 / UI | API 字段不变，但 `route_steps_from_previous` 更稳定，可用于路线详情展示。 | 前端展示交通时优先使用 steps；如果 steps 为空再兜底展示 mode/distance/minutes。 |
+
+### 风险与注意事项
+
+- 常识约束仍是规则模型，不是路线级机器学习模型。
+- 除闭店、超时、最晚入场和夜间普通咖啡这类强错误外，大部分常识以降权为主，避免候选池被清空。
+- mock/fallback 交通步骤追求演示可信，不代表真实导航精度。
+
+### 建议验证
+
+- `cd backend && PYTHONPATH=. .venv/bin/pytest app/tests/test_route_plan.py -q`
+- `cd backend && PYTHONPATH=. .venv/bin/pytest app/tests/test_predictive_route_service.py app/tests/test_replan_service.py app/tests/test_route_rerank_service.py -q`
+- `cd backend && PYTHONPATH=. .venv/bin/pytest app/tests -q`
+
+---
+
+## 2026-06-05 - `8b4f6e0` - `feat(route): 动态路线层重排`
+
+负责人：路线策略 / B 同学
+
+### 更新概览
+
+本次更新把最终排序从“每个 objective 内部选最高分路线”升级为路线集合级动态重排。路线最终分不再使用固定死权重，而是根据用户偏好、画像敏感度、策略标签和路线目标动态调整：省钱用户更看重预算风险，少走路用户更看重交通效率，拍照 citywalk 用户更看重体验和结构完整性。
+
+### 主要变更
+
+- 新增 `RouteRerankService`：
+  - 汇总所有 objective 的 scored candidates 后统一重排。
+  - 动态融合 POI 精排均值、路线结构、交通效率、objective 匹配、预算排队风险和路线多样性。
+  - 根据已选路线实时计算剩余路线的 POI 重合率，降低高度重复路线。
+- `RouteService.generate_routes_for_objectives()` 改为：
+  - 先生成并评分所有候选路线。
+  - 再调用路线层 rerank。
+  - 最终仍返回原有 `RoutePlanResponse(routes)` 结构。
+- 推荐理由增强：
+  - 将“更符合少走路偏好”“预算和排队风险更稳”“路线结构更完整”“重复点少”等重排原因追加到 `Route.reasons`。
+- 测试同步：
+  - 新增动态重排单测，覆盖预算、少走路、美食扫街放宽、多样性等场景。
+  - 更新旧测试中“balanced 不能排第一”的假设，因为动态重排后 balanced 可以因风险稳定性排在首位。
+
+### 涉及文件
+
+- `backend/app/services/route_rerank_service.py`
+- `backend/app/services/route_service.py`
+- `backend/app/tests/test_route_rerank_service.py`
+- `backend/app/tests/test_route_plan.py`
+- `docs/route_strategy_logic.md`
+- `docs/version_log.md`
+
+### 协作影响
+
+| 角色 | 影响 | 需要关注 |
+| --- | --- | --- |
+| A 同学：Agent / 后端 | 路线返回结构不变，但最终路线顺序现在会受用户画像和偏好动态影响。 | 如果 trace 中看到 balanced 排第一，这是允许的，说明路线层认为它对当前用户更稳。 |
+| B 同学：POI / 路线策略 | 路线排序从单条路线评分升级为路线集合重排。 | 调参时需要同时看单路线 `score_breakdown` 和路线间重合、多样性、风险原因。 |
+| C 同学：前端 / UI | API 字段不变，路线理由可能出现新的解释文案。 | 前端无需改类型；展示 `reasons` 时要允许更偏策略解释的短语。 |
+
+### 风险与注意事项
+
+- 当前动态权重仍是规则模型，不是路线级学习排序模型。
+- `RouteScoreBreakdown` 未扩字段，前端看不到独立 rerank breakdown；目前通过 `reasons` 和 `summary` 解释。
+- 强偏好用户会弱化多样性权重，避免为了不同而牺牲核心目标。
+
+### 建议验证
+
+- `PYTHONPATH=backend backend/.venv/bin/python -m pytest backend/app/tests/test_route_rerank_service.py -q`
+- `PYTHONPATH=backend backend/.venv/bin/python -m pytest backend/app/tests/test_route_plan.py backend/app/tests/test_predictive_route_service.py backend/app/tests/test_replan_service.py -q`
+- `PYTHONPATH=backend backend/.venv/bin/python -m pytest backend/app/tests -q`
+  - 当前验证结果：`190 passed, 11 subtests passed`
+
+---
+
+## 2026-06-05 - `4b4cc80` - `feat(route): 路线候选生成升级为 beam search`
+
+负责人：路线策略 / B 同学
+
+### 更新概览
+
+本次更新解决“高分 POI 直接拼起来不一定是好路线”的问题。路线生成从每个 objective 最多 4 条贪心候选，升级为多 seed + beam search 的路线候选生成：先从精排 POI 中选多类目 seed，再扩展多条 partial route，最终生成约 10-30 条内部候选路线进入评分和重排。
+
+### 主要变更
+
+- `RouteService` 新增内部候选生成参数：
+  - `INTERNAL_CANDIDATES_PER_OBJECTIVE = 10`
+  - `START_SEEDS_PER_OBJECTIVE = 12`
+  - `BEAM_WIDTH = 6`
+  - `BRANCH_FACTOR = 8`
+- 路线生成逻辑升级：
+  - `_diverse_start_seeds()` 从高分 POI 中选择多类目 seed。
+  - `_build_beam_candidates()` 用 beam search 扩展路线。
+  - `_beam_next_candidates()` 每轮只扩展可行的 top POI。
+  - 保留 `_build_candidate()` 贪心逻辑作为候选不足时的兜底。
+- 候选质量控制：
+  - 按 stop poi_id 序列去重。
+  - 过滤高度重合路线。
+  - 扩展时继续复用 `_poi_score()`、`nearby_bonus`、`distance_penalty`、`diversity_penalty` 和 `missing_role_bonus`。
+- 测试同步：
+  - 新增内部候选数量、总候选数量、多 seed 覆盖、beam 结果不等于纯 POI 分顺序等测试。
+
+### 涉及文件
+
+- `backend/app/services/route_service.py`
+- `backend/app/tests/test_route_plan.py`
+- `docs/route_strategy_logic.md`
+- `docs/version_log.md`
+
+### 协作影响
+
+| 角色 | 影响 | 需要关注 |
+| --- | --- | --- |
+| A 同学：Agent / 后端 | `RouteService.generate_routes()` 接口不变，但内部候选更多，路线结果更像完整行程而不是高分 POI 列表。 | 如果请求变慢，优先看候选数量、地图路段和 mock/高德 provider。 |
+| B 同学：POI / 路线策略 | 路线生成开始依赖多 seed、beam 扩展和结构约束共同决定候选池。 | 调路线时不能只看 POI 分数，还要看路段、角色补全、候选去重和重合过滤。 |
+| C 同学：前端 / UI | API 返回结构不变，路线卡仍展示同一套 Route/RouteStop 字段。 | 路线顺序和 POI 组合可能更丰富，前端无需新增字段。 |
+
+### 风险与注意事项
+
+- 当前没有引入 OR-Tools 或全局路径优化，仍是可解释 beam search。
+- 候选数量增多会增加一些路线生成耗时，但默认控制在 10-30 条内部候选。
+- 强约束或候选不足时会退回贪心兜底，优先保证可用路线不为空。
+
+### 建议验证
+
+- `PYTHONPATH=backend backend/.venv/bin/python -m pytest backend/app/tests/test_route_plan.py -q`
+- `PYTHONPATH=backend backend/.venv/bin/python -m pytest backend/app/tests/test_predictive_route_service.py backend/app/tests/test_replan_service.py -q`
+- `PYTHONPATH=backend backend/.venv/bin/python -m pytest backend/app/tests -q`
+  - 提交时验证结果：`186 passed, 11 subtests passed`
+
+---
+
 ## 2026-05-31 - `5c38be4` - `feat(stream): 高德路线缓存与路线渐进返回`
 
 负责人：后端路线生成 / 前端流式展示 / A、B、C 同学

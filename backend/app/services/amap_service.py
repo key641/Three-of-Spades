@@ -150,13 +150,30 @@ class AmapService:
         distance_km = self._distance_km(origin, destination)
         distance_meters = max(1, round(distance_km * 1000))
         duration_minutes = self._fallback_duration_minutes(distance_km, mode)
+        steps = self._fallback_steps(mode, distance_meters, duration_minutes)
         return RouteLeg(
             mode=mode,
             distance_meters=distance_meters,
             duration_minutes=duration_minutes,
             polyline=f"{self._format_point(origin)};{self._format_point(destination)}",
+            steps=steps,
             source="fallback",
         )
+
+    def _fallback_steps(self, mode: str, distance_meters: int, duration_minutes: int) -> list[RouteLegStep]:
+        normalized = mode.lower()
+        distance_text = f"{distance_meters / 1000:.1f} 公里" if distance_meters >= 1000 else f"{max(20, round(distance_meters / 10) * 10)} 米"
+        if "walk" in normalized:
+            instruction = f"步行约 {distance_text}，预计 {duration_minutes} 分钟到达"
+        elif "taxi" in normalized or "drive" in normalized:
+            instruction = f"打车约 {distance_text}，预计 {duration_minutes} 分钟到达"
+        elif "bus" in normalized:
+            instruction = f"步行至附近公交站，乘公交后步行到达，全程约 {distance_text}，预计 {duration_minutes} 分钟"
+        elif "metro" in normalized:
+            instruction = f"步行至附近地铁站，乘地铁后步行到达，全程约 {distance_text}，预计 {duration_minutes} 分钟"
+        else:
+            instruction = f"建议{mode}前往，全程约 {distance_text}，预计 {duration_minutes} 分钟"
+        return [RouteLegStep(instruction=instruction, distance_meters=distance_meters, duration_minutes=duration_minutes)]
 
     def _fallback_duration_minutes(self, distance_km: float, mode: str) -> int:
         if "walk" in mode:

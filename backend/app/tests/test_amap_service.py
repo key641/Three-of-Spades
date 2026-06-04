@@ -36,7 +36,9 @@ def test_legacy_fallback_route_leg_can_still_be_forced() -> None:
 
     assert leg.source == "fallback"
     assert leg.polyline == "121.4737,31.2304;121.4998,31.2397"
-    assert leg.steps == []
+    assert leg.steps
+    assert "步行" in leg.steps[0].instruction
+    assert "预计" in leg.steps[0].instruction
 
 
 def test_mock_metro_route_contains_line_station_and_stop_count() -> None:

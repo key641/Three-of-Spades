@@ -69,6 +69,7 @@ class RouteRerankService:
         score = sum(features[key] * weights[key] for key in weights)
         score += self._coverage_bonus(route, request, selected_routes)
         score -= self._bad_meal_sequence_penalty(route, request)
+        score -= self._common_sense_penalty(route, request)
         return RouteRerankResult(
             route=route,
             score=round(max(0, min(1, score)) * 100),
@@ -259,6 +260,25 @@ class RouteRerankService:
     def _bad_meal_sequence_penalty(self, route: Route, request: RoutePlanRequest) -> float:
         return 0.12 if self._has_bad_meal_sequence(route, request) else 0.0
 
+    def _common_sense_penalty(self, route: Route, request: RoutePlanRequest) -> float:
+        terms = self._terms(request)
+        explicit_coffee = self._has_any(terms, ["咖啡", "下午茶", "咖啡馆", "咖啡探店", "咖啡路线"])
+        rainy = self._has_any(terms, ["雨天", "下雨", "室内", "rain", "indoor_rainy"])
+        hot = self._has_any(terms, ["高温", "很热", "炎热", "hot", "避暑"])
+        low_energy = self._has_any(terms, ["亲子", "老人", "轻松", "少走路"]) or request.user_profile.walking_tolerance <= 0.35
+        penalty = 0.0
+        for stop in route.stops:
+            minutes = self._parse_time(stop.start_time)
+            if self._meal_group(stop) == "coffee" and self._is_late_night(minutes) and not explicit_coffee:
+                penalty += 0.22 if route.objective == "night_friendly" else 0.16
+            if rainy and not stop.indoor and stop.walking_intensity == "high":
+                penalty += 0.10
+            if hot and not stop.indoor and stop.walking_intensity == "high":
+                penalty += 0.08
+            if low_energy and stop.walking_intensity == "high":
+                penalty += 0.08
+        return min(0.35, penalty)
+
     def _has_bad_meal_sequence(self, route: Route, request: RoutePlanRequest) -> bool:
         if self._allows_food_crawl(request):
             return False
@@ -281,6 +301,8 @@ class RouteRerankService:
             reasons.append("和其他路线重复点少，提供另一种体验")
         if features["structure"] >= 0.75:
             reasons.append("路线结构更完整")
+        if self._has_context_safe_reason(route, request):
+            reasons.append("时间、天气和体力安排更符合实际")
         return reasons[:2]
 
     def _normalize_weights(self, weights: dict[str, float]) -> dict[str, float]:
@@ -334,6 +356,20 @@ class RouteRerankService:
             return int(hour) * 60 + int(minute)
         except (ValueError, AttributeError):
             return 0
+
+    def _is_late_night(self, minutes: int) -> bool:
+        hour = (minutes // 60) % 24
+        return hour >= 20 or hour < 5
+
+    def _has_context_safe_reason(self, route: Route, request: RoutePlanRequest) -> bool:
+        terms = self._terms(request)
+        if self._has_any(terms, ["雨天", "下雨", "室内"]) and any(stop.indoor for stop in route.stops):
+            return True
+        if self._has_any(terms, ["少走路", "轻松", "亲子", "老人"]) and self._travel_efficiency_score(route, request) >= 0.7:
+            return True
+        if self._has_any(terms, ["晚上", "夜景", "夜游"]) and route.objective == "night_friendly":
+            return True
+        return False
 
     def _poi_risk_text(self, poi: POI) -> str:
         return " ".join([*poi.negative_tags, *poi.risk_flags, *poi.avoid_reasons, *poi.tags]).lower()
