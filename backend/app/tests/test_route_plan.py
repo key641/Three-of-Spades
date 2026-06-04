@@ -123,6 +123,61 @@ def test_returns_one_top_route_per_objective() -> None:
     assert all("优势是" in route.summary for route in response.routes)
 
 
+def test_internal_candidate_generation_uses_more_than_four_routes_per_objective() -> None:
+    profile = ProfileService().get_profile("user_demo")
+    intent = Intent()
+    pois = POIService().search(intent, user_profile=profile)
+    request = RoutePlanRequest(intent=intent, user_profile=profile, candidate_pois=pois)
+    routes = RouteService()._build_candidates_for_objective(pois, "balanced", request)
+
+    assert 5 <= len(routes) <= RouteService.INTERNAL_CANDIDATES_PER_OBJECTIVE
+    assert len({tuple(stop.poi_id for stop in route.stops) for route in routes}) == len(routes)
+
+
+def test_total_internal_candidate_generation_stays_in_target_range() -> None:
+    profile = ProfileService().get_profile("user_demo")
+    intent = Intent()
+    pois = POIService().search(intent, user_profile=profile)
+    request = RoutePlanRequest(intent=intent, user_profile=profile, candidate_pois=pois)
+    service = RouteService()
+    objectives = service._select_objectives(request)
+    candidates = [
+        route
+        for objective in objectives
+        for route in service._build_candidates_for_objective(pois, objective, request)
+    ]
+
+    assert 10 <= len(candidates) <= 30
+
+
+def test_start_seeds_cover_multiple_categories_and_roles() -> None:
+    profile = ProfileService().get_profile("user_demo")
+    intent = Intent(preferences=["citywalk", "拍照"])
+    pois = POIService().search(intent, user_profile=profile)
+    request = RoutePlanRequest(intent=intent, user_profile=profile, candidate_pois=pois)
+    service = RouteService()
+    seeds = service._diverse_start_seeds(service._start_candidates(pois, "photo_citywalk", request), 10)
+
+    assert len({poi.category for poi in seeds}) >= 4
+    assert any("main_activity" in poi.route_roles for poi in seeds)
+    assert any("photo_stop" in poi.route_roles for poi in seeds)
+
+
+def test_beam_route_is_not_plain_top_poi_sequence() -> None:
+    profile = ProfileService().get_profile("user_demo")
+    intent = Intent(start_lat=31.2304, start_lng=121.4737, preferences=["citywalk", "拍照"])
+    pois = POIService().search(intent, user_profile=profile)
+    request = RoutePlanRequest(intent=intent, user_profile=profile, candidate_pois=pois)
+    service = RouteService()
+    routes = service._build_candidates_for_objective(pois, "photo_citywalk", request)
+    assert routes
+
+    top_poi_ids = [poi.id for poi in service._start_candidates(pois, "photo_citywalk", request)[: len(routes[0].stops)]]
+    first_route_ids = [stop.poi_id for stop in routes[0].stops]
+
+    assert first_route_ids != top_poi_ids
+
+
 def test_generate_routes_emits_each_selected_route_incrementally() -> None:
     profile = ProfileService().get_profile("user_demo")
     pois = POIService().search(Intent(), user_profile=profile)

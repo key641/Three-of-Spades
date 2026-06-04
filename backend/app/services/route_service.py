@@ -18,6 +18,14 @@ class RouteBuildState:
     current_lng: float | None
 
 
+@dataclass(frozen=True)
+class RouteBeamState:
+    stops: tuple[RouteStop, ...]
+    selected_ids: frozenset[str]
+    state: RouteBuildState
+    score: float
+
+
 class RouteService:
     """B-owned module: creates route candidates before final scoring."""
 
@@ -48,7 +56,11 @@ class RouteService:
         "night_friendly": "夜间友好候选路线",
     }
 
-    CANDIDATES_PER_OBJECTIVE = 4
+    INTERNAL_CANDIDATES_PER_OBJECTIVE = 10
+    START_SEEDS_PER_OBJECTIVE = 12
+    BEAM_WIDTH = 6
+    BRANCH_FACTOR = 8
+    CANDIDATES_PER_OBJECTIVE = INTERNAL_CANDIDATES_PER_OBJECTIVE
 
     def __init__(self, amap_service: AmapService | None = None) -> None:
         self.amap_service = amap_service or AmapService()
@@ -188,25 +200,245 @@ class RouteService:
         if max_stops_override is not None:
             max_stops = min(max_stops, max(1, max_stops_override))
         min_stops = min(min_stops, max_stops)
-        start_pool = self._start_candidates(pois, objective, request)
-        routes: list[Route] = []
+        target_count = self._internal_candidate_limit(request, pois)
+        start_pool = self._diverse_start_seeds(self._start_candidates(pois, objective, request), target_count)
+        routes = self._build_beam_candidates(start_pool, pois, objective, request, time_limit, min_stops, max_stops, target_count)
 
-        for seed in start_pool[: self.CANDIDATES_PER_OBJECTIVE * 2]:
-            route = self._build_candidate(seed, pois, objective, request, time_limit, min_stops, max_stops)
-            if route.stops and len(route.stops) >= min_stops:
-                routes.append(route)
-            if len(routes) >= self.CANDIDATES_PER_OBJECTIVE:
-                break
-
-        if len(routes) < self.CANDIDATES_PER_OBJECTIVE:
-            for seed in start_pool[self.CANDIDATES_PER_OBJECTIVE * 2 :]:
-                route = self._build_candidate(seed, pois, objective, request, time_limit, 1, max_stops)
-                if route.stops:
+        if len(routes) < target_count:
+            seen = {self._route_signature(route) for route in routes}
+            for seed in start_pool:
+                route = self._build_candidate(seed, pois, objective, request, time_limit, min_stops, max_stops)
+                signature = self._route_signature(route)
+                if route.stops and len(route.stops) >= min_stops and signature not in seen:
                     routes.append(route)
-                if len(routes) >= self.CANDIDATES_PER_OBJECTIVE:
+                    seen.add(signature)
+                if len(routes) >= target_count:
                     break
 
-        return routes
+        if len(routes) < max(1, min(target_count, 4)):
+            seen = {self._route_signature(route) for route in routes}
+            for seed in self._start_candidates(pois, objective, request):
+                route = self._build_candidate(seed, pois, objective, request, time_limit, 1, max_stops)
+                signature = self._route_signature(route)
+                if route.stops and signature not in seen:
+                    routes.append(route)
+                    seen.add(signature)
+                if len(routes) >= target_count:
+                    break
+
+        return self._select_route_candidates(routes, objective, request, target_count)
+
+    def _build_beam_candidates(
+        self,
+        start_pool: list[POI],
+        pois: list[POI],
+        objective: str,
+        request: RoutePlanRequest,
+        time_limit: int,
+        min_stops: int,
+        max_stops: int,
+        target_count: int,
+    ) -> list[Route]:
+        beams: list[RouteBeamState] = []
+        completed: list[RouteBeamState] = []
+        initial_state = RouteBuildState(
+            current_minutes=self._parse_time(request.intent.start_time),
+            elapsed_minutes=0,
+            current_lat=request.intent.start_lat,
+            current_lng=request.intent.start_lng,
+        )
+        for seed in start_pool:
+            appended = self._append_if_feasible(seed, initial_state, time_limit, objective, request)
+            if appended is None:
+                continue
+            stop, next_state = appended
+            score = self._extension_score(seed, objective, request, initial_state, frozenset(), pois, must_extend=min_stops > 1)
+            beams.append(RouteBeamState(stops=(stop,), selected_ids=frozenset({seed.id}), state=next_state, score=score))
+
+        beams = sorted(beams, key=lambda beam: beam.score, reverse=True)[: self.BEAM_WIDTH]
+        seen_completed: set[tuple[str, ...]] = set()
+        while beams and len(completed) < target_count * 3:
+            next_beams: list[RouteBeamState] = []
+            for beam in beams:
+                if len(beam.stops) >= min_stops:
+                    signature = tuple(stop.poi_id for stop in beam.stops)
+                    if signature not in seen_completed:
+                        completed.append(beam)
+                        seen_completed.add(signature)
+                if len(beam.stops) >= max_stops or beam.state.elapsed_minutes >= time_limit * 0.92:
+                    continue
+                for poi in self._beam_next_candidates(pois, beam, objective, request, time_limit, min_stops):
+                    appended = self._append_if_feasible(poi, beam.state, time_limit, objective, request)
+                    if appended is None:
+                        continue
+                    stop, next_state = appended
+                    score = beam.score + self._extension_score(
+                        poi,
+                        objective,
+                        request,
+                        beam.state,
+                        beam.selected_ids,
+                        pois,
+                        must_extend=len(beam.stops) + 1 < min_stops,
+                    )
+                    next_beams.append(
+                        RouteBeamState(
+                            stops=(*beam.stops, stop),
+                            selected_ids=frozenset({*beam.selected_ids, poi.id}),
+                            state=next_state,
+                            score=score,
+                        )
+                    )
+            if not next_beams:
+                break
+            beams = sorted(next_beams, key=lambda beam: beam.score, reverse=True)[: self.BEAM_WIDTH]
+
+        completed.extend(beam for beam in beams if len(beam.stops) >= min_stops)
+        routes = [self._route_from_stops(list(beam.stops), objective, request) for beam in sorted(completed, key=lambda beam: beam.score, reverse=True)]
+        return self._select_route_candidates(routes, objective, request, target_count)
+
+    def _beam_next_candidates(
+        self,
+        pois: list[POI],
+        beam: RouteBeamState,
+        objective: str,
+        request: RoutePlanRequest,
+        time_limit: int,
+        min_stops: int,
+    ) -> list[POI]:
+        selected_ids = set(beam.selected_ids)
+        candidates = [
+            poi
+            for poi in pois
+            if poi.id not in selected_ids
+            and self._passes_meal_composition(selected_ids, poi, pois, request)
+            and self._is_viable_next_poi(poi, beam.state, time_limit)
+        ]
+        required_food = self._route_wants_food(objective, request)
+        if required_food and not any(self._is_food_poi_id(poi_id, pois) for poi_id in selected_ids):
+            food_candidates = [poi for poi in candidates if self._is_food_poi_obj(poi)]
+            if food_candidates:
+                candidates = food_candidates
+        must_extend = len(beam.stops) + 1 < min_stops
+        return sorted(
+            candidates,
+            key=lambda poi: self._extension_score(poi, objective, request, beam.state, beam.selected_ids, pois, must_extend),
+            reverse=True,
+        )[: self.BRANCH_FACTOR]
+
+    def _extension_score(
+        self,
+        poi: POI,
+        objective: str,
+        request: RoutePlanRequest,
+        state: RouteBuildState,
+        selected_ids: frozenset[str],
+        pois: list[POI],
+        must_extend: bool,
+    ) -> float:
+        selected = set(selected_ids)
+        return (
+            self._poi_score(poi, objective, request, state.current_lat, state.current_lng)
+            + self._nearby_bonus(selected, poi, pois)
+            - self._distance_penalty(state.current_lat, state.current_lng, poi)
+            - self._diversity_penalty(selected, poi, pois, objective, request)
+            + self._missing_role_bonus(selected, poi, pois, objective, request)
+            + (0.12 if must_extend else 0)
+        )
+
+    def _is_viable_next_poi(self, poi: POI, state: RouteBuildState, time_limit: int) -> bool:
+        total_add = self._leg_minutes(state.current_lat, state.current_lng, poi) + poi.queue_minutes + poi.visit_duration_minutes
+        start_minutes = state.current_minutes + self._leg_minutes(state.current_lat, state.current_lng, poi)
+        return (
+            state.elapsed_minutes + total_add <= time_limit
+            and self._minutes_in_range(start_minutes, self._parse_time(poi.open_time), self._parse_time(poi.close_time))
+            and self._before_last_entry(start_minutes, poi)
+        )
+
+    def _internal_candidate_limit(self, request: RoutePlanRequest, pois: list[POI]) -> int:
+        if len(pois) < self.INTERNAL_CANDIDATES_PER_OBJECTIVE:
+            return max(1, len(pois))
+        if request.intent.duration_hours <= 3:
+            return 6
+        return self.INTERNAL_CANDIDATES_PER_OBJECTIVE
+
+    def _diverse_start_seeds(self, ranked: list[POI], target_count: int) -> list[POI]:
+        seed_limit = max(self.START_SEEDS_PER_OBJECTIVE, target_count + 2)
+        selected: list[POI] = []
+        deferred: list[POI] = []
+        category_counts: dict[str, int] = {}
+        for poi in ranked:
+            if category_counts.get(poi.category, 0) < 2:
+                selected.append(poi)
+                category_counts[poi.category] = category_counts.get(poi.category, 0) + 1
+            else:
+                deferred.append(poi)
+            if len(selected) >= seed_limit:
+                return selected
+        selected.extend(deferred[: max(0, seed_limit - len(selected))])
+        return selected
+
+    def _select_route_candidates(self, routes: list[Route], objective: str, request: RoutePlanRequest, limit: int) -> list[Route]:
+        selected: list[Route] = []
+        seen_signatures: set[tuple[str, ...]] = set()
+        for route in sorted(routes, key=lambda item: self._route_candidate_key(item, objective, request), reverse=True):
+            signature = self._route_signature(route)
+            if not signature or signature in seen_signatures:
+                continue
+            if any(self._route_overlap(route, existing) > 0.8 for existing in selected):
+                continue
+            selected.append(route)
+            seen_signatures.add(signature)
+            if len(selected) >= limit:
+                break
+        if len(selected) < limit:
+            for route in sorted(routes, key=lambda item: self._route_candidate_key(item, objective, request), reverse=True):
+                signature = self._route_signature(route)
+                if signature and signature not in seen_signatures:
+                    selected.append(route)
+                    seen_signatures.add(signature)
+                if len(selected) >= limit:
+                    break
+        return selected
+
+    def _route_candidate_key(self, route: Route, objective: str, request: RoutePlanRequest) -> tuple[float, float, float, float]:
+        structure = self._route_structure_score(route, objective)
+        budget_fit = -max(0, route.total_cost_per_person - request.intent.budget_per_person * max(len(route.stops), 1))
+        time_fit = -abs(route.total_duration_minutes - request.intent.duration_hours * 60 * 0.82)
+        return (structure, budget_fit, time_fit, -route.total_distance_km)
+
+    def _route_structure_score(self, route: Route, objective: str) -> float:
+        stops = route.stops
+        if not stops:
+            return -1
+        score = 0.0
+        if any("main_activity" in stop.route_roles for stop in stops):
+            score += 1.0
+        if any("meal" in stop.route_roles or "coffee_break" in stop.route_roles or "rest_stop" in stop.route_roles for stop in stops):
+            score += 0.25
+        if objective in {"food_first", "photo_food"} and any(self._is_food_poi(stop) for stop in stops):
+            score += 0.8
+        if objective == "photo_food" and any("photo_stop" in stop.route_roles for stop in stops):
+            score += 0.5
+        if objective == "photo_citywalk" and any("photo_stop" in stop.route_roles for stop in stops):
+            score += 0.6
+        if objective == "indoor_rainy" and any(stop.indoor and "main_activity" in stop.route_roles for stop in stops):
+            score += 0.8
+        if objective == "night_friendly" and any("night_end" in stop.route_roles or "night" in stop.tags for stop in stops):
+            score += 0.6
+        if objective == "low_walking" and all((stop.transport_mode_from_previous != "walk" or (stop.distance_km_from_previous or 0) <= 1) for stop in stops):
+            score += 0.6
+        return score
+
+    def _route_signature(self, route: Route) -> tuple[str, ...]:
+        return tuple(stop.poi_id for stop in route.stops)
+
+    def _route_overlap(self, route_a: Route, route_b: Route) -> float:
+        ids_a = {stop.poi_id for stop in route_a.stops}
+        ids_b = {stop.poi_id for stop in route_b.stops}
+        if not ids_a or not ids_b:
+            return 0
+        return len(ids_a & ids_b) / min(len(ids_a), len(ids_b))
 
     def _build_candidate(
         self,

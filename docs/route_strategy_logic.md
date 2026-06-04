@@ -250,11 +250,13 @@ poi_relevance_score = 0.4*p_click + 0.5*p_like - 0.3*p_skip
 对每个 objective，流程是：
 
 1. 用 `_start_candidates()` 对所有 POI 按该 objective 的 POI 分数排序；该分数已融合 `poi_relevance_scores`。
-2. 取前若干高分 POI 作为 seed。
-3. 从 seed 开始贪心扩展路线。
-4. 每个 objective 最多生成 `CANDIDATES_PER_OBJECTIVE = 4` 条内部候选。
-5. 对候选调用 `ScoringService` 打分。
-6. 普通规划每个 objective 返回第一条 best；预制路线可以拿每个 objective 的多条候选做差异筛选。
+2. 用 `_diverse_start_seeds()` 从高分 POI 中选多类目 seed，避免只从同一类 POI 开始。
+3. 用 beam search 扩展 partial route，每轮从可行 POI 中取 top `BRANCH_FACTOR = 8`，保留 top `BEAM_WIDTH = 6` 条 partial route。
+4. 每个 objective 默认生成 `INTERNAL_CANDIDATES_PER_OBJECTIVE = 10` 条内部候选；短时长路线会降到 6 条。
+5. 对候选做 stop 序列去重和高重合过滤，再调用 `ScoringService` 打分。
+6. 普通规划每个 objective 返回第一条 best；预制路线可以拿每个 objective 的 top 3 做差异筛选。
+
+当前默认普通规划最多 3 个 objective，所以内部通常会生成约 18-30 条候选路线，再进入最终路线排序。
 
 ### 4.2 stop 数量上下限
 
@@ -294,24 +296,25 @@ poi_relevance_score = 0.4*p_click + 0.5*p_like - 0.3*p_skip
 - `indoor_rainy`：加室内、雨天友好。
 - `night_friendly`：加夜间活动和晚间时段。
 
-### 4.4 贪心扩展和结构约束
+### 4.4 Beam 扩展和结构约束
 
-路线从 seed 开始，不断选下一个 POI。每次扩展会检查：
+路线从多个 seed 开始，用 beam search 扩展多条 partial route。每次扩展会检查：
 
 - 加上交通时间、排队时间、游玩时间后不能超过总时长。
+- 到达时需要处于营业窗口内，并且不能晚于最晚入场时间。
 - 不能重复已选 POI。
 - 如果路线需要餐饮，优先补餐饮点。
 - 默认不混合“正餐”和“咖啡”作为多个餐饮节点，除非用户明确同时想要。
 - 默认不重复多家咖啡或多家正餐，除非用户明确要咖啡探店或美食扫街。
 
-选下一个 POI 时，除了 POI 局部分，还会叠加：
+扩展下一个 POI 时，除了 POI 局部分，还会叠加：
 
 - `nearby_bonus`：和已选点互为 nearby 时加分。
 - `distance_penalty`：离当前点越远扣分。
 - `diversity_penalty`：连续同主类目、重复 route_roles、多次咖啡或正餐会扣分。
 - `missing_role_bonus`：路线缺主活动、餐饮、拍照、休息等角色时，对能补角色的 POI 加分。
 
-这也是当前路线比“高分 POI 列表”更像行程的主要原因。
+Beam search 结果不足时，会回退到现有 `_build_candidate()` 贪心逻辑补齐，保证强约束或候选很少时仍能返回可用路线。
 
 ## 5. 交通路段逻辑
 
