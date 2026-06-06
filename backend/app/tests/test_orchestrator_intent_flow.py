@@ -1,4 +1,5 @@
 import unittest
+import asyncio
 import json
 from unittest.mock import AsyncMock, MagicMock
 
@@ -106,6 +107,51 @@ class OrchestratorIntentFlowTest(unittest.TestCase):
             self.assertIn("省钱", delta.added_preferences)
 
         import asyncio
+
+        asyncio.run(run_case())
+
+    def test_city_region_without_poi_data_returns_visible_no_data_message(self) -> None:
+        async def run_case() -> None:
+            orchestrator = AgentOrchestrator()
+            stub_route_planning_router(orchestrator)
+            orchestrator.llm_client.complete = AsyncMock(
+                return_value={
+                    "choices": [
+                        {
+                            "message": {
+                                "content": json.dumps(
+                                    {
+                                        "city": "上海",
+                                        "people_count": 2,
+                                        "start_time": "14:00",
+                                        "duration_hours": 4,
+                                        "budget_per_person": 300,
+                                        "target_district": "不存在区",
+                                        "target_business_area": None,
+                                        "start_location_name": None,
+                                        "start_lat": None,
+                                        "start_lng": None,
+                                        "preferences": ["citywalk"],
+                                        "interest_tags": ["citywalk"],
+                                        "optimization_goals": [],
+                                        "avoid_tags": [],
+                                        "scenario": "friends_citywalk",
+                                        "need_clarification": False,
+                                    },
+                                    ensure_ascii=False,
+                                )
+                            }
+                        }
+                    ]
+                }
+            )
+
+            response = await orchestrator.handle_message(ChatRequest(session_id="s1", message="上海不存在区 citywalk"))
+
+            self.assertEqual(response.routes, [])
+            self.assertIn("没有可用 POI 数据", response.message)
+            self.assertIn("换一个城市", response.message)
+            self.assertTrue(any(step.step == "no_poi_data" for step in response.agent_trace))
 
         asyncio.run(run_case())
 
@@ -497,6 +543,19 @@ class OrchestratorIntentFlowTest(unittest.TestCase):
         async def run_case() -> None:
             orchestrator = AgentOrchestrator()
             stub_route_planning_router(orchestrator)
+            orchestrator.message_router.classify = AsyncMock(
+                side_effect=[
+                    MessageRoute(intent_type=MessageIntentType.NEW_PLAN, planning_mode=PlanningMode.NEW_PLAN, confidence=1),
+                    MessageRoute(
+                        intent_type=MessageIntentType.NEW_PLAN,
+                        turn_type=TurnType.MODIFY_CONSTRAINT,
+                        planning_mode=PlanningMode.NEW_PLAN,
+                        inherit_previous=True,
+                        preserve_scenario=True,
+                        confidence=1,
+                    ),
+                ]
+            )
             orchestrator.llm_client.complete = AsyncMock(
                 side_effect=[
                     {
@@ -540,6 +599,19 @@ class OrchestratorIntentFlowTest(unittest.TestCase):
         async def run_case() -> None:
             orchestrator = AgentOrchestrator()
             stub_route_planning_router(orchestrator)
+            orchestrator.message_router.classify = AsyncMock(
+                side_effect=[
+                    MessageRoute(intent_type=MessageIntentType.NEW_PLAN, planning_mode=PlanningMode.NEW_PLAN, confidence=1),
+                    MessageRoute(
+                        intent_type=MessageIntentType.NEW_PLAN,
+                        turn_type=TurnType.MODIFY_CONSTRAINT,
+                        planning_mode=PlanningMode.NEW_PLAN,
+                        inherit_previous=True,
+                        preserve_scenario=True,
+                        confidence=1,
+                    ),
+                ]
+            )
             orchestrator.llm_client.complete = AsyncMock(
                 side_effect=[
                     {
@@ -871,6 +943,27 @@ class OrchestratorIntentFlowTest(unittest.TestCase):
         async def run_case() -> None:
             orchestrator = AgentOrchestrator()
             stub_route_planning_router(orchestrator)
+            orchestrator.message_router.classify = AsyncMock(
+                side_effect=[
+                    MessageRoute(intent_type=MessageIntentType.NEW_PLAN, planning_mode=PlanningMode.NEW_PLAN, confidence=1),
+                    MessageRoute(
+                        intent_type=MessageIntentType.NEW_PLAN,
+                        turn_type=TurnType.MODIFY_CONSTRAINT,
+                        planning_mode=PlanningMode.NEW_PLAN,
+                        inherit_previous=True,
+                        preserve_scenario=True,
+                        confidence=1,
+                    ),
+                    MessageRoute(
+                        intent_type=MessageIntentType.NEW_PLAN,
+                        turn_type=TurnType.ADD_CONSTRAINT,
+                        planning_mode=PlanningMode.NEW_PLAN,
+                        inherit_previous=True,
+                        preserve_scenario=True,
+                        confidence=1,
+                    ),
+                ]
+            )
             orchestrator.llm_client.complete = AsyncMock(
                 side_effect=[
                     {

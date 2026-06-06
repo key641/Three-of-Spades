@@ -152,6 +152,10 @@ class ProfileService:
             data["city"] = request.city
         if request.start_location_name:
             data["start_location_name"] = request.start_location_name
+        if request.target_district:
+            data["target_district"] = request.target_district
+        if request.target_business_area:
+            data["target_business_area"] = request.target_business_area
         if request.start_time:
             data["start_time"] = request.start_time
         if request.duration_hours is not None:

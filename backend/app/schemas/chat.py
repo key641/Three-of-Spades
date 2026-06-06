@@ -25,6 +25,8 @@ class ChatRequest(BaseModel):
     start_time: str | None = None
     duration_hours: int | None = None
     start_location_name: str | None = None
+    target_district: str | None = None
+    target_business_area: str | None = None
     start_lat: float | None = None
     start_lng: float | None = None
     current_lat: float | None = None

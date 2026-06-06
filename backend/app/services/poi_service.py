@@ -41,7 +41,16 @@ class POIService:
     ) -> list[POI]:
         city_matches = [candidate for candidate in self._candidates if candidate.poi.city == intent.city]
         if not city_matches:
-            city_matches = self._fallback_candidates(intent.city)
+            return []
+        region_terms = self._region_terms(intent, city_matches)
+        if region_terms:
+            city_matches = [
+                candidate
+                for candidate in city_matches
+                if self._matches_region(candidate.poi, region_terms)
+            ]
+            if not city_matches:
+                return []
         min_candidates = min(limit, self.MIN_DEFAULT_CANDIDATES)
 
         strict_matches = [
@@ -241,6 +250,43 @@ class POIService:
             }
         )
         return POICandidate(poi=poi, search_text=candidate.search_text, risk_text=candidate.risk_text)
+
+    def _region_terms(self, intent: Intent, city_matches: list[POICandidate]) -> list[str]:
+        known_regions = {
+            *[candidate.poi.district for candidate in city_matches if candidate.poi.district],
+            *[part for candidate in city_matches for part in self._region_parts(candidate.poi.business_area)],
+        }
+        regions: list[str] = []
+        for term in [intent.target_district, intent.target_business_area]:
+            for region in self._region_parts(str(term or "")):
+                if region and region not in regions:
+                    regions.append(region)
+        if regions:
+            return regions
+
+        raw_terms = [
+            intent.start_location_name,
+            *intent.preferences,
+            *intent.interest_tags,
+        ]
+        for term in raw_terms:
+            if not term:
+                continue
+            normalized = str(term).strip()
+            if not normalized:
+                continue
+            for region in known_regions:
+                if region and (region in normalized or normalized in region):
+                    if region not in regions:
+                        regions.append(region)
+        return regions
+
+    def _region_parts(self, value: str) -> list[str]:
+        return [part.strip() for part in value.replace("/", "-").split("-") if part.strip()]
+
+    def _matches_region(self, poi: POI, region_terms: list[str]) -> bool:
+        text = " ".join([poi.district, poi.business_area, poi.address, poi.name])
+        return any(term in text for term in region_terms)
 
     def _merge_candidates(self, primary: list[POICandidate], secondary: list[POICandidate]) -> list[POICandidate]:
         result = list(primary)

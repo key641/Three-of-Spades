@@ -429,12 +429,22 @@ def test_nature_strategy_prioritizes_nature_pois() -> None:
     assert any(poi.category == "park" or poi.primary_category == "nature" for poi in pois[:5])
 
 
-def test_unknown_city_uses_mock_fallback_candidates() -> None:
+def test_unknown_city_returns_empty_candidates_instead_of_mock_fallback() -> None:
     pois = POIService().search(Intent(city="哈尔滨"), limit=12)
 
-    assert len(pois) == 12
-    assert all(poi.city == "哈尔滨" for poi in pois)
-    assert all(poi.source_provider == "mock_fallback" for poi in pois)
+    assert pois == []
+
+
+def test_unknown_city_region_returns_empty_candidates() -> None:
+    pois = POIService().search(Intent(city="哈尔滨", target_district="道里区"), limit=12)
+
+    assert pois == []
+
+
+def test_city_region_without_data_returns_empty_candidates() -> None:
+    pois = POIService().search(Intent(city="上海", target_district="不存在区"), limit=12)
+
+    assert pois == []
 
 
 def test_interaction_events_cover_users_and_pois() -> None:

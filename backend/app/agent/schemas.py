@@ -55,6 +55,8 @@ class StateChangeSummary(BaseModel):
 class TripState(BaseModel):
     city: str = "上海"
     people_count: int = 2
+    target_district: str | None = None
+    target_business_area: str | None = None
     start_time: str = "14:00"
     duration_hours: int = 6
     budget_per_person: int = 300
@@ -75,6 +77,8 @@ class TripState(BaseModel):
         hard_constraints = {
             "city": intent.city,
             "people_count": intent.people_count,
+            "target_district": intent.target_district,
+            "target_business_area": intent.target_business_area,
             "start_time": intent.start_time,
             "duration_hours": intent.duration_hours,
             "budget_per_person": intent.budget_per_person,
@@ -82,6 +86,8 @@ class TripState(BaseModel):
         return cls(
             city=intent.city,
             people_count=intent.people_count,
+            target_district=intent.target_district,
+            target_business_area=intent.target_business_area,
             start_time=intent.start_time,
             duration_hours=intent.duration_hours,
             budget_per_person=intent.budget_per_person,
@@ -98,6 +104,8 @@ class TripState(BaseModel):
         return Intent(
             city=self.city,
             people_count=self.people_count,
+            target_district=self.target_district,
+            target_business_area=self.target_business_area,
             start_time=self.start_time,
             duration_hours=self.duration_hours,
             budget_per_person=self.budget_per_person,

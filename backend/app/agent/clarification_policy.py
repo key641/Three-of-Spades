@@ -188,7 +188,7 @@ class ClarificationPolicy:
         if not self._needs_route_generation(message_route):
             return False
 
-        if message_route.planning_mode != PlanningMode.NEW_PLAN:
+        if message_route.inherit_previous or message_route.planning_mode != PlanningMode.NEW_PLAN:
             last = session_state.last_intent
             if last and (last.start_location_name or last.start_lat or last.city):
                 return False
@@ -213,7 +213,7 @@ class ClarificationPolicy:
             or (
                 session_state.last_intent
                 and session_state.last_intent.city
-                and message_route.planning_mode != PlanningMode.NEW_PLAN
+                and (message_route.inherit_previous or message_route.planning_mode != PlanningMode.NEW_PLAN)
             )
         )
 
@@ -243,7 +243,7 @@ class ClarificationPolicy:
             return False, ""
 
         # 继承上轮：modify/replan 且上一轮有地点信息 → 无需追问
-        if message_route.planning_mode != PlanningMode.NEW_PLAN:
+        if message_route.inherit_previous or message_route.planning_mode != PlanningMode.NEW_PLAN:
             last = session_state.last_intent
             if last and (last.start_location_name or last.start_lat or last.city):
                 return False, ""
@@ -272,7 +272,7 @@ class ClarificationPolicy:
             or self._message_mentions_city(request.message)
             or (intent.city_from_message and intent.city)
             or (session_state.last_intent and session_state.last_intent.city
-                and message_route.planning_mode != PlanningMode.NEW_PLAN)
+                and (message_route.inherit_previous or message_route.planning_mode != PlanningMode.NEW_PLAN))
         )
 
         has_gps = bool(

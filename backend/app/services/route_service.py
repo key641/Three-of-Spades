@@ -94,7 +94,7 @@ class RouteService:
             routes_per_objective=self.CANDIDATES_PER_OBJECTIVE,
             min_stops_floor=floor,
         ).routes
-        selected = self._select_final_routes(candidates, objectives, self.TARGET_ROUTE_COUNT, floor)
+        selected = self._select_final_routes(request, candidates, objectives, self.TARGET_ROUTE_COUNT, floor)
 
         if (
             len(selected) < self.TARGET_ROUTE_COUNT
@@ -108,6 +108,7 @@ class RouteService:
                 min_stops_floor=self.RELAXED_MIN_ROUTE_STOPS,
             ).routes
             selected = self._select_final_routes(
+                request,
                 relaxed_candidates,
                 objectives,
                 self.TARGET_ROUTE_COUNT,
@@ -159,7 +160,14 @@ class RouteService:
         fallbacks = ["food_first", "photo_citywalk", "nature_relax", "indoor_rainy", "low_walking", "budget", "night_friendly", "balanced"]
         return self._unique_objectives([*selected, *fallbacks])
 
-    def _select_final_routes(self, candidates: list[Route], objectives: list[str], target_count: int, min_stops: int) -> list[Route]:
+    def _select_final_routes(
+        self,
+        request: RoutePlanRequest,
+        candidates: list[Route],
+        objectives: list[str],
+        target_count: int,
+        min_stops: int,
+    ) -> list[Route]:
         selected: list[Route] = []
         used_signatures: set[tuple[str, ...]] = set()
         used_poi_ids: set[str] = set()
@@ -167,7 +175,9 @@ class RouteService:
         valid = [
             route
             for route in candidates
-            if len(route.stops) >= min_stops and self._route_has_complete_transport(route)
+            if len(route.stops) >= min_stops
+            and self._route_has_complete_transport(route)
+            and self._route_has_category_diversity(route, min_stops, request)
         ]
         valid.sort(
             key=lambda route: (
@@ -457,7 +467,11 @@ class RouteService:
             stop, state = appended
             stops.append(stop)
             selected_ids.add(next_poi.id)
-            if len(stops) >= min_stops and state.elapsed_minutes >= time_limit * 0.82:
+            if (
+                len(stops) >= min_stops
+                and self._stops_have_category_diversity(stops, min_stops, request)
+                and state.elapsed_minutes >= time_limit * 0.82
+            ):
                 break
 
         if required_food and not any(self._is_food_poi(stop) for stop in stops):
@@ -657,6 +671,7 @@ class RouteService:
             - self._distance_penalty(state.current_lat, state.current_lng, poi)
             - self._diversity_penalty(selected_ids, poi, pois, objective, request)
             + self._missing_role_bonus(selected_ids, poi, pois, objective, request)
+            + self._missing_category_bonus(selected_ids, poi, pois, request)
             + (0.12 if must_extend else 0),
         )
 
@@ -681,6 +696,32 @@ class RouteService:
         max_stops = max(max_stops, min_stops)
         return min_stops, max_stops
 
+    def _route_has_category_diversity(self, route: Route, min_stops: int, request: RoutePlanRequest) -> bool:
+        return self._stops_have_category_diversity(route.stops, min_stops, request)
+
+    def _stops_have_category_diversity(self, stops: list[RouteStop], min_stops: int, request: RoutePlanRequest) -> bool:
+        if self._allows_single_theme_route(request) and self._is_single_theme_route(stops):
+            return True
+        required = self._required_primary_category_count(len(stops), min_stops)
+        primary_categories = {stop.primary_category or stop.category for stop in stops if stop.primary_category or stop.category}
+        categories = {stop.category for stop in stops if stop.category}
+        return len(primary_categories) >= required or len(categories) >= required
+
+    def _required_primary_category_count(self, stop_count: int, min_stops: int) -> int:
+        if stop_count <= 2:
+            return 1
+        if stop_count <= 3:
+            return 2
+        return min(3, max(2, min_stops))
+
+    def _is_single_theme_route(self, stops: list[RouteStop]) -> bool:
+        if not stops:
+            return False
+        coffee_count = sum(1 for stop in stops if self._is_coffee_poi(stop))
+        meal_count = sum(1 for stop in stops if self._is_meal_poi(stop) or stop.meal_type in {"light_meal", "fast_food"} or stop.category == "market")
+        culture_count = sum(1 for stop in stops if stop.primary_category == "culture" or stop.category in {"museum", "gallery", "theater"})
+        return max(coffee_count, meal_count, culture_count) == len(stops)
+
     def _allows_simple_route(self, request: RoutePlanRequest) -> bool:
         terms = set(self._intent_terms(request))
         return self._has_any(
@@ -696,6 +737,24 @@ class RouteService:
                 "少走路",
                 "老人",
                 "亲子",
+            ],
+        )
+
+    def _allows_single_theme_route(self, request: RoutePlanRequest) -> bool:
+        terms = set(self._request_terms(request))
+        return self._has_any(
+            terms,
+            [
+                "咖啡探店",
+                "咖啡路线",
+                "多家咖啡",
+                "美食路线",
+                "扫街",
+                "吃很多家",
+                "小吃街",
+                "展览路线",
+                "博物馆路线",
+                "艺术展",
             ],
         )
 
@@ -941,6 +1000,21 @@ class RouteService:
                 bonus += 0.15
 
         return bonus
+
+    def _missing_category_bonus(self, selected_ids: set[str], poi: POI, pois: list[POI], request: RoutePlanRequest) -> float:
+        if self._allows_single_theme_route(request):
+            return 0.0
+        selected = [candidate for candidate in pois if candidate.id in selected_ids]
+        if not selected:
+            return 0.0
+        existing_primary = {candidate.primary_category or candidate.category for candidate in selected}
+        candidate_primary = poi.primary_category or poi.category
+        if candidate_primary and candidate_primary not in existing_primary:
+            return 0.45
+        existing_categories = {candidate.category for candidate in selected}
+        if poi.category and poi.category not in existing_categories:
+            return 0.18
+        return 0.0
 
     def _composition(self, pois: list[POI]) -> dict:
         primary_counts: dict[str, int] = {}

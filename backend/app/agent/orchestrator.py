@@ -286,6 +286,40 @@ class AgentOrchestrator:
             len(pois),
             [poi.name for poi in pois],
         )
+        if not pois:
+            message = self._no_poi_data_message(intent)
+            trace.append(
+                AgentTraceStep(
+                    step="no_poi_data",
+                    label="当前城市或区域没有可用 POI 数据",
+                    status="fallback",
+                    details={
+                        "city": intent.city,
+                        "target_district": intent.target_district,
+                        "target_business_area": intent.target_business_area,
+                    },
+                )
+            )
+            await emit_pending_trace()
+            self.memory.save_turn_result(
+                session_id=request.session_id,
+                user_message=request.message,
+                assistant_message=message,
+                intent=intent,
+                user_profile=user_profile,
+                routes=[],
+                trip_state=trip_state,
+            )
+            return ChatResponse(
+                session_id=request.session_id,
+                message=message,
+                need_clarification=False,
+                clarifying_question=None,
+                intent=intent,
+                user_profile=user_profile,
+                routes=[],
+                agent_trace=trace,
+            )
         expanded_recall = False
         relaxed_min_stops = False
         final_pois = pois
@@ -680,12 +714,20 @@ class AgentOrchestrator:
             "start_time": intent.start_time,
             "duration_hours": intent.duration_hours,
             "budget_per_person": intent.budget_per_person,
+            "target_district": intent.target_district,
+            "target_business_area": intent.target_business_area,
             "interest_tags": intent.interest_tags,
             "optimization_goals": intent.optimization_goals,
             "preferences": intent.preferences,
             "avoid_tags": intent.avoid_tags,
             "scenario": intent.scenario,
         }
+
+    def _no_poi_data_message(self, intent: Intent) -> str:
+        region = intent.target_business_area or intent.target_district
+        if region:
+            return f"当前在{intent.city}{region}还没有可用 POI 数据，可以换一个城市或区域，我再继续帮你规划。"
+        return f"当前还没有{intent.city}的可用 POI 数据，可以换一个城市，我再继续帮你规划。"
 
     async def _parse_query_delta(
         self,
@@ -839,7 +881,16 @@ class AgentOrchestrator:
             "preferences": ["美食", "咖啡", "拍照", "citywalk", "艺术展", "自然风景", "本地感", "夜景", "亲子", "室内", "安静", "少排队", "省钱", "少走路", "高性价比", "轻松", "时间紧", "朋友同行"],
             "avoid_tags": ["人流密集", "排队久", "太贵", "需要预约", "商业街", "拍照打卡", "辣", "步行多"],
             "needs": ["meal_stop", "rest_stop"],
-            "hard_constraints": ["city", "people_count", "start_time", "duration_hours", "budget_per_person", "scenario"],
+            "hard_constraints": [
+                "city",
+                "people_count",
+                "target_district",
+                "target_business_area",
+                "start_time",
+                "duration_hours",
+                "budget_per_person",
+                "scenario",
+            ],
         }
 
     def _filter_allowed_preferences(self, values: list[str]) -> list[str]:
@@ -862,7 +913,7 @@ class AgentOrchestrator:
                 continue
             if key in {"people_count", "duration_hours", "budget_per_person"}:
                 result[key] = self._coerce_int(value, 0)
-            elif key in {"city", "start_time", "scenario"} and value:
+            elif key in {"city", "target_district", "target_business_area", "start_time", "scenario"} and value:
                 result[key] = str(value)
         return result
 
@@ -1328,6 +1379,8 @@ class AgentOrchestrator:
             "duration_hours": "integer",
             "budget_per_person": "integer, CNY",
             "start_location_name": "string or null, route start place name when mentioned",
+            "target_district": "string or null, destination district/area such as 徐汇区 or 朝阳区 when mentioned",
+            "target_business_area": "string or null, destination business area/street such as 武康路 or 三里屯 when mentioned",
             "start_lat": "number or null, route start latitude when known",
             "start_lng": "number or null, route start longitude when known",
             "interest_tags": "array, experience tags only: 美食/咖啡/拍照/citywalk/艺术展/自然风景/本地感/夜景/亲子/室内/安静",
@@ -1400,6 +1453,10 @@ class AgentOrchestrator:
 
         for key in ("preferences", "interest_tags", "optimization_goals", "avoid_tags"):
             normalized[key] = self._coerce_string_list(normalized.get(key))
+
+        for key in ("start_location_name", "target_district", "target_business_area"):
+            value = normalized.get(key)
+            normalized[key] = str(value).strip() if value else None
 
         value = normalized.get("need_clarification", defaults["need_clarification"])
         if isinstance(value, str):
@@ -1478,8 +1535,20 @@ class AgentOrchestrator:
             start_time="14:00",
             duration_hours=6,
             budget_per_person=300,
+            target_district=self._extract_region_from_message(message, "district"),
+            target_business_area=self._extract_region_from_message(message, "business_area"),
             preferences=preferences,
             avoid_tags=avoid_tags,
             scenario="friends_citywalk",
             need_clarification=False,
         )
+
+    def _extract_region_from_message(self, message: str, kind: str) -> str | None:
+        if kind == "district":
+            match = re.search(r"[\u4e00-\u9fa5]{2,6}区|[\u4e00-\u9fa5]{2,6}县|[\u4e00-\u9fa5]{2,6}新区", message)
+            return match.group(0) if match else None
+        for area in ["武康路", "安福路", "外滩", "陆家嘴", "南京路", "淮海路", "新天地", "田子坊", "三里屯", "王府井", "后海", "什刹海", "南锣鼓巷", "国贸", "西单"]:
+            if area in message:
+                return area
+        match = re.search(r"[\u4e00-\u9fa5]{2,8}(?:路|街|巷|弄|大道|步行街|老街)", message)
+        return match.group(0) if match else None

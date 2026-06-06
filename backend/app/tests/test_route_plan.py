@@ -27,6 +27,7 @@ def test_generate_route_candidates() -> None:
     assert all(3 <= len(route.stops) <= 5 for route in response.routes)
     assert len({tuple(sorted(stop.poi_id for stop in route.stops)) for route in response.routes}) == len(response.routes)
     assert len(all_stop_ids) == len(set(all_stop_ids))
+    assert all(len({stop.primary_category or stop.category for stop in route.stops}) >= 2 for route in response.routes)
     assert all(0 < route.score <= 100 for route in response.routes)
     assert all(route.score_breakdown.preference > 0 for route in response.routes)
     assert all(
@@ -316,13 +317,16 @@ def test_photo_citywalk_route_has_photo_or_main_activity_structure() -> None:
     assert any("main_activity" in stop.route_roles for stop in photo_route.stops)
 
 
-def test_multi_city_route_generation_has_usable_candidates() -> None:
+def test_unsupported_cities_do_not_generate_mock_routes() -> None:
     for city in ["北京", "杭州", "成都"]:
         response = _plan(Intent(city=city, preferences=["咖啡", "拍照"], duration_hours=6))
 
-        assert 1 <= len(response.routes) <= 3
-        assert all(route.stops for route in response.routes)
-        assert all(stop.district for route in response.routes for stop in route.stops)
+        if city == "北京":
+            assert 1 <= len(response.routes) <= 3
+            assert all(route.stops for route in response.routes)
+            assert all(stop.district for route in response.routes for stop in route.stops)
+        else:
+            assert response.routes == []
 
 
 def test_indoor_rainy_route_has_indoor_main_activity() -> None:
@@ -344,19 +348,13 @@ def test_rainy_hot_context_prefers_indoor_or_low_walking_stops() -> None:
     )
 
 
-def test_chongqing_half_day_defaults_to_one_meal_or_coffee_node() -> None:
+def test_chongqing_half_day_does_not_use_mock_fallback_routes() -> None:
     response = _plan(
         Intent(city="重庆", duration_hours=4, preferences=["室内", "拍照", "吃好", "citywalk"]),
         message="我打算下午和朋友在重庆半日游，不希望一直在室外，能够打卡地标景点还能出片，吃点重庆特色美食。",
     )
 
-    assert response.routes
-    for route in response.routes:
-        has_coffee = any(stop.category == "cafe" or stop.meal_type == "cafe" for stop in route.stops)
-        has_meal = any(stop.category == "restaurant" or stop.meal_type in {"local_food", "fine_dining"} for stop in route.stops)
-        assert not (has_coffee and has_meal)
-        if has_coffee or has_meal:
-            assert any("main_activity" in stop.route_roles or "photo_stop" in stop.route_roles for stop in route.stops)
+    assert response.routes == []
 
 
 def test_less_walking_transport_avoids_long_walks() -> None:
