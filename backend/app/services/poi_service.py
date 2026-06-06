@@ -7,8 +7,6 @@ from typing import Any
 from app.schemas.intent import Intent
 from app.schemas.poi import POI
 from app.schemas.user import StrategyTag, UserProfile
-from app.services.coarse_rank_service import CoarseRankService
-from app.services.recall_service import RecallService
 from app.services.strategy_service import StrategyService
 
 
@@ -28,8 +26,6 @@ class POIService:
         self.data_path = data_path or Path(__file__).resolve().parents[3] / "data" / "seed" / "pois.json"
         self._candidates = self._load_candidates()
         self.strategy_service = StrategyService()
-        self.recall_service = RecallService()
-        self.coarse_rank_service = CoarseRankService(self.strategy_service)
 
     def search(self, intent: Intent, user_profile: UserProfile | None = None, limit: int = 40, strategy_tags: list[StrategyTag] | None = None) -> list[POI]:
         city_matches = [candidate for candidate in self._candidates if candidate.poi.city == intent.city]
@@ -37,34 +33,23 @@ class POIService:
             city_matches = self._fallback_candidates(intent.city)
         min_candidates = min(limit, self.MIN_DEFAULT_CANDIDATES)
 
-        target_pool_size = max(limit * 6, 240)
-        recalled_candidates = self.recall_service.recall(
-            intent=intent,
-            candidates=city_matches,
-            user_profile=user_profile,
-            strategy_tags=strategy_tags or [],
-            target_pool_size=target_pool_size,
-        )
-        if len(recalled_candidates) < min_candidates:
-            recalled_candidates = self._merge_candidates(recalled_candidates, city_matches)
-
         strict_matches = [
             candidate
-            for candidate in recalled_candidates
+            for candidate in city_matches
             if self._matches_preferences(candidate, intent)
             and not self._matches_avoid_tags(candidate, intent)
             and self._is_not_extreme_budget_mismatch(candidate.poi, intent)
         ]
         candidates = strict_matches or [
             candidate
-            for candidate in recalled_candidates
+            for candidate in city_matches
             if not self._matches_avoid_tags(candidate, intent)
             and self._is_not_extreme_budget_mismatch(candidate.poi, intent)
         ]
         if len(candidates) < min_candidates:
             relaxed_matches = [
                 candidate
-                for candidate in recalled_candidates
+                for candidate in city_matches
                 if not self._matches_avoid_tags(candidate, intent)
                 and self._is_not_extreme_budget_mismatch(candidate.poi, intent)
             ]
@@ -72,20 +57,17 @@ class POIService:
         if len(candidates) < min_candidates:
             low_risk_matches = [
                 candidate
-                for candidate in recalled_candidates
+                for candidate in city_matches
                 if not {"long_queue", "high_price"} & set(candidate.poi.risk_flags + candidate.poi.avoid_reasons)
             ]
             candidates = self._merge_candidates(candidates, low_risk_matches)
         if not candidates:
             candidates = city_matches
 
-        coarse_limit = max(limit, 60)
-        ranked = self.coarse_rank_service.rank(
+        ranked = sorted(
             candidates,
-            intent=intent,
-            user_profile=user_profile,
-            strategy_tags=strategy_tags or [],
-            limit=coarse_limit,
+            key=lambda candidate: self._rank_score(candidate, intent, user_profile, strategy_tags or []),
+            reverse=True,
         )
         ranked = self._diversify_ranked_candidates(ranked, limit)
         return [candidate.poi for candidate in ranked[:limit]]

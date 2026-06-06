@@ -1,9 +1,10 @@
 import { useState, useMemo } from "react";
 import {
   X, Share2, Clock, MapPin, Wallet, Footprints,
-  Star, ChevronRight, Copy, MessageCircle, CheckCheck,
+  Star, Copy, MessageCircle, CheckCheck,
 } from "lucide-react";
-import type { Route, RouteStop } from "../api/types";
+import type { Route } from "../api/types";
+import { PhoneStatusBar } from "../App";
 
 // ── 复用 MapPanel 的坐标 + 颜色逻辑 ─────────────────────
 const BEIJING_AREAS: { name: string; x: number; y: number }[] = [
@@ -42,12 +43,6 @@ function categoryColor(c: string): string {
   };
   return map[c] ?? "#FF6600";
 }
-
-const CATEGORY_EMOJI: Record<string, string> = {
-  food: "🍜", restaurant: "🍜", culture: "🏛️", museum: "🏛️",
-  nature: "🌿", park: "🌿", shopping: "🛍️", landmark: "📍",
-  show: "🎭", rest: "☕", citywalk: "🚶", scenic: "🌄",
-};
 
 // ── Props ───────────────────────────────────────────────
 export interface TripSummaryOverlayProps {
@@ -153,14 +148,16 @@ export function TripSummaryOverlay({ route, scores, comment, onFinish }: TripSum
 
   return (
     <div className="trip-summary-overlay">
+      {/* 手机状态栏 */}
+      <PhoneStatusBar />
       {/* 顶栏 */}
       <div className="trip-summary-topbar">
         <button className="trip-summary-topbar-btn" onClick={() => onFinish(route, avgScoreNum)}>
-          <X size={18} /> 退出
+          <X size={18} />
         </button>
         <span className="trip-summary-topbar-title">路线总结</span>
         <button className="trip-summary-topbar-btn" onClick={() => setShowShare(true)}>
-          <Share2 size={16} /> 分享
+          <Share2 size={16} />
         </button>
       </div>
 
@@ -222,9 +219,7 @@ export function TripSummaryOverlay({ route, scores, comment, onFinish }: TripSum
         {/* 标题 + 副标题 */}
         <div className="trip-summary-title-row">
           <h2 className="trip-summary-route-title">{route.title}</h2>
-          <p className="trip-summary-route-sub">
-            {startTime} → {endTime}
-          </p>
+          <span className="trip-summary-route-sub">{startTime} → {endTime}</span>
         </div>
 
         {/* 数据指标卡片 */}
@@ -251,65 +246,61 @@ export function TripSummaryOverlay({ route, scores, comment, onFinish }: TripSum
           </div>
         </div>
 
-        {/* 经过节点列表 */}
-        <div className="trip-summary-section">
-          <h3 className="trip-summary-section-title">经过节点</h3>
-          <div className="trip-summary-stops">
-            {stops.map((stop, idx) => {
-              const dur =
-                (parseMin(stop.end_time) - parseMin(stop.start_time));
-              return (
-                <div key={stop.poi_id} className="trip-summary-stop">
-                  <div
-                    className="trip-summary-stop-dot"
-                    style={{ background: categoryColor(stop.category) }}
-                  />
-                  <div className="trip-summary-stop-info">
-                    <span className="trip-summary-stop-name">
-                      {CATEGORY_EMOJI[stop.category] ?? "📍"} {stop.name}
-                    </span>
-                    <span className="trip-summary-stop-meta">
-                      {stop.start_time}–{stop.end_time} · {dur}min
-                      {stop.estimated_cost > 0 && ` · ¥${stop.estimated_cost}`}
-                    </span>
-                  </div>
-                  <ChevronRight size={14} className="trip-summary-stop-arrow" />
-                </div>
-              );
-            })}
-          </div>
-        </div>
-
         {/* 我的评价 */}
         <div className="trip-summary-section">
           <h3 className="trip-summary-section-title">我的评价</h3>
-          <div className="trip-summary-scores">
-            <div className="trip-summary-avg-score">
-              <span className="trip-summary-avg-num">{avgScore}</span>
-              <span className="trip-summary-avg-label">综合评分</span>
-            </div>
-            <div className="trip-summary-score-items">
-              {Object.entries(scores).map(([key, val]) => (
-                <div key={key} className="trip-summary-score-item">
-                  <span>{scoreEmojis[key]} {scoreLabels[key]}</span>
-                  <div className="trip-summary-score-stars">
-                    {[1, 2, 3, 4, 5].map((s) => (
-                      <Star
-                        key={s}
-                        size={14}
-                        fill={s <= val ? "#FACC15" : "none"}
-                        stroke={s <= val ? "#FACC15" : "#D1D5DB"}
-                        strokeWidth={1.5}
-                      />
-                    ))}
-                  </div>
+          <div className="trip-summary-score-items">
+            {Object.entries(scores).map(([key, val]) => (
+              <div key={key} className="trip-summary-score-item">
+                <span>{scoreEmojis[key]} {scoreLabels[key]}</span>
+                <div className="trip-summary-score-stars">
+                  {[1, 2, 3, 4, 5].map((s) => (
+                    <Star
+                      key={s}
+                      size={14}
+                      fill={s <= val ? "#FACC15" : "none"}
+                      stroke={s <= val ? "#FACC15" : "#D1D5DB"}
+                      strokeWidth={1.5}
+                    />
+                  ))}
                 </div>
-              ))}
-            </div>
+              </div>
+            ))}
           </div>
           {comment && (
             <p className="trip-summary-comment">"{comment}"</p>
           )}
+        </div>
+
+        {/* 经过节点列表 */}
+        <div className="trip-summary-section">
+          <h3 className="trip-summary-section-title">经过节点</h3>
+          <div className="trip-summary-stops-vtl">
+            {stops.map((stop, idx) => {
+              const dur = parseMin(stop.end_time) - parseMin(stop.start_time);
+              const isLast = idx === stops.length - 1;
+              return (
+                <div key={stop.poi_id} className={`tsv-item${isLast ? " tsv-item--last" : ""}`}>
+                  {/* 左侧竖线+圆点 */}
+                  <div className="tsv-spine">
+                    <div
+                      className="tsv-dot"
+                      style={{ background: categoryColor(stop.category) }}
+                    />
+                    {!isLast && <div className="tsv-line" />}
+                  </div>
+                  {/* 内容：地点名 + 时间，同一行 */}
+                  <div className="tsv-content">
+                    <span className="tsv-name">{stop.name}</span>
+                    <span className="tsv-time">
+                      {stop.start_time}–{stop.end_time}
+                      {stop.estimated_cost > 0 && ` · ¥${stop.estimated_cost}`}
+                    </span>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
         </div>
 
         {/* 底部安全间距 */}

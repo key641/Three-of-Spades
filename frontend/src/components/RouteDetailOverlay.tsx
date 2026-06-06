@@ -6,6 +6,7 @@
  */
 import { useState } from "react";
 import { ArrowLeft, Clock, Copy, MapPin, Users, Wallet } from "lucide-react";
+import { PhoneStatusBar } from "../App";
 
 // ── 通用数据结构 ──────────────────────────────────────────────
 export interface RouteDetailStop {
@@ -82,6 +83,9 @@ export function RouteDetailOverlay({ data, onClose, onCopy }: RouteDetailOverlay
 
   return (
     <div className="rd-overlay">
+      {/* ── 手机状态栏（与首页保持一致） ── */}
+      <PhoneStatusBar />
+
       {/* ── Hero 图区域 ── */}
       <div className="rd-hero">
         {heroImg ? (

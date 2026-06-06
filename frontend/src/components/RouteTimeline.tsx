@@ -1,7 +1,7 @@
-import { MapPin, Star, Clock, Wallet, Footprints, Train, Bus, CarTaxiFront, Bike, MoreHorizontal, RefreshCcw, MessageSquare, Trash2, Phone, ExternalLink, MoreVertical, PlusCircle, ArrowLeftRight, Check, Loader2 } from "lucide-react";
+import { MapPin, Star, Wallet, Footprints, Train, Bus, CarTaxiFront, Bike, MoreHorizontal, RefreshCcw, MessageSquare, Trash2, Phone, ExternalLink, PlusCircle, ArrowLeftRight, Check, Loader2 } from "lucide-react";
 import { useEffect, useRef, useState, useCallback } from "react";
 import type { RouteStop, TransitSegment } from "../api/types";
-import { getCategoryLabel } from "../utils/categoryLabels";
+import { getCategoryLabel, getCategoryStyle } from "../utils/categoryLabels";
 
 // ── POI 操作类型 ──────────────────────────────────────────────
 export type PoiAction =
@@ -15,6 +15,8 @@ export interface RouteTimelineProps {
   onPoiAction?: (action: PoiAction) => void;
   /** 注入聊天框文本（用于"增加节点"等操作） */
   onInjectChat?: (text: string) => void;
+  /** stops 本地编辑后回调（删除、更换交通等） */
+  onStopsChange?: (stops: RouteStop[]) => void;
 }
 
 // ── 排队程度配置 ──────────────────────────────────────────────
@@ -25,6 +27,45 @@ const QUEUE_LEVEL_CONFIG = {
   high:      { label: "排队较多",   color: "var(--color-error)"   },
   very_high: { label: "排队非常多", color: "var(--color-error)"   },
 };
+
+// ── 人头排队图标（1/2/3 个小人，颜色对应人流程度） ─────────────
+const CROWD_COLOR: Record<string, string> = {
+  low:       "#12B76A",  // 绿 — 人少
+  medium:    "#F79009",  // 黄 — 适中
+  high:      "#F04438",  // 红 — 人多
+  very_high: "#F04438",  // 红 — 非常多
+};
+const CROWD_COUNT: Record<string, number> = {
+  low: 1, medium: 2, high: 3, very_high: 3,
+};
+
+// 单个小人 SVG path（简笔头+身）
+export function PersonSvg({ color, opacity = 1 }: { color: string; opacity?: number }) {
+  return (
+    <svg width="10" height="18" viewBox="0 0 10 18" fill="none" style={{ opacity }}>
+      {/* 头 */}
+      <circle cx="5" cy="2.8" r="2.2" fill={color} />
+      {/* 身体 */}
+      <path d="M2.5 6.5 C2.5 6.5 1.5 7 1 9 L1.5 12 H8.5 L9 9 C8.5 7 7.5 6.5 7.5 6.5 Z" fill={color} />
+      {/* 左腿 */}
+      <path d="M3.5 12 L3 17" stroke={color} strokeWidth="1.6" strokeLinecap="round" />
+      {/* 右腿 */}
+      <path d="M6.5 12 L7 17" stroke={color} strokeWidth="1.6" strokeLinecap="round" />
+    </svg>
+  );
+}
+
+export function CrowdIcon({ level }: { level: string }) {
+  const color = CROWD_COLOR[level] ?? "#9CA3AF";
+  const count = CROWD_COUNT[level] ?? 1;
+  return (
+    <span className="poi-crowd-svg">
+      <PersonSvg color={color} />
+      <PersonSvg color={color} opacity={count >= 2 ? 1 : 0.2} />
+      <PersonSvg color={color} opacity={count >= 3 ? 1 : 0.2} />
+    </span>
+  );
+}
 
 // ── 交通方式配置 ──────────────────────────────────────────────
 const TRANSIT_MODE_CONFIG: Record<string, { icon: React.ReactNode; label: string; color: string }> = {
@@ -158,8 +199,15 @@ function TransitMenu({ transit, fromStop, toStop, onSwitchMode, onAddStop, onClo
       ) : (
         <div className="transit-mode-picker">
           <div className="transit-mode-picker-title">
-            <button className="transit-mode-picker-back" onClick={() => setShowModePicker(false)}>←</button>
+            <button className="transit-mode-picker-back" onClick={() => setShowModePicker(false)}>
+              <svg width="14" height="14" viewBox="0 0 14 14" fill="none">
+                <path d="M9 11L5 7L9 3" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/>
+              </svg>
+            </button>
             选择交通方式
+          </div>
+          <div className="transit-mode-picker-route">
+            {fromStop.name} → {toStop.name}
           </div>
           <div className="transit-mode-picker-grid">
             {TRANSIT_SWITCH_OPTIONS.map(({ mode, icon, label, color, speedKmPerMin }) => {
@@ -185,9 +233,6 @@ function TransitMenu({ transit, fromStop, toStop, onSwitchMode, onAddStop, onClo
                 </button>
               );
             })}
-          </div>
-          <div className="transit-mode-picker-route">
-            {fromStop.name} → {toStop.name}
           </div>
         </div>
       )}
@@ -241,7 +286,7 @@ function TransitBar({ transit, fromStop, toStop, isLoading, onSwitchMode, onAddS
             onClick={(e) => { e.stopPropagation(); setMenuOpen((v) => !v); }}
             aria-label="交通段操作"
           >
-            <MoreVertical size={13} />
+            <MoreHorizontal size={13} />
           </button>
           {menuOpen && (
             <TransitMenu
@@ -320,17 +365,33 @@ interface PoiCardProps {
 
 function PoiCard({ stop, index, isRemoving, onPoiAction }: PoiCardProps) {
   const [popoverOpen, setPopoverOpen] = useState(false);
+  const nameRef = useRef<HTMLParagraphElement>(null);
+  const nameDragRef = useRef<{ dragging: boolean; startX: number; startScroll: number }>({ dragging: false, startX: 0, startScroll: 0 });
   const queueCfg = stop.queue_level ? QUEUE_LEVEL_CONFIG[stop.queue_level] : null;
+
+  const handleNameMouseDown = (e: React.MouseEvent) => {
+    const el = nameRef.current;
+    if (!el || el.scrollWidth <= el.offsetWidth) return;
+    nameDragRef.current = { dragging: true, startX: e.clientX, startScroll: el.scrollLeft };
+    el.style.cursor = "grabbing";
+    e.preventDefault();
+  };
+  const handleNameMouseMove = (e: React.MouseEvent) => {
+    const el = nameRef.current;
+    if (!el || !nameDragRef.current.dragging) return;
+    const dx = nameDragRef.current.startX - e.clientX;
+    el.scrollLeft = nameDragRef.current.startScroll + dx;
+  };
+  const handleNameMouseUp = () => {
+    const el = nameRef.current;
+    if (!el) return;
+    nameDragRef.current.dragging = false;
+    el.style.cursor = el.scrollWidth > el.offsetWidth ? "grab" : "";
+  };
 
   return (
     <div className={`poi-card${isRemoving ? " poi-card--removing" : ""}`}>
-      {/* 序号 + 时间列 */}
-      <div className="poi-card-seq">
-        <span className="poi-seq-num">{index + 1}</span>
-        <span className="poi-seq-time">{stop.start_time}</span>
-      </div>
-
-      {/* POI 图片 */}
+      {/* POI 图片（占满左侧，序号+时间浮层叠加） */}
       <div
         className="poi-card-img"
         style={{ background: CATEGORY_COLORS[stop.category] ?? "#F5F5F5" }}
@@ -347,16 +408,38 @@ function PoiCard({ stop, index, isRemoving, onPoiAction }: PoiCardProps) {
             {getCategoryLabel(stop.category)}
           </span>
         )}
-        {stop.rank_label && (
-          <span className="poi-rank-badge">{stop.rank_label}</span>
-        )}
+        {/* 序号 + 时间浮在图片左上角 */}
+        <div className="poi-card-seq-overlay">
+          <span className="poi-seq-num">{index + 1}</span>
+          <span className="poi-seq-time">{stop.start_time}–{stop.end_time}</span>
+        </div>
       </div>
 
       {/* POI 信息主体 */}
       <div className="poi-card-body">
-        {/* 名称 + ··· 按钮（相对定位容器） */}
+        {/* 品类标签 + 名称 + ··· 按钮 */}
         <div className="poi-card-name-row">
-          <p className="poi-card-name">{stop.name}</p>
+          <div className="poi-card-name-group">
+            {(() => {
+              const cs = getCategoryStyle(stop.category);
+              return (
+                <span
+                  className="poi-category-tag"
+                  style={{ background: cs.bg, color: cs.text, borderColor: cs.border }}
+                >
+                  {getCategoryLabel(stop.category)}
+                </span>
+              );
+            })()}
+            <p
+              ref={nameRef}
+              className="poi-card-name poi-card-name--draggable"
+              onMouseDown={handleNameMouseDown}
+              onMouseMove={handleNameMouseMove}
+              onMouseUp={handleNameMouseUp}
+              onMouseLeave={handleNameMouseUp}
+            >{stop.name}</p>
+          </div>
           <div className="poi-more-wrap">
             <button
               className="poi-more-btn"
@@ -376,104 +459,86 @@ function PoiCard({ stop, index, isRemoving, onPoiAction }: PoiCardProps) {
           </div>
         </div>
 
-        {/* 评分 + 评论数 */}
-        {stop.rating != null && (
-          <div className="poi-card-rating">
-            <Star size={11} fill="currentColor" />
-            <span className="poi-rating-score">{stop.rating.toFixed(1)}</span>
-            {stop.review_count != null && (
-              <span className="poi-rating-count">{formatReviewCount(stop.review_count)}条评论</span>
-            )}
-          </div>
-        )}
-
-        {/* 品类 + 商圈 + 距离 */}
+        {/* 评分 + 评论数 + 商圈 + 距离（一行） */}
         <div className="poi-card-meta">
-          <span className="poi-category-tag">{getCategoryLabel(stop.category)}</span>
-          {stop.district && <span className="poi-meta-sep">·</span>}
+          {stop.rating != null && (
+            <>
+              <Star size={10} className="poi-meta-star" fill="currentColor" />
+              <span className="poi-rating-score">{stop.rating.toFixed(1)}</span>
+              {(stop.district || stop.distance_m != null) && <span className="poi-meta-sep">·</span>}
+            </>
+          )}
           {stop.district && <span className="poi-district">{stop.district}</span>}
           {stop.distance_m != null && (
             <>
-              <span className="poi-meta-sep">·</span>
+              {stop.district && <span className="poi-meta-sep">·</span>}
               <MapPin size={10} />
               <span>{formatDistance(stop.distance_m)}</span>
             </>
           )}
         </div>
 
-        {/* 排队程度 + 预约入口 */}
-        {(queueCfg || stop.booking_required) && (
+        {/* 排队程度（人头图标）+ 时间 + 预约入口 */}
+        {(stop.queue_level && stop.queue_level !== "none" || stop.booking_required || true) && (
           <div className="poi-queue-row">
-            {queueCfg && (
-              <>
-                <span className="poi-queue-dot" style={{ color: queueCfg.color }}>●</span>
-                <span className={`poi-queue-label queue-${stop.queue_level}`}>
-                  {queueCfg.label}
-                  {stop.queue_minutes > 0 && (
-                    <span className="poi-queue-minutes">（约{stop.queue_minutes}分钟）</span>
-                  )}
-                </span>
-              </>
+            {stop.queue_level === "none" ? (
+              <span className="poi-no-queue-tag">无需排队</span>
+            ) : stop.queue_level && (
+              <span className="poi-crowd-icon" data-level={stop.queue_level} title={queueCfg?.label}>
+                <CrowdIcon level={stop.queue_level} />
+                {stop.queue_minutes > 0 && (
+                  <span className="poi-queue-minutes">约{stop.queue_minutes}分钟</span>
+                )}
+              </span>
             )}
-            {stop.booking_required && stop.booking_url && (
-              <a
-                href={stop.booking_url}
-                target="_blank"
-                rel="noopener noreferrer"
-                className="poi-booking-btn poi-booking-btn--url"
-              >
-                <ExternalLink size={10} /> 去预约
-              </a>
-            )}
-            {stop.booking_required && stop.booking_phone && !stop.booking_url && (
-              <a
-                href={`tel:${stop.booking_phone}`}
-                className="poi-booking-btn poi-booking-btn--phone"
-              >
-                <Phone size={10} /> {stop.booking_phone}
-              </a>
-            )}
-            {stop.booking_required && !stop.booking_url && !stop.booking_phone && (
-              <span className="poi-booking-note">需提前预约</span>
+            {stop.booking_required && (
+              <span className="poi-booking-tag">
+                需预约
+                {stop.booking_url && (
+                  <a href={stop.booking_url} target="_blank" rel="noopener noreferrer" className="poi-booking-tag-link">
+                    <ExternalLink size={9} />
+                  </a>
+                )}
+                {stop.booking_phone && !stop.booking_url && (
+                  <a href={`tel:${stop.booking_phone}`} className="poi-booking-tag-link">
+                    <Phone size={9} />
+                  </a>
+                )}
+              </span>
             )}
             {stop.booking_note && (
               <span className="poi-booking-note">{stop.booking_note}</span>
             )}
+            {stop.estimated_cost > 0 && (
+              <span className="poi-foot-item poi-cost-inline">
+                <Wallet size={11} />
+                人均¥{stop.estimated_cost}
+              </span>
+            )}
           </div>
         )}
 
-        {/* 特色标签（最多2个） */}
-        {stop.tags?.length > 0 && (
-          <div className="poi-card-tags">
-            {stop.tags.slice(0, 2).map((t) => (
-              <span key={t} className="poi-tag">{t}</span>
-            ))}
+        {/* 用户评价区（标题 + AI 总结斜体内容） */}
+        {stop.brief && (
+          <div className="poi-review-block">
+            <div className="poi-review-header">
+              <span className="poi-review-title">用户评价</span>
+              {stop.review_count != null && (
+                <span className="poi-review-count">（{formatReviewCount(stop.review_count)}评价）</span>
+              )}
+              <span className="poi-detail-chevron">›</span>
+            </div>
+            <p className="poi-review-content">{stop.brief}</p>
           </div>
         )}
 
-        {/* 一句话简介 */}
-        {stop.brief && <p className="poi-brief">{stop.brief}</p>}
-
-        {/* 底部：花费 + 时段 */}
-        <div className="poi-card-footer">
-          {stop.estimated_cost > 0 && (
-            <span className="poi-foot-item">
-              <Wallet size={11} />
-              人均¥{stop.estimated_cost}
-            </span>
-          )}
-          <span className="poi-foot-item poi-duration">
-            <Clock size={11} />
-            {stop.start_time}–{stop.end_time}
-          </span>
-        </div>
       </div>
     </div>
   );
 }
 
 // ── 主导出 ────────────────────────────────────────────────────
-export function RouteTimeline({ stops: initialStops, onPoiAction, onInjectChat }: RouteTimelineProps) {
+export function RouteTimeline({ stops: initialStops, onPoiAction, onInjectChat, onStopsChange }: RouteTimelineProps) {
   // 本地可编辑 stops 副本
   const [stops, setStops] = useState<RouteStop[]>(initialStops);
   // 正在重算 transit 的 index（fromStop index，即被删节点前一个节点的下标）
@@ -534,11 +599,13 @@ export function RouteTimeline({ stops: initialStops, onPoiAction, onInjectChat }
 
       // 模拟重算延迟（约 800ms）后完成
       setTimeout(() => {
-        setStops(recalcTimes(newStops, Math.max(idx - 1, 1)));
+        const updated = recalcTimes(newStops, Math.max(idx - 1, 1));
+        setStops(updated);
         setRecalcingIdx(null);
+        onStopsChange?.(updated);
       }, 800);
     }, 280); // 等淡出动画结束再删除
-  }, [stops]);
+  }, [stops, onStopsChange]);
 
   // ── 处理 PoiAction ────────────────────────────────────────
   const handlePoiAction = useCallback((action: PoiAction) => {

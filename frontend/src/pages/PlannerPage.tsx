@@ -208,6 +208,7 @@ function RouteEditSheet({ stops: initialStops, onClose, onSave }: RouteEditSheet
 interface PlannerPreset {
   goals?: string[];
   title?: string;
+  initialMsg?: string;
 }
 
 interface PlannerPageProps {
@@ -221,6 +222,8 @@ interface PlannerPageProps {
   onBackToHome?: () => void;
   /** 行程完结（关闭总结页）时，保存记录并跳回首页 */
   onTripFinished?: (route: import("../api/types").Route, avgScore: number) => void;
+  /** 首页输入框直接发送的消息，有则跳过 WelcomeScreen 直接进入对话 */
+  initialMsg?: string;
 }
 
 // ── 常量 ──────────────────────────────────────────────────────
@@ -660,8 +663,7 @@ function PlanningWelcomeScreen({ onSend, onBack }: PlanningWelcomeScreenProps) {
     <div className="plan-welcome">
       {/* 顶部退出 */}
       <button type="button" className="plan-welcome-back" onClick={onBack}>
-        <ChevronLeft size={18} />
-        <span>退出</span>
+        <ChevronLeft size={20} />
       </button>
 
       {/* 主体内容 */}
@@ -1067,14 +1069,16 @@ function buildReplanMessage(eventKey: string, currentRouteId?: string): string {
   return map[eventKey] ?? `发生了突发情况${routeHint}，请帮我重新规划`;
 }
 
-function buildActionMessage(actionKey: string, routeId: string): string {
+function buildActionMessage(actionKey: string, routeTitle: string): string {
+  const name = `【${routeTitle}】`;
   const map: Record<string, string> = {
-    budget: `对路线 ${routeId} 重新规划，降低人均消费`,
-    queue:  `对路线 ${routeId} 重新规划，避开需要排队的地点`,
-    family: `对路线 ${routeId} 加入亲子友好筛选条件`,
+    budget: `对${name}重新规划，降低人均消费`,
+    queue:  `对${name}重新规划，避开需要排队的地点`,
+    walk:   `对${name}重新规划，减少步行距离`,
+    family: `对${name}加入亲子友好筛选条件`,
     talk:   ``, // "跟 AI 说" 由用户在输入框自由填写，不预设消息
   };
-  return map[actionKey] ?? `请优化路线 ${routeId}`;
+  return map[actionKey] ?? `请优化${name}`;
 }
 
 /** 将 POI 级操作转成 AI 消息文本（或返回 null 表示仅填输入框） */
@@ -1093,12 +1097,13 @@ function buildPoiActionMessage(action: PoiAction, routeId: string): string | nul
 }
 
 // ── 主页面 ────────────────────────────────────────────────────
-export function PlannerPage({ profile, onResetProfile, preset, onPresetConsumed, onBackToHome, onTripFinished }: PlannerPageProps) {
+export function PlannerPage({ profile, onResetProfile, preset, onPresetConsumed, onBackToHome, onTripFinished, initialMsg }: PlannerPageProps) {
   const { messages, response, liveTrace, loading, error, send, inject, reset } = useChat();
   const [inputText, setInputText] = useState("");
   const [localProfile, setLocalProfile] = useState<OnboardingProfile>(profile);
-  const [trip, setTrip] = useState<TripConstraints | null>(null); // null = 未完成 setup
-  const [showSetup, setShowSetup] = useState(true); // 首次进入显示引导面板
+  const [trip, setTrip] = useState<TripConstraints | null>(null);
+  // 如果有 initialMsg（首页直接输入的），跳过 WelcomeScreen
+  const [showSetup, setShowSetup] = useState(!initialMsg);
 
   
 
@@ -1124,12 +1129,37 @@ export function PlannerPage({ profile, onResetProfile, preset, onPresetConsumed,
   // ── 消费来自首页的预设参数 ──────────────────────────────────
   useEffect(() => {
     if (!preset) return;
-    setShowSetup(true);
-    setTrip(null);
-    setFollowUp(null);
+    if (preset.initialMsg) {
+      const msg = preset.initialMsg;
+      reset();
+      setTrip(null);
+      setFollowUp(null);
+      setWelcomeFollowUp(null);
+      setWelcomeFollowUpDone(false);
+      setShowSetup(false);
+      setSheetSnap("half");
+      inject("user", msg);
+      setWelcomeFollowUp({ pendingMsg: msg, questions: buildWelcomeFollowUpQuestions() });
+    } else {
+      setShowSetup(true);
+      setTrip(null);
+      setFollowUp(null);
+    }
     onPresetConsumed?.();
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [preset]);
+
+  // ── 首次挂载：如果有 initialMsg 则自动进入对话 ──────────────
+  const initialMsgRef = useRef<string | undefined>(initialMsg);
+  useEffect(() => {
+    const msg = initialMsgRef.current;
+    if (!msg) return;
+    initialMsgRef.current = undefined; // 只触发一次
+    setSheetSnap("half");
+    inject("user", msg);
+    setWelcomeFollowUp({ pendingMsg: msg, questions: buildWelcomeFollowUpQuestions() });
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   function handleStart(newTrip: TripConstraints) {
     setTrip(newTrip);
@@ -1224,17 +1254,9 @@ export function PlannerPage({ profile, onResetProfile, preset, onPresetConsumed,
       textareaRef.current?.focus();
       return;
     }
-    const msg = buildActionMessage(actionKey, routeId);
-    if (!msg) return;
-    if (actionKey === "swap") {
-      send(msg, localProfile, trip ?? DEFAULT_TRIP_CONSTRAINTS, false, {
-        event_type: "replace_poi",
-        selected_route_id: routeId,
-        event_payload: { force_replace: true },
-      });
-      return;
-    }
-    send(msg, localProfile, trip ?? DEFAULT_TRIP_CONSTRAINTS);
+    const routeTitle = response?.routes?.find((r) => r.route_id === routeId)?.title ?? routeId;
+    const msg = buildActionMessage(actionKey, routeTitle);
+    if (msg) send(msg, localProfile, trip ?? DEFAULT_TRIP_CONSTRAINTS);
   }
 
   const handlePoiAction = useCallback((action: PoiAction, routeId: string) => {
@@ -1317,9 +1339,10 @@ export function PlannerPage({ profile, onResetProfile, preset, onPresetConsumed,
               />
             ) : undefined
           }
+          beforeLoadingBubble={
+            <AgentTrace steps={response?.agent_trace ?? []} loading={loading} />
+          }
         />
-
-        <AgentTrace steps={response?.agent_trace ?? []} loading={loading} />
 
         {/* 路线方案（有结果时内联展示） */}
         {(hasRoutes || loading) && (
@@ -1354,7 +1377,7 @@ export function PlannerPage({ profile, onResetProfile, preset, onPresetConsumed,
           value={inputText}
           onChange={handleInput}
           onKeyDown={handleKeyDown}
-          placeholder={`告诉我你想怎么玩，例如「${currentCity}半天 citywalk」…`}
+          placeholder=""
           rows={1}
           disabled={loading || showSetup}
           aria-label="输入出行需求"
@@ -1385,36 +1408,21 @@ export function PlannerPage({ profile, onResetProfile, preset, onPresetConsumed,
 
       {/* ── 顶部浮动状态栏 ── */}
       <header className="map-topbar">
-        <div className="map-topbar-left">
-          {!showSetup && (
-            <button
-              type="button"
-              className="map-topbar-back"
-              onClick={() => onBackToHome?.()}
-              aria-label="退出规划"
-            >
-              <ChevronLeft size={18} />
-              <span>退出</span>
-            </button>
-          )}
-          <Navigation size={18} strokeWidth={2} className="map-topbar-logo" />
-          <span className="map-topbar-title">Drifto</span>
-        </div>
+        {!showSetup && (
+          <button
+            type="button"
+            className="map-topbar-back"
+            onClick={() => onBackToHome?.()}
+            aria-label="退出规划"
+          >
+            <ChevronLeft size={20} />
+          </button>
+        )}
         <UserProfileBadge
           profile={displayProfile}
           onReset={handleResetProfile}
         />
       </header>
-
-      {/* ── 天气条（顶部导航栏正下方，悬浮在地图上） ── */}
-      <div className="map-weather-bar">
-        <Sun size={13} className="map-weather-icon" />
-        <span className="map-weather-main">{MOCK_WEATHER.condition} {MOCK_WEATHER.tempHigh}°/{MOCK_WEATHER.tempLow}°</span>
-        <span className="map-weather-sep">·</span>
-        <span className="map-weather-detail">{MOCK_WEATHER.wind}</span>
-        <span className="map-weather-sep">·</span>
-        <span className="map-weather-tip">{MOCK_WEATHER.tip}</span>
-      </div>
 
       {/* ── 规划欢迎首屏 ── */}
       {showSetup && (

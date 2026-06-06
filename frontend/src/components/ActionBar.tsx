@@ -24,8 +24,10 @@ export function RouteOptimizeBar({ routeId = "", onAction }: RouteOptimizeBarPro
         className="optimize-toggle"
         onClick={() => setExpanded((v) => !v)}
       >
-        <Sparkles size={13} />
-        <span>优化这条路线</span>
+        <span className="optimize-toggle-label">
+          <Sparkles size={13} />
+          <span>优化这条路线</span>
+        </span>
         <ChevronDown
           size={13}
           className="optimize-chevron"

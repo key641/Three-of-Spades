@@ -1,12 +1,17 @@
-import { Clock, Wallet, CheckCircle2, Circle, MapPin, AlertCircle, Phone, ExternalLink, Zap } from "lucide-react";
-import type { Route } from "../api/types";
+import { Wallet, CheckCircle2, Circle, MapPin, AlertCircle, Zap } from "lucide-react";
+import { useState } from "react";
+import type { Route, RouteStop } from "../api/types";
 import { RouteOptimizeBar } from "./ActionBar";
 import { RouteTimeline, type PoiAction } from "./RouteTimeline";
+
+function stripLeadingEmoji(text: string): string {
+  return text.replace(/^[\u{1F000}-\u{1FFFF}\u{2600}-\u{26FF}\u{2700}-\u{27BF}\uFE0F\s]+/u, "").trim();
+}
 
 interface RouteCardProps {
   route: Route;
   selected?: boolean;
-  onSelect?: (routeId: string) => void;
+  onSelect?: (route: Route) => void;
   onAction?: (action: string, routeId: string) => void;
   onPoiAction?: (action: PoiAction, routeId: string) => void;
   onInjectChat?: (text: string) => void;
@@ -50,11 +55,6 @@ function buildTripTips(route: Route): string[] {
   const tips: string[] = [];
   const stops = route.stops ?? [];
 
-  // 总排队时间提示
-  if (route.total_queue_minutes > 0) {
-    tips.push(`全程排队约 ${route.total_queue_minutes} 分钟`);
-  }
-
   // 需要预约的站点
   const bookingStops = stops.filter((s) => s.booking_required);
   if (bookingStops.length > 0) {
@@ -83,12 +83,9 @@ function buildTripTips(route: Route): string[] {
 }
 
 export function RouteCard({ route, selected, onSelect, onAction, onPoiAction, onInjectChat }: RouteCardProps) {
-  const score = route.score <= 10 ? route.score : route.score / 10;
-  const matchScore = calcMatchScore(route);
-  const matchPct = Math.round(matchScore * 10);
-  const matchColor = matchPct >= 85 ? "#12B76A" : matchPct >= 70 ? "#F79009" : "#66707C";
+  const [localStops, setLocalStops] = useState<RouteStop[]>(route.stops ?? []);
   const tripTips = buildTripTips(route);
-  const stopCount = route.stops?.length ?? 0;
+  const stopCount = localStops.length;
 
   return (
     <article className={`route-card${selected ? " route-card--selected" : ""}`}>
@@ -97,18 +94,20 @@ export function RouteCard({ route, selected, onSelect, onAction, onPoiAction, on
         <div className="replan-notice"><Zap size={12} style={{ flexShrink: 0 }} /> {route.replan_reason}</div>
       )}
 
-      {/* 头部：标题 + 双评分 */}
+      {/* 头部：标题 + 人均 + 地点数 */}
       <div className="route-card-header">
-        <h3 className="route-card-title">{route.title}</h3>
-        <div className="route-scores">
-          <div className="route-match-badge" style={{ "--match-color": matchColor } as React.CSSProperties}>
-            <span className="route-match-num">{matchPct}%</span>
-            <span className="route-match-label">符合我</span>
-          </div>
-          <div className="route-score-badge">
-            <span className="route-score-num">{score.toFixed(1)}</span>
-            <span className="route-score-label">综合</span>
-          </div>
+        <h3 className="route-card-title">{stripLeadingEmoji(route.title)}</h3>
+        <div className="route-card-header-meta">
+          <span className="route-header-meta-item">
+            <Wallet size={11} />
+            人均¥{route.total_cost_per_person}
+          </span>
+          {stopCount > 0 && (
+            <span className="route-header-meta-item">
+              <MapPin size={11} />
+              {stopCount}个地点
+            </span>
+          )}
         </div>
       </div>
 
@@ -116,28 +115,6 @@ export function RouteCard({ route, selected, onSelect, onAction, onPoiAction, on
       {route.summary && (
         <p className="route-summary">{route.summary}</p>
       )}
-
-      {/* 核心指标：时长 + 人均花费 + 站点数 */}
-      <div className="route-metrics">
-        <span className="route-metric-item">
-          <Clock size={13} />
-          {formatTimeRange(route)}
-        </span>
-        <span className="route-metric-sep">·</span>
-        <span className="route-metric-item">
-          <Wallet size={13} />
-          人均¥{route.total_cost_per_person}
-        </span>
-        {stopCount > 0 && (
-          <>
-            <span className="route-metric-sep">·</span>
-            <span className="route-metric-item">
-              <MapPin size={13} />
-              {stopCount} 个地点
-            </span>
-          </>
-        )}
-      </div>
 
       {/* 出行提示（排队 / 预约汇总） */}
       {tripTips.length > 0 && (
@@ -151,23 +128,15 @@ export function RouteCard({ route, selected, onSelect, onAction, onPoiAction, on
         </div>
       )}
 
-      {/* 推荐原因标签 */}
-      {route.reasons?.length > 0 && (
-        <div className="route-reasons">
-          {route.reasons.map((r) => (
-            <span key={r} className="route-reason-tag">{r}</span>
-          ))}
-        </div>
-      )}
-
       {/* POI 站点卡片列表 */}
-      {route.stops?.length > 0 && (
+      {localStops.length > 0 && (
         <RouteTimeline
-          stops={route.stops}
+          stops={localStops}
           onPoiAction={onPoiAction
             ? (action) => onPoiAction(action, route.route_id)
             : undefined}
           onInjectChat={onInjectChat}
+          onStopsChange={setLocalStops}
         />
       )}
 
@@ -178,7 +147,7 @@ export function RouteCard({ route, selected, onSelect, onAction, onPoiAction, on
       <button
         type="button"
         className={`route-select-btn${selected ? " selected" : ""}`}
-        onClick={() => onSelect?.(route.route_id)}
+        onClick={() => onSelect?.({ ...route, stops: localStops })}
       >
         {selected ? (
           <>

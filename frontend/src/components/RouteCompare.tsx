@@ -8,7 +8,7 @@ import {
 } from "lucide-react";
 import type { Route, RouteStop, TransitSegment } from "../api/types";
 import { RouteCard } from "./RouteCard";
-import { RouteTimeline, type PoiAction } from "./RouteTimeline";
+import { RouteTimeline, CrowdIcon, type PoiAction } from "./RouteTimeline";
 import { RouteOptimizeBar } from "./ActionBar";
 import { TripSummaryOverlay } from "./TripSummaryOverlay";
 
@@ -104,9 +104,10 @@ function TripEndFeedback({
 }) {
   const allFive = Object.values(scores).every((v) => v === 5);
 
-  function handleFullScore() {
-    setScores({ route: 5, time: 5, budget: 5, ai: 5 });
-  }
+function handleFullScore() {
+setScores({ route: 5, time: 5, budget: 5, ai: 5 });
+onSubmit();
+}
 
   return (
     <div className="trip-end-feedback">
@@ -245,15 +246,6 @@ function makeRestStop(after: RouteStop, restMin: number): RouteStop {
 // ── 延长时间选项 ─────────────────────────────────────────────
 const EXTEND_OPTIONS = [15, 30, 45, 60] as const;
 
-// ── 停留时长展示 ─────────────────────────────────────────────
-function durLabel(start: string, end: string): string {
-  const d = parseMin(end) - parseMin(start);
-  if (d <= 0) return "";
-  if (d < 60) return `${d}分钟`;
-  const h = Math.floor(d / 60);
-  const m = d % 60;
-  return m === 0 ? `${h}h` : `${h}h${m}m`;
-}
 
 function ActiveTripBar({ route, onUnselect, onAction, onInjectChat, onTripFinished }: ActiveTripBarProps) {
   // 本地可编辑 stops 列表
@@ -262,6 +254,8 @@ function ActiveTripBar({ route, onUnselect, onAction, onInjectChat, onTripFinish
   const [activeIdx, setActiveIdx] = useState(0);
   // 行程结束评价
   const [showFeedback, setShowFeedback] = useState(false);
+  const [tripEnded, setTripEnded] = useState(false);
+  const feedbackRef = useRef<HTMLDivElement>(null);
   const [feedbackScores, setFeedbackScores] = useState<Record<string, number>>({ route: 0, time: 0, budget: 0, ai: 0 });
   const [feedbackComment, setFeedbackComment] = useState("");
   const [showSummary, setShowSummary] = useState(false);
@@ -312,6 +306,10 @@ function ActiveTripBar({ route, onUnselect, onAction, onInjectChat, onTripFinish
     setActiveIdx(idx);
     if (idx === stops.length - 1 && activeIdx !== stops.length - 1) {
       setShowFeedback(true);
+      // 等待 DOM 渲染后自动滚动到评价卡片
+      setTimeout(() => {
+        feedbackRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
+      }, 50);
     }
   }
 
@@ -534,10 +532,9 @@ function ActiveTripBar({ route, onUnselect, onAction, onInjectChat, onTripFinish
             idx < activeIdx ? "done" : idx === activeIdx ? "current" : "upcoming";
           const isLast = idx === lastIdx;
           const trans = stop.transit_to_next;
-          const dur = durLabel(stop.start_time, stop.end_time);
 
           return (
-            <div key={stop.poi_id} className={`vtl-item ${state}`}>
+            <div key={stop.poi_id} className={`vtl-item ${state}${isLast ? " last-item" : ""}`}>
               {/* ── 站点行 ── */}
               <div className="vtl-row">
                 {/* 左侧脊柱：圆点 + 竖线 */}
@@ -558,26 +555,47 @@ function ActiveTripBar({ route, onUnselect, onAction, onInjectChat, onTripFinish
                 <div className="vtl-content">
                   <div className="vtl-header">
                     <span className="vtl-time">{stop.start_time}–{stop.end_time}</span>
-                    <span className="vtl-name">{stop.name}</span>
-                    {dur && <span className="vtl-dur-badge">{dur}</span>}
-                    {state === "current" && <span className="vtl-here-badge">📍 我在这</span>}
-                  </div>
-
-                  {/* 排队情况（当前站 + 即将到达的站显示） */}
-                  {state !== "done" && stop.queue_level && stop.queue_level !== "none" && (
-                    <div className={`vtl-queue-row vtl-queue-row--${stop.queue_level}`}>
-                      <span className="vtl-queue-dot">●</span>
-                      <span className="vtl-queue-text">
-                        {{
-                          low:       "排队较少",
-                          medium:    "排队一般",
-                          high:      "排队较多",
-                          very_high: "排队非常多",
-                        }[stop.queue_level]}
-                        {stop.queue_minutes > 0 && `（约 ${stop.queue_minutes} 分钟）`}
-                      </span>
+                    <div className="vtl-name-row">
+                      {/* 排队图标在地名前面 */}
+                      {state !== "done" && stop.queue_level && stop.queue_level !== "none" && (
+                        <span
+                          className="vtl-crowd-inline"
+                          title={{
+                            low: "排队较少",
+                            medium: "排队一般",
+                            high: "排队较多",
+                            very_high: "排队非常多",
+                          }[stop.queue_level]}
+                        >
+                          <CrowdIcon level={stop.queue_level} />
+                          {stop.queue_minutes > 0 && (
+                            <span className="vtl-crowd-min">{stop.queue_minutes}min</span>
+                          )}
+                        </span>
+                      )}
+                      {state !== "done" && stop.queue_level === "none" && (
+                        <span className="vtl-noqueue-tag">无需排队</span>
+                      )}
+                      <span className="vtl-name">{stop.name}</span>
                     </div>
-                  )}
+                    {/* 更多按钮与地点同行 */}
+                    {state !== "done" && (
+                      <div className="vtl-menu-wrap">
+                        <button
+                          type="button"
+                          className={`vtl-menu-trigger${menuIdx === idx ? " active" : ""}`}
+                          onClick={() => {
+                            setMenuIdx(menuIdx === idx ? null : idx);
+                            setExtendIdx(null);
+                            setRestIdx(null);
+                          }}
+                        >
+                          <MoreHorizontal size={14} />
+                        </button>
+                        {renderMenu(idx, state)}
+                      </div>
+                    )}
+                  </div>
 
                   {/* 预约状态行 */}
                   {state !== "done" && stop.booking_required && (
@@ -636,41 +654,24 @@ function ActiveTripBar({ route, onUnselect, onAction, onInjectChat, onTripFinish
                     <div className="vtl-actions">
                       <button
                         type="button"
-                        className="vtl-btn vtl-btn--arrive"
-                        onClick={() => handleArrived(idx)}
+                        className={`vtl-btn vtl-btn--arrive${tripEnded ? " vtl-btn--ended" : ""}`}
+                        disabled={tripEnded}
+                        onClick={() => { setTripEnded(true); handleArrived(idx); }}
                       >
                         <CheckCircle2 size={12} />
-                        行程结束
+                        {tripEnded ? "行程已结束" : "行程结束"}
                       </button>
                     </div>
                   )}
                 </div>
 
-                {/* ⋯ 更多操作按钮（done 状态不显示） */}
-                {state !== "done" && (
-                  <div className="vtl-menu-wrap">
-                    <button
-                      type="button"
-                      className={`vtl-menu-trigger${menuIdx === idx ? " active" : ""}`}
-                      onClick={() => {
-                        setMenuIdx(menuIdx === idx ? null : idx);
-                        setExtendIdx(null);
-                        setRestIdx(null);
-                      }}
-                    >
-                      <MoreHorizontal size={14} />
-                    </button>
-                    {renderMenu(idx, state)}
-                  </div>
-                )}
               </div>
 
               {/* ── 交通段 ── */}
               {!isLast && trans && (
                 <div className="vtl-transit">
-                  <div className="vtl-transit-spine">
-                    <div className={`vtl-transit-vline ${state === "done" ? "done" : ""}`} />
-                  </div>
+                  {/* 与 vtl-spine 等宽的占位，背景延续虚线 */}
+                  <div className={`vtl-transit-spine ${state === "done" ? "done" : ""}`} />
                   <div
                     className={`vtl-transit-pill ${state === "done" ? "done" : ""}`}
                     style={{ "--transit-color": TRANSIT_COLOR[trans.mode] } as React.CSSProperties}
@@ -682,6 +683,9 @@ function ActiveTripBar({ route, onUnselect, onAction, onInjectChat, onTripFinish
                     <span className="vtl-transit-sep">·</span>
                     <span className="vtl-transit-dist">{formatDist(trans.distance_m)}</span>
                   </div>
+                  <button type="button" className="vtl-nav-btn" title="导航">
+                    <Navigation size={12} />
+                  </button>
                 </div>
               )}
             </div>
@@ -691,6 +695,7 @@ function ActiveTripBar({ route, onUnselect, onAction, onInjectChat, onTripFinish
 
       {/* ── 行程结束评价卡片 ── */}
       {showFeedback && !showSummary && (
+        <div ref={feedbackRef}>
         <TripEndFeedback
           scores={feedbackScores}
           setScores={setFeedbackScores}
@@ -699,6 +704,7 @@ function ActiveTripBar({ route, onUnselect, onAction, onInjectChat, onTripFinish
           onSubmit={() => { setShowSummary(true); }}
           onSkip={() => { setShowFeedback(false); }}
         />
+        </div>
       )}
 
       {/* ── 路线总结页 ── */}
@@ -730,11 +736,36 @@ const CATEGORY_EMOJI: Record<string, string> = {
   show: "🎭", rest: "☕", citywalk: "🚶", scenic: "🌄",
 };
 
+// category → 彩点颜色（与首页猜你喜欢一致）
+const CATEGORY_COLOR: Record<string, string> = {
+  food: "#FF5A3C", restaurant: "#FF5A3C",
+  culture: "#845EC2", museum: "#845EC2",
+  nature: "#10B981", park: "#10B981",
+  shopping: "#FF9800",
+  landmark: "#4FA8E8",
+  show: "#F59E0B",
+  citywalk: "#4FA8E8",
+  scenic: "#38c98a",
+  rest: "#9CA3AF",
+};
+
+// 去除字符串首尾的 emoji 字符
+function stripLeadingEmoji(text: string): string {
+  return text.replace(/^[\u{1F000}-\u{1FFFF}\u{2600}-\u{26FF}\u{2700}-\u{27BF}\uFE0F\s]+/u, "").trim();
+}
+
 // 几个渐变作为无封面时的占位背景
 const FALLBACK_GRADIENTS = [
   "linear-gradient(135deg, #6366F1 0%, #8B5CF6 100%)",
   "linear-gradient(135deg, #06B6D4 0%, #3B82F6 100%)",
   "linear-gradient(135deg, #F59E0B 0%, #EF4444 100%)",
+];
+
+// 路线标签渐变色（与首页猜你喜欢标签风格一致）
+const LABEL_GRADIENTS: [string, string][] = [
+  ["#38c98a", "#1a9e68"],
+  ["#845EC2", "#5c3d99"],
+  ["#F59E0B", "#b45309"],
 ];
 
 function RouteSummaryCard({ route, index, onExpand }: RouteSummaryCardProps) {
@@ -755,7 +786,6 @@ function RouteSummaryCard({ route, index, onExpand }: RouteSummaryCardProps) {
   // 综合分（归一到 0-10）
   const score = route.score <= 10 ? route.score : route.score / 10;
 
-  const currentImg = imgStops[imgIndex]?.cover_image_url ?? null;
   const fallbackGradient = FALLBACK_GRADIENTS[index % FALLBACK_GRADIENTS.length];
 
   // 第一个 reason 作为图片角标，其余在右侧展示
@@ -763,86 +793,152 @@ function RouteSummaryCard({ route, index, onExpand }: RouteSummaryCardProps) {
   const badgeReason = reasons[0] ?? null;
   const extraReasons = reasons.slice(1, 3); // 最多再展示2个
 
+  // ── 图片滑动逻辑 ──────────────────────────────────────────
+  const imgWrapRef = useRef<HTMLDivElement>(null);
+  const dragRef = useRef<{ startX: number; startY: number; locked: boolean | null } | null>(null);
+
+  // 拦截原生 touchmove，防止横滑时触发外层滚动
+  useEffect(() => {
+    const el = imgWrapRef.current;
+    if (!el || imgStops.length <= 1) return;
+    function onTouchMove(e: TouchEvent) {
+      if (!dragRef.current) return;
+      const dx = Math.abs(e.touches[0].clientX - dragRef.current.startX);
+      const dy = Math.abs(e.touches[0].clientY - dragRef.current.startY);
+      if (dragRef.current.locked === null) dragRef.current.locked = dx > dy;
+      if (dragRef.current.locked) { e.preventDefault(); e.stopPropagation(); }
+    }
+    el.addEventListener("touchmove", onTouchMove, { passive: false });
+    return () => el.removeEventListener("touchmove", onTouchMove);
+  }, [imgStops.length]);
+
+  function handleTouchStart(e: React.TouchEvent) {
+    dragRef.current = { startX: e.touches[0].clientX, startY: e.touches[0].clientY, locked: null };
+  }
+
+  function handleTouchEnd(e: React.TouchEvent) {
+    if (!dragRef.current?.locked) { dragRef.current = null; return; }
+    const dx = e.changedTouches[0].clientX - dragRef.current.startX;
+    dragRef.current = null;
+    if (Math.abs(dx) < 30) return;
+    if (dx < 0) setImgIndex((i) => Math.min(i + 1, imgStops.length - 1));
+    else         setImgIndex((i) => Math.max(i - 1, 0));
+  }
+
   return (
     <div className="route-summary-card" onClick={() => onExpand(route.route_id)}>
-      {/* 左侧：图片 + 序号角标 + 圆点 */}
+      {/* 左侧：图片 + 标签 + 圆点 */}
       <div className="rsc-left">
         <div
+          ref={imgWrapRef}
           className="rsc-img-wrap"
-          style={!currentImg ? { background: fallbackGradient } : undefined}
+          style={imgStops.length === 0 ? { background: fallbackGradient } : undefined}
+          onTouchStart={imgStops.length > 1 ? handleTouchStart : undefined}
+          onTouchEnd={imgStops.length > 1 ? handleTouchEnd : undefined}
         >
-          {currentImg && (
-            <img className="rsc-img" src={currentImg} alt={imgStops[imgIndex]?.name} />
+          {/* 图片轨道：横排所有图片，translateX 切换 */}
+          {imgStops.length > 0 && (
+            <div
+              className="rsc-img-track"
+              style={{ transform: `translateX(${-imgIndex * 100}%)` }}
+            >
+              {imgStops.map((s) => (
+                <img
+                  key={s.poi_id}
+                  className="rsc-img"
+                  src={s.cover_image_url}
+                  alt={s.name}
+                />
+              ))}
+            </div>
           )}
-          {/* 序号角标（左上角） */}
-          <div className="rsc-index-badge">{index + 1}</div>
-          {/* 核心亮点标签（右上角，叠在图片上） */}
+          {/* 核心亮点标签（左上角，尖角样式，与首页猜你喜欢标签一致） */}
           {badgeReason && (
-            <div className="rsc-reason-badge">{badgeReason}</div>
+            <div
+              className="rsc-reason-badge"
+              style={{
+                background: `linear-gradient(135deg, ${LABEL_GRADIENTS[index % LABEL_GRADIENTS.length][0]} 0%, ${LABEL_GRADIENTS[index % LABEL_GRADIENTS.length][1]} 100%)`,
+              }}
+            >{badgeReason}</div>
+          )}
+          {/* 圆点（有多张图时，图片内底部 overlay） */}
+          {imgStops.length > 1 && (
+            <div className="rsc-dots">
+              {imgStops.map((_, i) => (
+                <button
+                  key={i}
+                  type="button"
+                  className={`rsc-dot${i === imgIndex ? " rsc-dot--active" : ""}`}
+                  onClick={(e) => { e.stopPropagation(); setImgIndex(i); }}
+                />
+              ))}
+            </div>
           )}
         </div>
-        {/* 圆点切换（有多张图时显示） */}
-        {imgStops.length > 1 && (
-          <div className="rsc-dots">
-            {imgStops.map((_, i) => (
-              <button
-                key={i}
-                type="button"
-                className={`rsc-dot${i === imgIndex ? " rsc-dot--active" : ""}`}
-                onClick={(e) => { e.stopPropagation(); setImgIndex(i); }}
-              />
-            ))}
-          </div>
-        )}
       </div>
 
       {/* 右侧：文字内容 */}
       <div className="rsc-body">
-        {/* 标题 + 分数 */}
+        {/* 标题（去除 emoji）*/}
         <div className="rsc-top">
-          <span className="rsc-title">{route.title}</span>
-          <span className="rsc-score">{score.toFixed(1)}</span>
+          <span className="rsc-title">{stripLeadingEmoji(route.title)}</span>
         </div>
 
-        {/* 亮点标签行（标题下方） */}
-        {extraReasons.length > 0 && (
-          <div className="rsc-reasons">
-            {extraReasons.map((r) => (
-              <span key={r} className="rsc-reason-tag">{r}</span>
-            ))}
-          </div>
+        {/* 推荐理由（一行，来自 reasons 第2条） */}
+        {extraReasons[0] && (
+          <div className="rsc-reason-line">"{extraReasons[0]}"</div>
         )}
 
-        {/* 一句话摘要 */}
-        {route.summary && (
-          <p className="rsc-desc">{route.summary}</p>
-        )}
-
-        {/* 站点流程预览 */}
-        {previewStops.length > 0 && (
-          <div className="rsc-flow">
-            {previewStops.map((s, i) => (
-              <span key={s.poi_id} className="rsc-flow-item">
-                {CATEGORY_EMOJI[s.category] ?? "📍"}{s.name}
-                {(i < previewStops.length - 1 || moreCount > 0) && (
-                  <span className="rsc-flow-arrow">→</span>
+        {/* 第一行：地点流（彩点 + 名称 + 分隔符，超出可横滑） */}
+        {stops.length > 0 && (
+          <div className="rsc-poi-line">
+            {stops.map((s, i) => (
+              <span key={s.poi_id} className="rsc-poi-inline">
+                <span
+                  className="rsc-poi-dot"
+                  style={{ background: CATEGORY_COLOR[s.category] ?? "#9CA3AF" }}
+                />
+                <span className="rsc-poi-name">{s.name}</span>
+                {i < stops.length - 1 && (
+                  <span className="rsc-poi-sep">›</span>
                 )}
               </span>
             ))}
-            {moreCount > 0 && (
-              <span className="rsc-flow-more">+{moreCount}</span>
-            )}
           </div>
         )}
 
-        {/* 核心指标 */}
-        <div className="rsc-metrics">
-          {timeRange && (
-            <span className="rsc-metric"><Clock size={10} />{timeRange}</span>
-          )}
-          <span className="rsc-metric"><Wallet size={10} />人均¥{route.total_cost_per_person}</span>
-          <span className="rsc-metric"><MapPin size={10} />{stops.length}处</span>
+        {/* 第二行：时间 + 均价 */}
+        <div className="rsc-meta-row">
+          <Clock size={9} strokeWidth={2} />
+          <span>{timeRange || "–"}</span>
+          <span className="rsc-meta-dot">·</span>
+          <Wallet size={9} strokeWidth={2} />
+          <span>¥{route.total_cost_per_person}/人</span>
         </div>
+
+        {/* 第三行：各站点停留时长占比进度条 */}
+        {stops.length > 0 && (() => {
+          const durations = stops.map((s) => {
+            const [sh, sm] = s.start_time.split(":").map(Number);
+            const [eh, em] = s.end_time.split(":").map(Number);
+            return Math.max((eh * 60 + em) - (sh * 60 + sm), 5);
+          });
+          const total = durations.reduce((a, b) => a + b, 0) || 1;
+          return (
+            <div className="rsc-timeline-bar">
+              {stops.map((s, i) => (
+                <div
+                  key={s.poi_id}
+                  className="rsc-timeline-seg"
+                  style={{
+                    width: `${(durations[i] / total) * 100}%`,
+                    background: CATEGORY_COLOR[s.category] ?? "#9CA3AF",
+                  }}
+                />
+              ))}
+            </div>
+          );
+        })()}
       </div>
 
       {/* 右箭头 */}
@@ -854,28 +950,28 @@ function RouteSummaryCard({ route, index, onExpand }: RouteSummaryCardProps) {
 // ── 主组件 ──────────────────────────────────────────────────
 export function RouteCompare({ routes, loading = false, onAction, onPoiAction, onInjectChat, onTripFinished }: RouteCompareProps) {
   const [expandedRouteId, setExpandedRouteId] = useState<string | null>(null);
-  const [selectedRouteId, setSelectedRouteId] = useState<string | null>(null);
+  // 保存用户选中的完整路线（含编辑后的 stops）
+  const [selectedRoute, setSelectedRoute] = useState<Route | null>(null);
 
   // 当 routes 更新（AI 重新规划）时，清除已选和展开状态
   useEffect(() => {
-    setSelectedRouteId(null);
+    setSelectedRoute(null);
     setExpandedRouteId(null);
   }, [routes]);
 
   const showSkeletons = loading && routes.length === 0;
   const showRoutes    = routes.length > 0;
-  const selectedRoute = routes.find((r) => r.route_id === selectedRouteId) ?? null;
   const expandedRoute = routes.find((r) => r.route_id === expandedRouteId) ?? null;
 
-  function handleSelect(routeId: string) {
-    setSelectedRouteId(routeId);
+  function handleSelect(route: Route) {
+    setSelectedRoute(route);
     setExpandedRouteId(null);
   }
 
   return (
     <section className="route-section">
-      {/* ── 摘要小卡片列表 ── */}
-      {!expandedRoute && (
+      {/* ── 摘要小卡片列表（选中路线后隐藏）── */}
+      {!expandedRoute && !selectedRoute && (
         <>
           {showSkeletons && (
             <div className="route-summary-list">
@@ -898,7 +994,7 @@ export function RouteCompare({ routes, loading = false, onAction, onPoiAction, o
             <div className="route-summary-list">
               <div className="route-summary-header">
                 <span className="route-summary-header-title">为你规划了 {routes.length} 条方案</span>
-                <span className="route-summary-header-hint">点击查看详情</span>
+                
               </div>
               {routes.map((route, i) => (
                 <RouteSummaryCard
@@ -928,7 +1024,7 @@ export function RouteCompare({ routes, loading = false, onAction, onPoiAction, o
 
           <RouteCard
             route={expandedRoute}
-            selected={expandedRoute.route_id === selectedRouteId}
+            selected={expandedRoute.route_id === selectedRoute?.route_id}
             onSelect={handleSelect}
             onAction={onAction}
             onPoiAction={onPoiAction}
@@ -941,7 +1037,7 @@ export function RouteCompare({ routes, loading = false, onAction, onPoiAction, o
       {selectedRoute && (
         <ActiveTripBar
           route={selectedRoute}
-          onUnselect={() => setSelectedRouteId(null)}
+          onUnselect={() => setSelectedRoute(null)}
           onAction={onAction}
           onPoiAction={onPoiAction}
           onInjectChat={onInjectChat}
@@ -956,7 +1052,7 @@ export function RouteCompare({ routes, loading = false, onAction, onPoiAction, o
 interface CompareCollapsedProps {
   routes: Route[];
   selectedRouteId: string;
-  onSelect: (id: string) => void;
+  onSelect: (route: Route) => void;
   onAction?: (actionKey: string, routeId: string) => void;
   onPoiAction?: (action: PoiAction, routeId: string) => void;
 }

@@ -13,6 +13,8 @@ interface ChatPanelProps {
   onClarify?: (answer: string) => void;
   /** 插入到第一条 user 消息气泡之后（追问卡片） */
   afterFirstUserMessage?: React.ReactNode;
+  /** 插入到消息列表末尾、loading 打字动效之前（如 AgentTrace） */
+  beforeLoadingBubble?: React.ReactNode;
 }
 
 // 常见追问的快捷回答
@@ -37,11 +39,32 @@ export function ChatPanel({
   clarifyingQuestion,
   onClarify,
   afterFirstUserMessage,
+  beforeLoadingBubble,
 }: ChatPanelProps) {
   const bottomRef = useRef<HTMLDivElement>(null);
+  const agentTraceRef = useRef<HTMLDivElement>(null);
+  // 记录上一次 loading 状态，用于检测 false→true 的跳变
+  const prevLoadingRef = useRef(false);
 
   useEffect(() => {
-    bottomRef.current?.scrollIntoView({ behavior: "smooth" });
+    const justStarted = loading && !prevLoadingRef.current;
+    prevLoadingRef.current = loading;
+
+    if (justStarted && agentTraceRef.current) {
+      // 追问选完、AI 开始响应：将 AgentTrace 滚到视口顶部
+      agentTraceRef.current.scrollIntoView({ behavior: "smooth", block: "start" });
+    } else if (!loading && agentTraceRef.current) {
+      // loading 结束后，等路线卡片等内容渲染完再滚到 AgentTrace 顶部
+      // 用两帧延迟确保 DOM 已更新
+      const el = agentTraceRef.current;
+      // 100ms 延迟，确保路线卡片等下方内容渲染完毕后再滚动
+      setTimeout(() => {
+        el.scrollIntoView({ behavior: "smooth", block: "start" });
+      }, 100);
+    } else if (!loading) {
+      // 无 AgentTrace 时才滚到底部
+      bottomRef.current?.scrollIntoView({ behavior: "smooth" });
+    }
   }, [messages, loading, clarifyingQuestion]);
 
   if (messages.length === 0 && !loading && !error) {
@@ -59,6 +82,11 @@ export function ChatPanel({
 
   // 找到第一条 user 消息的索引，追问卡片插入其后
   const firstUserIdx = messages.findIndex((m) => m.role === "user");
+  // 找到最后一条 assistant 消息的索引，beforeLoadingBubble 插入其前
+  const lastAssistantIdx = messages.reduce<number>(
+    (acc, m, i) => (m.role === "assistant" ? i : acc),
+    -1,
+  );
 
   return (
     <div className="message-list">
@@ -81,7 +109,10 @@ export function ChatPanel({
         </React.Fragment>
       ))}
 
-      {/* loading 时显示打字动效 */}
+      {/* loading 时显示打字动效（无 assistant 消息时，AgentTrace 也在此之前） */}
+      {beforeLoadingBubble && lastAssistantIdx === -1 && (
+        <div ref={agentTraceRef}>{beforeLoadingBubble}</div>
+      )}
       {loading && (
         <div className="bubble bubble-assistant typing-dots">
           <span /><span /><span />
