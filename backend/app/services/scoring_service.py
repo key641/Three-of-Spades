@@ -98,6 +98,7 @@ class ScoringService:
             penalty += 25
 
         penalty += self._structure_penalty(stops, objective, request)
+        penalty += self._common_sense_penalty(stops, objective, request)
         return min(70, penalty)
 
     def preference_match_ratio(self, stops: list[RouteStop], request: RoutePlanRequest, poi_by_id: dict[str, POI]) -> float:
@@ -262,6 +263,38 @@ class ScoringService:
             penalty += 14
         return penalty
 
+    def _common_sense_penalty(self, stops: list[RouteStop], objective: str, request: RoutePlanRequest) -> int:
+        terms = self._preference_terms(request)
+        term_set = set(terms)
+        penalty = 0
+        explicit_coffee = self._has_any(term_set, ["咖啡", "下午茶", "咖啡馆", "咖啡探店", "咖啡路线"])
+        wants_meal = self._has_any(term_set, ["吃好", "美食", "餐厅", "聚餐", "正餐", "小吃", "火锅"])
+        rainy = self._has_any(term_set, ["雨天", "下雨", "室内", "rain", "indoor_rainy"])
+        hot = self._has_any(term_set, ["高温", "很热", "炎热", "hot", "避暑"])
+        low_energy = self._has_any(term_set, ["亲子", "老人", "轻松", "少走路"])
+
+        for stop in stops:
+            minutes = self._parse_time(stop.start_time)
+            if self._is_coffee_stop(stop) and self._is_late_night(minutes) and not explicit_coffee:
+                penalty += 24 if objective == "night_friendly" else 18
+            elif self._is_coffee_stop(stop) and self._is_evening(minutes) and not explicit_coffee:
+                penalty += 6
+            if self._is_meal_stop(stop) and self._time_slot(minutes) == "afternoon" and not wants_meal:
+                penalty += 7
+            if rainy and not stop.indoor and stop.walking_intensity == "high":
+                penalty += 12
+            if hot and not stop.indoor and stop.walking_intensity == "high":
+                penalty += 10
+            if low_energy and stop.walking_intensity == "high":
+                penalty += 10
+
+        for previous, current in zip(stops, stops[1:]):
+            if previous.walking_intensity == "high" and current.walking_intensity == "high":
+                penalty += 8
+            if self._is_meal_stop(previous) and self._is_coffee_stop(current) and not self._allows_repeated_coffee(request):
+                penalty += 5
+        return penalty
+
     def _role_counts(self, stops: list[RouteStop]) -> dict[str, int]:
         counts: dict[str, int] = {}
         for stop in stops:
@@ -414,6 +447,12 @@ class ScoringService:
             return True
         return bool(poi and (poi.category in {"restaurant", "cafe", "market"} or poi.meal_type in {"local_food", "fine_dining", "cafe", "light_meal", "fast_food"}))
 
+    def _is_coffee_stop(self, stop: RouteStop) -> bool:
+        return "coffee_break" in stop.route_roles or stop.category == "cafe" or stop.meal_type == "cafe"
+
+    def _is_meal_stop(self, stop: RouteStop) -> bool:
+        return "meal" in stop.route_roles or stop.category == "restaurant" or stop.meal_type in {"local_food", "fine_dining"}
+
     def _is_open_for_stop(self, stop: RouteStop, poi: POI | None) -> bool:
         if poi is None:
             return True
@@ -435,6 +474,23 @@ class ScoringService:
             return int(hour) * 60 + int(minute)
         except (ValueError, AttributeError):
             return 0
+
+    def _time_slot(self, minutes: int) -> str:
+        hour = minutes // 60
+        if 5 <= hour < 11:
+            return "morning"
+        if 11 <= hour < 17:
+            return "afternoon"
+        if 17 <= hour < 21:
+            return "evening"
+        return "night"
+
+    def _is_evening(self, minutes: int) -> bool:
+        return 19 * 60 <= minutes < 20 * 60
+
+    def _is_late_night(self, minutes: int) -> bool:
+        hour = (minutes // 60) % 24
+        return hour >= 20 or hour < 5
 
     def _minutes_in_range(self, minutes: int, start: int, end: int) -> bool:
         if end >= start:

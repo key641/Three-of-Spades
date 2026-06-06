@@ -49,6 +49,55 @@ export interface RouteStop {
   route_leg_source_from_previous?: string | null;
   route_steps_from_previous?: string[];
   reason?: string | null;
+
+  // ── POI 卡片展示字段 ────────────────────────────────
+  /** 美团综合评分，如 4.8 */
+  rating?: number;
+  /** 评论总数，如 3200 */
+  review_count?: number;
+  /** 榜单标签，如 "必吃榜 Top 5"、"必玩榜 No.3" */
+  rank_label?: string;
+  /** 一句话简介 / 编辑推荐语 */
+  brief?: string;
+  /** 距离（米），相对于用户出发点 */
+  distance_m?: number;
+
+  // ── 实时/预测排队 ────────────────────────────────
+  /**
+   * 排队程度（枚举）：
+   * "none"   = 无需排队
+   * "low"    = 较少（＜15 分钟）
+   * "medium" = 一般（15–30 分钟）
+   * "high"   = 较多（30–60 分钟）
+   * "very_high" = 非常多（＞60 分钟）
+   */
+  queue_level?: "none" | "low" | "medium" | "high" | "very_high";
+
+  // ── 到下一站的交通段 ─────────────────────────────
+  /** 到下一个站点的交通信息（最后一站无此字段） */
+  transit_to_next?: TransitSegment;
+
+  // ── 预约信息 ─────────────────────────────────
+  /** 是否需要预约 */
+  booking_required?: boolean;
+  /** 小程序/网页预约链接（有则展示跳转按钮） */
+  booking_url?: string;
+  /** 电话预约号码 */
+  booking_phone?: string;
+  /** 预约备注，如"建议提前1天预约" */
+  booking_note?: string;
+}
+
+/** 两站之间的交通连接信息 */
+export interface TransitSegment {
+  /** 交通方式：walk / metro / bus / taxi / bike */
+  mode: "walk" | "metro" | "bus" | "taxi" | "bike";
+  /** 预计耗时（分钟） */
+  duration_minutes: number;
+  /** 距离（米） */
+  distance_m: number;
+  /** 路线简述，如 "地铁 1 号线→2 号线换乘" */
+  description?: string;
 }
 
 export interface RouteScoreBreakdown {

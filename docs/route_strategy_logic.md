@@ -8,10 +8,14 @@
 
 核心代码位置：
 
-- `backend/app/services/poi_service.py`：POI 召回和 POI 初排。
+- `backend/app/services/recall_service.py`：多路 POI 召回，包含内容召回、画像召回、协同过滤召回、双塔 embedding 召回、场景召回、路线角色召回和多样性保护。
+- `backend/app/services/coarse_rank_service.py`：召回后粗排，使用轻量规则分快速筛到几十个 POI，并保留粗排 feature breakdown。
+- `backend/app/services/fine_rank_service.py`：加载离线训练的 sklearn 精排模型，预测 `p_click/p_like/p_skip` 和 POI relevance。
+- `backend/app/services/poi_service.py`：POI 数据加载、召回、硬过滤、粗排编排和最终多样性处理。
 - `backend/app/services/strategy_service.py`：策略标签识别、权重调整、路线目标打分。
 - `backend/app/services/route_service.py`：多目标路线候选生成、路线排序、路线字段补全。
 - `backend/app/services/scoring_service.py`：路线五维评分和硬惩罚。
+- `backend/app/services/route_rerank_service.py`：路线集合级动态重排，按用户偏好、目标和风险调整最终路线顺序。
 - `backend/app/services/replan_service.py`：已生成路线的局部替换和动态重规划。
 - `backend/app/services/predictive_route_service.py`：mock 天气 + 画像预制路线。
 - `backend/app/services/amap_service.py`、`backend/app/services/mock_route_map_service.py`：两点之间路段耗时、距离、交通方式、polyline 和步骤。
@@ -86,11 +90,28 @@ user_id + city + weather_scenario + 可选 user_profile
 
 ## 3. POI 召回逻辑
 
-入口是 `POIService.search(intent, user_profile, limit=32, strategy_tags)`。
+入口是 `POIService.search(intent, user_profile, limit=40, strategy_tags)`。
+
+普通聊天规划中，`Orchestrator` 不额外传 `limit`，所以默认召回 40 个候选 POI。预制路线会显式传 `limit=48`。
 
 ### 3.1 数据来源
 
-当前 POI 来自 `data/seed/pois.json`，只覆盖上海和北京。读取时会把原始 JSON 转成统一的 `POI` 对象，并补充这些路线策略字段：
+当前 POI 来自 `data/seed/pois.json`，只覆盖上海和北京。当前规模是 1680 条：上海 840 条、北京 840 条。每个城市每个 category 数量一致：
+
+| category | 每城数量 |
+| --- | ---: |
+| `restaurant` | 140 |
+| `cafe` | 120 |
+| `market` | 80 |
+| `shopping` | 80 |
+| `landmark` | 80 |
+| `museum` | 70 |
+| `gallery` | 70 |
+| `park` | 70 |
+| `night_view` | 70 |
+| `theater` | 60 |
+
+读取时会把原始 JSON 转成统一的 `POI` 对象，并补充这些路线策略字段：
 
 - `primary_category`：主类目，例如 `food`、`culture`、`landmark`、`nature`。
 - `secondary_categories`：辅助标签，例如 `photo`、`indoor`、`night`、`rainy`、`budget`。
@@ -99,9 +120,29 @@ user_id + city + weather_scenario + 可选 user_profile
 
 这些字段会进入搜索文本，后续召回和评分不只依赖原始 `category`。
 
-### 3.2 召回过滤
+### 3.2 多路召回
 
-召回大致分三层：
+`POIService.search()` 现在会先调用 `RecallService` 生成大候选池，默认内部召回池大小是：
+
+```text
+target_pool_size = max(limit * 6, 240)
+```
+
+当前多路召回包括：
+
+- 内容召回 `ContentRecallChannel`：按用户偏好、策略标签、类目、标签、路线角色和搜索文本召回。
+- 画像召回 `ProfileRecallChannel`：按 `category_preferences`、`preferred_route_roles`、`preferred_experience_tags`、时段和交通偏好召回。
+- 协同过滤召回 `CollaborativeRecallChannel`：读取 `data/models/cf/item_similarity.json`，基于用户正向交互和 liked POI 召回相似 POI，并对 disliked POI 的相似项降权。
+- 双塔召回 `TwoTowerRecallChannel`：读取 `data/models/two_tower/user_embeddings.json` 和 `poi_embeddings.json`，用 64 维 user/poi embedding 点积召回。
+- 场景召回 `ScenarioRecallChannel`：按雨天、夜晚、少走路、吃好、拍照 citywalk、自然风景等场景补候选。
+- 路线角色召回 `RouteRoleRecallChannel`：强制补 `main_activity`、`meal`、`coffee_break/rest_stop`、`photo_stop`、`transit_anchor/night_end` 等路线结构角色。
+- fallback 召回：候选不足时补低风险、多类目 POI。
+
+协同过滤和双塔模型的训练数据来自 `data/seed/interaction_events.json`，当前是 16000 条 mock user-item 行为事件，覆盖 80 个用户和 1680 个 POI。事件包括 `view/click/save/like/selected_in_route/completed_visit/skip/replace/dislike`。
+
+### 3.3 召回过滤
+
+召回后的过滤大致分三层：
 
 1. 城市过滤：优先取 `poi.city == intent.city`。如果该城市没有数据，会用上海数据克隆成 fallback 候选，保证不空。
 2. 严格匹配：要求命中用户偏好、避开 avoid_tags、价格不是极端超预算。
@@ -113,9 +154,23 @@ user_id + city + weather_scenario + 可选 user_profile
 poi.avg_price <= max(budget * 2, budget + 160)
 ```
 
-### 3.3 POI 初排分数
+### 3.4 POI 粗排分数
 
-`POIService._rank_score()` 会把每个 POI 打一个初排分。主要维度：
+第二阶段已经把粗排从 `POIService` 拆到独立的 `CoarseRankService`。现在 `POIService.search()` 的职责是编排：
+
+```text
+RecallService 多路召回
+-> 硬过滤
+-> CoarseRankService 快速规则打分
+-> 最终返回列表多样性保护
+-> 返回 list[POI]
+```
+
+`CoarseRankService.rank()` 默认在内部取 `coarse_limit = max(limit, 60)`，即先把召回池筛到 40-60 个左右，再交给最终返回逻辑。调用方传 `limit=5/10/12` 这类小结果时仍然支持，不会强制返回 60 个。
+
+`POIService._rank_score()` 仍保留为兼容 wrapper，内部委托给 `CoarseRankService.score()`，避免已有测试、调试脚本或 trace 临时代码断掉。
+
+粗排主要维度：
 
 - 质量：评分、评论量、热度。
 - 排队：排队时间、人流强度越低越好。
@@ -124,6 +179,8 @@ poi.avg_price <= max(budget * 2, budget + 160)
 - 偏好：命中 `intent.preferences`、画像标签、策略标签越多越好。
 - 场景：当前 `friends_citywalk` 会偏向朋友、拍照、citywalk、夜景、咖啡。
 - 时间：营业时间、最晚入场、推荐时段是否匹配。
+- 避雷风险：硬过滤已经过滤强命中，粗排还会对 `avoid_tags` 或风险文本二次降分。
+- 画像匹配：画像中的类目偏好、路线角色、体验标签、时段、交通偏好会进入粗排分。
 
 此外还有显式加分：
 
@@ -134,9 +191,53 @@ poi.avg_price <= max(budget * 2, budget + 160)
 - 用户要 `少走路/轻松`，加低步行强度分。
 - 策略标签命中 POI 时，额外加 `StrategyService.tag_score()`。
 
-### 3.4 召回结果多样性
+`CoarseRankService.rank_with_features()` 会返回内部 `CoarseRankResult`，包含 `candidate`、`score` 和 `features`。当前这些解释字段不直接暴露给 API，主要用于单元测试和后续 trace 扩展。
 
-初排后会做一次类目多样性处理：当 `limit >= 12` 时，每个 category 有一个上限，避免前几十个 POI 全是餐厅或咖啡。未入选的高分 POI 会放到后面作为补充。
+### 3.5 召回和粗排多样性
+
+召回阶段会先做大候选池多样性保护：
+
+- 单个 `category` 默认不超过召回池的 25%。
+- 单个 `primary_category` 默认不超过召回池的 35%。
+- 优先覆盖路线需要的角色：主活动、餐饮、休息、拍照、交通锚点、夜间收尾。
+- 即使用户偏好餐饮或咖啡，也不会让召回池只剩餐饮或咖啡。
+
+粗排阶段在 `limit >= 40` 时也会做一次软多样性截断：单个 `category` 约束在粗排候选的 25% 左右，单个 `primary_category` 约束在 35% 左右；候选不足时再按原始分数回填，保证强偏好仍能保留。
+
+粗排后最终返回列表还会做一次类目多样性处理：当 `limit >= 12` 时，每个 category 有一个上限，避免前几十个 POI 全是餐厅或咖啡。未入选的高分 POI 会放到后面作为补充。
+
+### 3.6 POI 真实精排模型
+
+第三阶段已经接入真实训练的 sklearn 表格精排模型。训练脚本是 `scripts/train_fine_rank_model.py`，训练数据来自 `data/seed/interaction_events.json`、`pois.json` 和 `user_profiles.json`。当前模型是 `DictVectorizer + LogisticRegression`，会分别训练三个二分类模型：
+
+- `click_model`：预测用户愿意点开或接受 POI 的概率 `p_click`。
+- `like_model`：预测游玩后满意的概率 `p_like`。
+- `skip_model`：预测跳过、不喜欢或替换的概率 `p_skip`。
+
+模型产物保存在：
+
+```text
+data/models/fine_rank/click_model.joblib
+data/models/fine_rank/like_model.joblib
+data/models/fine_rank/skip_model.joblib
+data/models/fine_rank/feature_schema.json
+data/models/fine_rank/model_metadata.json
+```
+
+精排特征由 `fine_rank_features.py` 统一构造，训练和线上推理共用同一套逻辑。特征包括：
+
+- 用户特征：预算敏感度、走路耐受、人群耐受、偏好标签、历史喜欢/讨厌 POI、类目偏好。
+- POI 特征：category、primary_category、route_roles、experience_tags、评分、评论数、价格、室内、步行强度。
+- 统计特征：人气、排队、实时人流、POI 历史正负交互、同类历史正向率。
+- 上下文特征：城市、时间段、天气、同行人数、场景和路线 objective。
+
+线上 `FineRankService` 会输出：
+
+```text
+poi_relevance_score = 0.4*p_click + 0.5*p_like - 0.3*p_skip
+```
+
+如果模型文件缺失，`FineRankService` 会使用规则 fallback，保证 demo 和测试不因为模型产物缺失而中断。模型输出后还有轻量业务校准：极端超预算、高步行强度、排队/人流风险、disliked POI 和 skipped category 会修正 `p_skip`，避免 mock 数据分布把硬约束学偏。
 
 ## 4. 路线生成逻辑
 
@@ -149,12 +250,36 @@ poi.avg_price <= max(budget * 2, budget + 160)
 
 对每个 objective，流程是：
 
-1. 用 `_start_candidates()` 对所有 POI 按该 objective 的 POI 分数排序。
-2. 取前若干高分 POI 作为 seed。
-3. 从 seed 开始贪心扩展路线。
-4. 每个 objective 最多生成 `CANDIDATES_PER_OBJECTIVE = 4` 条内部候选。
-5. 对候选调用 `ScoringService` 打分。
-6. 普通规划每个 objective 返回第一条 best；预制路线可以拿每个 objective 的多条候选做差异筛选。
+1. 用 `_start_candidates()` 对所有 POI 按该 objective 的 POI 分数排序；该分数已融合 `poi_relevance_scores`。
+2. 用 `_diverse_start_seeds()` 从高分 POI 中选多类目 seed，避免只从同一类 POI 开始。
+3. 用 beam search 扩展 partial route，每轮从可行 POI 中取 top `BRANCH_FACTOR = 8`，保留 top `BEAM_WIDTH = 6` 条 partial route。
+4. 每个 objective 默认生成 `INTERNAL_CANDIDATES_PER_OBJECTIVE = 10` 条内部候选；短时长路线会降到 6 条。
+5. 对候选做 stop 序列去重和高重合过滤，再调用 `ScoringService` 打分。
+6. 所有 objective 的 scored candidates 会进入 `RouteRerankService` 做路线层动态重排。
+
+当前默认普通规划最多 3 个 objective，所以内部通常会生成约 18-30 条候选路线，再进入最终路线排序。
+
+### 4.1.1 路线常识约束
+
+路线生成不只按 POI 分数拼接，还会在候选扩展、路线结构分和最终重排里加入常识约束。除闭店、超时、晚于最晚入场这类硬错误外，大部分常识使用动态降权，避免候选池被过度过滤。
+
+当前常识约束包括：
+
+- 时间常识：
+  - `20:00` 后是强夜间语境，普通夜景/夜游路线不会默认加入咖啡店。
+  - 用户明确表达 `咖啡/咖啡探店/咖啡馆/下午茶` 时，夜间可以保留咖啡，但每条路线最多一个咖啡节点。
+  - 正餐和咖啡分开判断，`吃好/美食/聚餐` 主要驱动正餐，`咖啡/下午茶` 主要驱动咖啡，不再互相随意替代。
+  - 下午非正餐语境下会降低正餐权重，晚间和夜间优先夜景、剧场、商场、地标和夜间开放活动。
+- 天气常识：
+  - 雨天、高温场景会降低户外高步行强度 POI。
+  - 雨天目标优先室内主活动，例如博物馆、展馆、剧场、商场。
+- 人群和体力常识：
+  - `少走路/轻松/老人/亲子` 或画像低 walking tolerance 时，高步行强度 POI 和长步行路段会降权。
+  - 连续两个高步行强度点位会被扣分。
+- 地理常识：
+  - beam 扩展时继续使用 nearby 关系和真实距离；过远跳点会额外扣分，避免跨区域硬拼。
+
+这些规则主要落在 `RouteService._common_sense_penalty()`、`_is_contextually_reasonable_poi()`、`_route_common_sense_penalty()`，并由 `ScoringService` 和 `RouteRerankService` 在后续评分中再次兜底。
 
 ### 4.2 stop 数量上下限
 
@@ -181,6 +306,7 @@ poi.avg_price <= max(budget * 2, budget + 160)
 - `time_fit`：到达时间、营业、推荐时段。
 - `distance`：离当前点近。
 - `walking`：步行强度低。
+- `poi_relevance_score`：精排模型输出的 POI 价值分，通过 `RoutePlanRequest.poi_relevance_scores` 传入。
 
 不同 objective 会加额外偏置：
 
@@ -193,24 +319,55 @@ poi.avg_price <= max(budget * 2, budget + 160)
 - `indoor_rainy`：加室内、雨天友好。
 - `night_friendly`：加夜间活动和晚间时段。
 
-### 4.4 贪心扩展和结构约束
+### 4.4 Beam 扩展和结构约束
 
-路线从 seed 开始，不断选下一个 POI。每次扩展会检查：
+路线从多个 seed 开始，用 beam search 扩展多条 partial route。每次扩展会检查：
 
 - 加上交通时间、排队时间、游玩时间后不能超过总时长。
+- 到达时需要处于营业窗口内，并且不能晚于最晚入场时间。
+- 到达时间和 POI 类型需要符合常识，例如夜间普通夜游路线不会补普通咖啡店。
 - 不能重复已选 POI。
 - 如果路线需要餐饮，优先补餐饮点。
 - 默认不混合“正餐”和“咖啡”作为多个餐饮节点，除非用户明确同时想要。
-- 默认不重复多家咖啡或多家正餐，除非用户明确要咖啡探店或美食扫街。
+- 默认不重复多家咖啡或多家正餐，除非用户明确要咖啡探店或美食扫街；夜间即使明确咖啡，也最多保留一个咖啡节点。
 
-选下一个 POI 时，除了 POI 局部分，还会叠加：
+扩展下一个 POI 时，除了 POI 局部分，还会叠加：
 
 - `nearby_bonus`：和已选点互为 nearby 时加分。
 - `distance_penalty`：离当前点越远扣分。
 - `diversity_penalty`：连续同主类目、重复 route_roles、多次咖啡或正餐会扣分。
+- `common_sense_penalty`：夜间咖啡、雨天/高温户外高强度、亲子/老人高强度、跨区域跳点会扣分。
 - `missing_role_bonus`：路线缺主活动、餐饮、拍照、休息等角色时，对能补角色的 POI 加分。
 
-这也是当前路线比“高分 POI 列表”更像行程的主要原因。
+Beam search 结果不足时，会回退到现有 `_build_candidate()` 贪心逻辑补齐，保证强约束或候选很少时仍能返回可用路线。
+
+### 4.5 路线层动态重排
+
+第五阶段新增 `RouteRerankService`，最终排的是路线集合，不是单个 POI，也不是每个 objective 内部的第一名。重排分数是动态权重：
+
+```text
+final_route_score =
+  w_poi_model * poi_model_score_avg
++ w_structure * route_structure_score
++ w_travel * travel_efficiency_score
++ w_objective * objective_match_score
++ w_risk * budget_queue_risk_score
++ w_diversity * diversity_score
+```
+
+基础权重会按用户偏好和画像动态调整：
+
+- `更省钱/低预算` 或高 `budget_sensitivity`：提高预算和排队风险权重。
+- `少走路/轻松/老人/亲子` 或低 `walking_tolerance`：提高交通效率和结构合理性权重。
+- `拍照/citywalk/体验感`：提高 objective match、路线结构和拍照体验权重。
+- `吃好/美食/咖啡探店`：提高餐饮 objective match，并放宽餐饮重复惩罚。
+- `少排队/人少` 或低 `crowd_tolerance`：提高排队、人流风险权重。
+- 高 `novelty_preference`：提高路线集合多样性权重。
+- 高 `comfort_preference`：提高结构完整性和风险稳定性权重。
+
+重排时会逐条选择最终路线。每选中一条后，剩余路线的 `diversity_score` 会根据 POI 重合率重新计算；默认尽量把最终路线重合率控制在 `0.7` 以下。`balanced`、`budget`、`low_walking`、拍照/体验、美食等目标覆盖都是软约束：有对应用户偏好时加权更强，没有时不硬塞无关路线。
+
+`RouteRerankService` 会把推荐原因追加进 `Route.reasons`，例如“更符合少走路偏好，交通段更短”“预算和排队风险更稳”“保留拍照点和主活动，体验更完整”“和其他路线重复点少，提供另一种体验”。
 
 ## 5. 交通路段逻辑
 
@@ -225,9 +382,14 @@ poi.avg_price <= max(budget * 2, budget + 160)
 
 `RouteService._best_route_leg()` 会按距离和偏好枚举候选交通方式：
 
-- 短距离且不偏好少走路：`walk`、`taxi`。
-- 一般距离：`walk`、`taxi`、`metro`，再加 POI 推荐交通。
-- 超过 8 公里：去掉 `walk`。
+- 短距离且不偏好少走路：优先尝试 `walk`，同时会评估 `metro`、`bus`、`taxi`。
+- 一般距离：优先评估 `metro`、`bus`、`taxi`，再评估 `walk`。
+- 超过 8 公里：去掉 `walk`，只评估 `metro`、`bus`、`taxi`。
+- 夜间中长距离会把 `taxi` 放到更前，公共交通只有在耗时仍然合理时才胜出。
+- 少走路、亲子、老人、轻松偏好下，超过 1 公里的步行会被明显扣分。
+- 如果 POI 有 `recommended_transport`，会把推荐交通方式插入候选列表，公共交通推荐会更靠前。
+
+最终不是简单选最快。`RouteService._choose_public_transit_first()` 会在地铁/公交足够方便时优先选公共交通；如果公共交通明显绕路，才会选 taxi。用户偏好 `少走路/轻松/室内/亲子/老人` 时，步行会被额外扣分。
 
 然后调用 `AmapService.route_leg()`。当前默认 `MAP_ROUTE_PROVIDER=mock`，所以会走 `MockRouteMapService`：
 
@@ -237,6 +399,7 @@ poi.avg_price <= max(budget * 2, budget + 160)
 - `bus`：匹配附近公交线，失败则 fallback 到 taxi。
 
 耗时不是纯直线估算，会按交通方式加入绕路系数、等待时间、进出站时间、高峰倍率。`route_steps_from_previous` 会包含类似“乘坐地铁2号线 3站至 XXX站”的分段说明。
+如果真实高德响应不可用，`AmapService` fallback 也会生成一条可读步骤，例如“步行至附近地铁站，乘地铁后步行到达”或“打车约 3.2 公里，预计 15 分钟到达”，避免前端只拿到空 steps。
 
 ## 6. 路线最终评分和排序
 
@@ -283,6 +446,7 @@ poi.avg_price <= max(budget * 2, budget + 160)
   - `nature_relax` 没有自然点。
   - `indoor_rainy` 没有室内点。
 - 路线结构不合理，例如没有主活动、重复咖啡、重复正餐、连续同类目、重复 route_roles。
+- 路线常识不合理，例如夜间普通路线包含咖啡、雨天/高温安排户外高强度点位、少走路用户出现连续高强度点位。
 
 ### 6.4 候选排序
 
@@ -314,11 +478,14 @@ poi.avg_price <= max(budget * 2, budget + 160)
 
 1. 解析用户消息为 `Intent`。
 2. 应用多轮上下文，比如“再少走路一点”会继承上一轮城市、时长、偏好，再叠加新约束。
-3. 读取用户画像。
-4. 生成策略标签和权重。
-5. 召回 POI。
-6. 调 `RouteService.generate_routes()` 生成 1-3 条不同 objective 的路线。
-7. 保存到 session memory，便于后续追问或修改。
+3. 如果用户没有给起点，且城市是上海或北京，使用 demo 默认起点：上海用静安寺站，北京用西单站。
+4. 读取用户画像。
+5. 生成策略标签和权重。
+6. 召回 POI。
+7. 调 `RouteService.generate_routes()` 生成 1-3 条不同 objective 的路线。
+8. 保存到 session memory，便于后续追问或修改。
+
+注意：`RouteService.CITY_CENTERS` 中保留了多个城市中心坐标，但当前普通规划只会给上海和北京自动补默认起点。其他城市如果没有真实起点坐标，通常依赖 POI fallback 数据，不会强行套用真实城市中心。
 
 普通规划的路线数主要由 objective 数决定，通常最多 3 条：两个画像/偏好目标 + `balanced`。
 
@@ -328,6 +495,7 @@ poi.avg_price <= max(budget * 2, budget + 160)
 
 - API：`POST /api/routes/replan`。
 - Agent 内部：当 `ChatRequest.event_type` 属于 `replace_poi`、`avoid_poi`、`queue_spike`、`traffic_jam`、`user_tired`、`weather_change` 时，走 `_handle_structured_replan()`。
+- Agent 自然语言局部重规划：`ReplanIntentParser` 会把“排队 90 分钟”“下雨了”“堵车”“关门/闭店”“累了”“换一家”等话术解析成事件，再调用 `ReplanService.replan()`。其中“关门/闭店”会解析为 `poi_closed`，并在 `event_payload` 中带上 `status=closed` 和 `force_replace=true`。
 
 ### 8.1 修改范围
 
@@ -521,4 +689,3 @@ overlap / min(len(route_a), len(route_b))
 5. 看 `route_steps_from_previous` 和 `route_leg_source_from_previous`：确认地图路段是否来自 mock_map，交通方式和步骤是否可展示。
 6. 局部修改时看 `changed_stops`、`live_warnings`、`replan_reason`。
 7. 预制路线时看三条路线的 POI id 重合率，避免只是标题不同。
-

@@ -40,6 +40,7 @@ class ReplanService:
 
     def _replan_route(self, route: Route, request: ReplanRequest) -> Route:
         route = route.model_copy(deep=True)
+        original_travel_minutes = route.total_travel_minutes
         completed_ids = set(request.completed_poi_ids)
         locked_ids = set(request.locked_poi_ids)
         event_payload = {**request.event_payload, "event_type": request.event_type, "event_label": request.event_label}
@@ -116,6 +117,8 @@ class ReplanService:
         new_stops = completed_stops + self._rebuild_future_stops(completed_stops, replanned_future, route, request, event_payload)
         route.stops = new_stops
         self._refresh_route_metrics(route, request, poi_by_id | adjusted_pois | {poi.id: poi for poi in replanned_future})
+        if request.event_type == "traffic_jam":
+            route.total_travel_minutes = max(route.total_travel_minutes, original_travel_minutes)
         route.changed_stops = changes
         route.live_warnings = live_warnings + self._traffic_warnings(new_stops, event_payload)
         route.data_sources = self._sources(route, self.map_provider.source)

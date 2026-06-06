@@ -87,6 +87,8 @@ class RoutePlanRequest(BaseModel):
     strategy_weights: StrategyWeights = Field(default_factory=StrategyWeights)
     strategy_tags: list[StrategyTag] = Field(default_factory=list)
     candidate_pois: list[POI] = Field(default_factory=list)
+    poi_relevance_scores: dict[str, float] = Field(default_factory=dict)
+    poi_fine_rank_details: dict[str, dict[str, float]] = Field(default_factory=dict)
 
 
 class RoutePlanResponse(BaseModel):

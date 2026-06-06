@@ -8,6 +8,7 @@ from app.agent.intent_enhancer import normalize_preferences
 from app.schemas.intent import Intent
 from app.schemas.route import Route, RoutePlanRequest, RoutePlanResponse
 from app.schemas.user import UserProfile
+from app.services.fine_rank_service import FineRankService
 from app.services.poi_service import POIService
 from app.services.profile_service import ProfileService
 from app.services.route_service import RouteService
@@ -38,6 +39,7 @@ class PredictiveRouteService:
         poi_service: POIService | None = None,
         route_service: RouteService | None = None,
         strategy_service: StrategyService | None = None,
+        fine_rank_service: FineRankService | None = None,
     ) -> None:
         self.weather_path = weather_path or Path(__file__).resolve().parents[3] / "data" / "seed" / "mock_weather.json"
         self.weather_payload = self._load_weather()
@@ -45,6 +47,7 @@ class PredictiveRouteService:
         self.poi_service = poi_service or POIService()
         self.route_service = route_service or RouteService()
         self.strategy_service = strategy_service or StrategyService()
+        self.fine_rank_service = fine_rank_service or FineRankService()
 
     def generate(self, request: PredictiveRouteRequest) -> RoutePlanResponse:
         weather = self.weather_for(request.city, request.weather_scenario)
@@ -62,16 +65,25 @@ class PredictiveRouteService:
         strategy_tags = self.strategy_service.infer_tags(" ".join(intent.interest_tags + intent.optimization_goals + intent.preferences), intent, planning_profile)
         strategy_weights = self.profile_service.build_strategy_weights(intent, planning_profile, strategy_tags)
         pois = self.poi_service.search(intent, user_profile=planning_profile, strategy_tags=strategy_tags, limit=48)
+        objectives = self._profile_objectives(planning_profile, weather_preferences, pois) if has_profile else self.ALL_OBJECTIVES
+        poi_relevance_scores, poi_fine_rank_details = self.fine_rank_service.score_map(
+            pois,
+            intent,
+            planning_profile,
+            strategy_tags=strategy_tags,
+            objective=objectives[0] if objectives else "balanced",
+        )
         plan_request = RoutePlanRequest(
             intent=intent,
             user_profile=planning_profile,
             strategy_weights=strategy_weights,
             strategy_tags=strategy_tags,
             candidate_pois=pois,
+            poi_relevance_scores=poi_relevance_scores,
+            poi_fine_rank_details=poi_fine_rank_details,
         )
 
         if has_profile:
-            objectives = self._profile_objectives(planning_profile, weather_preferences, pois)
             candidates = self.route_service.generate_routes_for_objectives(
                 plan_request,
                 objectives,
@@ -82,7 +94,7 @@ class PredictiveRouteService:
 
         candidates = self.route_service.generate_routes_for_objectives(
             plan_request,
-            self.ALL_OBJECTIVES,
+            objectives,
             max_stops=self._max_stops(intent, weather, planning_profile),
             routes_per_objective=3,
         ).routes

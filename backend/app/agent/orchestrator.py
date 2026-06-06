@@ -29,6 +29,7 @@ from app.schemas.poi import POI
 from app.schemas.route import ReplanRequest, Route
 from app.schemas.route import RoutePlanRequest
 from app.services.poi_service import POIService
+from app.services.fine_rank_service import FineRankService
 from app.services.profile_service import ProfileService
 from app.services.replan_service import ReplanService
 from app.services.route_service import RouteService
@@ -54,6 +55,7 @@ class AgentOrchestrator:
         self.route_detail_handler = RouteDetailHandler()
         self.profile_service = ProfileService()
         self.poi_service = POIService()
+        self.fine_rank_service = FineRankService()
         self.route_service = RouteService()
         self.replan_service = ReplanService()
 
@@ -280,6 +282,13 @@ class AgentOrchestrator:
             len(pois),
             [poi.name for poi in pois],
         )
+        poi_relevance_scores, poi_fine_rank_details = self.fine_rank_service.score_map(
+            pois,
+            intent,
+            user_profile,
+            strategy_tags=strategy_tags,
+            objective="balanced",
+        )
 
         routes: list[Route] = []
         route_updates: asyncio.Queue[list[Route] | None] = asyncio.Queue()
@@ -290,6 +299,8 @@ class AgentOrchestrator:
             strategy_weights=strategy_weights,
             strategy_tags=strategy_tags,
             candidate_pois=pois,
+            poi_relevance_scores=poi_relevance_scores,
+            poi_fine_rank_details=poi_fine_rank_details,
         )
 
         def collect_route(route: Route) -> None:
