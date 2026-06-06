@@ -62,7 +62,7 @@ class PredictiveRouteService:
             preference_weights=ProfileService.DEFAULT_WEIGHTS,
         )
         intent = self._intent_for_request(request, planning_profile if has_profile else None, weather_preferences)
-        strategy_tags = self.strategy_service.infer_tags(" ".join(intent.preferences), intent, planning_profile)
+        strategy_tags = self.strategy_service.infer_tags(" ".join(intent.interest_tags + intent.optimization_goals + intent.preferences), intent, planning_profile)
         strategy_weights = self.profile_service.build_strategy_weights(intent, planning_profile, strategy_tags)
         pois = self.poi_service.search(intent, user_profile=planning_profile, strategy_tags=strategy_tags, limit=48)
         objectives = self._profile_objectives(planning_profile, weather_preferences, pois) if has_profile else self.ALL_OBJECTIVES
@@ -130,7 +130,7 @@ class PredictiveRouteService:
         return self.profile_service.get_seed_profile(request.user_id)
 
     def _intent_for_request(self, request: PredictiveRouteRequest, profile: UserProfile | None, weather_preferences: list[str]) -> Intent:
-        profile_preferences = normalize_preferences([*(profile.preferences if profile else []), *(profile.tags if profile else [])])
+        profile_preferences = normalize_preferences([*(profile.preferences if profile else []), *(profile.tags if profile else []), *(profile.interest_tags if profile else []), *(profile.optimization_goals if profile else [])])
         preferences = self._unique([*weather_preferences, *profile_preferences])
         avoid_tags = profile.avoid_tags if profile else []
         return Intent(
@@ -146,7 +146,7 @@ class PredictiveRouteService:
         )
 
     def _profile_objectives(self, profile: UserProfile, weather_preferences: list[str], pois: list) -> list[str]:
-        profile_intent = Intent(preferences=normalize_preferences([*profile.preferences, *profile.tags]))
+        profile_intent = Intent(preferences=normalize_preferences([*profile.preferences, *profile.tags, *profile.interest_tags, *profile.optimization_goals]))
         profile_tags = self.strategy_service.infer_tags(" ".join(profile_intent.preferences), profile_intent, profile)
         scores = self.strategy_service.objective_scores(profile_tags, profile, self._objective_data_counts(pois))
         selected = [objective for objective, score in sorted(scores.items(), key=lambda item: item[1], reverse=True) if objective != "balanced" and score > 0][:2]
@@ -236,7 +236,7 @@ class PredictiveRouteService:
         return result
 
     def _max_stops(self, intent: Intent, weather: dict[str, Any], profile: UserProfile) -> int:
-        terms = set(intent.preferences + profile.preferences + profile.tags)
+        terms = set(intent.interest_tags + intent.optimization_goals + intent.preferences + profile.interest_tags + profile.optimization_goals + profile.preferences + profile.tags)
         if intent.duration_hours <= 3 or {"少走路", "亲子友好", "老人友好", "室内"} & terms or float(weather.get("rain_probability") or 0) >= 0.55:
             return 3
         return 4

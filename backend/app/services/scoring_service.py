@@ -318,7 +318,18 @@ class ScoringService:
         return [poi_by_id[stop.poi_id] for stop in stops if stop.poi_id in poi_by_id]
 
     def _preference_terms(self, request: RoutePlanRequest) -> list[str]:
-        return self._terms([*request.intent.preferences, *request.user_profile.preferences, *request.user_profile.tags, *[tag.tag for tag in request.strategy_tags]])
+        return self._terms(
+            [
+                *request.intent.interest_tags,
+                *request.intent.optimization_goals,
+                *request.intent.preferences,
+                *request.user_profile.interest_tags,
+                *request.user_profile.optimization_goals,
+                *request.user_profile.preferences,
+                *request.user_profile.tags,
+                *[tag.tag for tag in request.strategy_tags],
+            ]
+        )
 
     def _photo_stop_score(self, stop: RouteStop, poi: POI | None) -> float:
         text = self._stop_text(stop, poi)
@@ -397,6 +408,7 @@ class ScoringService:
     def _term_matches(self, term: str, text: str) -> bool:
         aliases = {
             "少排队": ["少排队", "别排队", "不排队", "排队可接受", "低排队", "queue"],
+            "美食": ["吃好", "美食", "餐厅", "聚餐", "菜", "restaurant", "local_food", "fine_dining", "meal"],
             "吃好": ["吃好", "美食", "餐厅", "聚餐", "菜", "restaurant", "local_food", "fine_dining", "meal"],
             "food_first": ["吃好", "美食", "餐厅", "聚餐", "菜", "restaurant", "local_food", "fine_dining", "meal"],
             "photo_food": ["拍照", "出片", "好看", "环境", "餐厅", "美食", "restaurant", "photo"],
@@ -486,11 +498,11 @@ class ScoringService:
         return minutes >= start or minutes <= end
 
     def _allows_repeated_coffee(self, request: RoutePlanRequest) -> bool:
-        terms = set(request.intent.preferences + request.user_profile.tags + request.user_profile.preferences)
+        terms = set(self._preference_terms(request))
         return self._has_any(terms, ["咖啡探店", "咖啡路线", "多家咖啡", "咖啡馆"])
 
     def _allows_repeated_meals(self, request: RoutePlanRequest) -> bool:
-        terms = set(request.intent.preferences + request.user_profile.tags + request.user_profile.preferences)
+        terms = set(self._preference_terms(request))
         return self._has_any(terms, ["美食路线", "扫街", "吃很多家", "小吃街", "多家餐厅"])
 
     def _clamp(self, value: int | float, minimum: int = 0) -> int:

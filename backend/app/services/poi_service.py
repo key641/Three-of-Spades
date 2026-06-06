@@ -289,7 +289,7 @@ class POIService:
         return poi.avg_price <= max(intent.budget_per_person * 2, intent.budget_per_person + 160)
 
     def _matches_preferences(self, candidate: POICandidate, intent: Intent) -> bool:
-        preferences = self._normalize_terms(intent.preferences)
+        preferences = self._normalize_terms(intent.interest_tags)
         if not preferences:
             return True
         return any(self._term_matches(term, candidate.search_text) for term in preferences)
@@ -459,15 +459,18 @@ class POIService:
     def _term_matches(self, term: str, text: str) -> bool:
         aliases = {
             "少排队": ["少排队", "别排队", "不排队", "排队可接受", "queue"],
-            "吃好": ["吃好", "美食", "餐厅", "聚餐", "菜", "restaurant", "local_food", "fine_dining"],
-            "food_first": ["吃好", "美食", "餐厅", "聚餐", "菜", "restaurant", "local_food", "fine_dining"],
+            "美食": ["美食", "吃好", "餐厅", "聚餐", "菜", "restaurant", "local_food", "fine_dining", "food"],
+            "吃好": ["美食", "吃好", "餐厅", "聚餐", "菜", "restaurant", "local_food", "fine_dining", "food"],
+            "food_first": ["美食", "吃好", "餐厅", "聚餐", "菜", "restaurant", "local_food", "fine_dining", "food"],
             "photo_food": ["拍照", "出片", "好看", "环境", "餐厅", "美食", "restaurant", "photo"],
             "nature": ["自然", "风景", "公园", "江景", "海边", "湖", "山", "森林", "nature"],
             "nature_relax": ["自然", "风景", "公园", "江景", "海边", "湖", "山", "森林", "nature"],
             "咖啡": ["咖啡", "下午茶", "休息", "cafe"],
             "轻食": ["轻食", "小吃", "light_meal", "fast_food", "market"],
             "小吃": ["小吃", "轻食", "light_meal", "fast_food", "market"],
+            "省钱": ["省钱", "便宜", "免费", "budget"],
             "更省钱": ["省钱", "便宜", "免费", "budget"],
+            "高性价比": ["高性价比", "免费", "budget"],
             "少走路": ["少走路", "轻松", "交通", "metro", "low"],
             "low_walking": ["少走路", "轻松", "交通", "metro", "low"],
             "轻松": ["少走路", "轻松", "low", "metro"],
@@ -533,7 +536,7 @@ class POIService:
 
     def _meal_score(self, poi: POI, terms: list[str]) -> float:
         meal_type = poi.meal_type
-        if any(term in {"吃好", "餐厅", "聚餐", "美食"} for term in terms):
+        if any(term in {"美食", "吃好", "餐厅", "聚餐"} for term in terms):
             if poi.category == "restaurant" or meal_type in {"local_food", "fine_dining"}:
                 return 1
             if meal_type in {"light_meal", "cafe", "fast_food"}:
