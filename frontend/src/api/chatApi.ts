@@ -1,12 +1,13 @@
 import { API_BASE_URL, postJson } from "./client";
 import type { OnboardingProfile, TripConstraints } from "../hooks/useOnboarding";
-import type { AgentTraceStep, ChatResponse, ChatStreamEvent } from "./types";
+import type { AgentTraceStep, ChatResponse, ChatStreamEvent, RouteStop } from "./types";
 
 // ============================================================
 // Mock 开关：默认走真实后端，只有显式设为 true 才使用前端本地 mock。
 // ============================================================
 const USE_MOCK = import.meta.env.VITE_USE_MOCK_CHAT === "true";
 const SESSION_STORAGE_KEY = "tos_chat_session_id";
+
 
 function getSessionId() {
   if (typeof window === "undefined") return "session_demo";
@@ -427,16 +428,17 @@ export async function sendChatMessage(
     : {};
 
   // 本次出行约束（每次请求都带上，不受 includeProfile 开关限制）
+  // trip_city 仅在用户明确填写了城市时才发送，空值不传，让后端走追问逻辑
   const tripPayload = trip
     ? {
-        trip_city:               trip.city,
+        ...(trip.city ? { trip_city: trip.city } : {}),
         trip_people:             trip.people,
         trip_duration_hours:     trip.duration,
         trip_budget_per_person:  trip.budget_per_person,
       }
     : {};
 
-  return postJson<ChatResponse>("/api/chat", {
+  const payload = {
     session_id: getSessionId(),
     user_id:    profile?.user_id ?? "user_demo",
     message,
@@ -446,7 +448,9 @@ export async function sendChatMessage(
     // 本次出行约束每次都发送
     ...tripPayload,
     ...options,
-  });
+  };
+  const res = await postJson<ChatResponse>("/api/chat", payload);
+  return normalizeResponse(res);
 }
 
 export async function sendChatMessageStream(
@@ -533,27 +537,29 @@ export async function sendChatMessageStream(
     : {};
 
   // 本次出行约束（每次请求都带上，不受 includeProfile 开关限制）
+  // trip_city 仅在用户明确填写了城市时才发送，空值不传，让后端走追问逻辑
   const tripPayload = trip
     ? {
-        trip_city:               trip.city,
+        ...(trip.city ? { trip_city: trip.city } : {}),
         trip_people:             trip.people,
         trip_duration_hours:     trip.duration,
         trip_budget_per_person:  trip.budget_per_person,
       }
     : {};
 
+  const streamPayload = {
+    session_id: getSessionId(),
+    user_id:    profile?.user_id ?? "user_demo",
+    message,
+    event_type: "user_message",
+    ...profilePayload,
+    ...tripPayload,
+    ...options,
+  };
   const response = await fetch(`${API_BASE_URL}/api/chat/stream`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({
-      session_id: getSessionId(),
-      user_id:    profile?.user_id ?? "user_demo",
-      message,
-      event_type: "user_message",
-      ...profilePayload,
-      ...tripPayload,
-      ...options,
-    }),
+    body: JSON.stringify(streamPayload),
   });
 
   if (!response.ok) {
@@ -581,9 +587,9 @@ export async function sendChatMessageStream(
       if (event.type === "progress") {
         onProgress?.(event.step);
       } else if (event.type === "routes") {
-        onRoutes?.(event.routes);
+        onRoutes?.(normalizeRoutes(event.routes));
       } else if (event.type === "final") {
-        finalResponse = event.response;
+        finalResponse = normalizeResponse(event.response);
       } else if (event.type === "error") {
         throw new Error(event.message);
       }
@@ -594,9 +600,9 @@ export async function sendChatMessageStream(
   if (remainingEvent?.type === "progress") {
     onProgress?.(remainingEvent.step);
   } else if (remainingEvent?.type === "routes") {
-    onRoutes?.(remainingEvent.routes);
+    onRoutes?.(normalizeRoutes(remainingEvent.routes));
   } else if (remainingEvent?.type === "final") {
-    finalResponse = remainingEvent.response;
+    finalResponse = normalizeResponse(remainingEvent.response);
   } else if (remainingEvent?.type === "error") {
     throw new Error(remainingEvent.message);
   }
@@ -611,4 +617,73 @@ function parseStreamEvent(line: string): ChatStreamEvent | null {
   const trimmed = line.trim();
   if (!trimmed) return null;
   return JSON.parse(trimmed) as ChatStreamEvent;
+}
+
+// ============================================================
+// 后端数据适配层
+// 把后端返回的 *_from_previous 扁平字段转成前端 RouteTimeline
+// 所需的 transit_to_next 嵌套结构，以及 queue_minutes → queue_level。
+// ============================================================
+type RawStop = Record<string, unknown>;
+
+/** 根据 queue_minutes 推断 queue_level */
+function inferQueueLevel(minutes: number | undefined): RouteStop["queue_level"] {
+  if (minutes == null || minutes <= 0) return "none";
+  if (minutes < 15) return "low";
+  if (minutes < 30) return "medium";
+  if (minutes < 60) return "high";
+  return "very_high";
+}
+
+/** 把后端 Route[] 归一化为前端可直接渲染的 Route[] */
+export function normalizeRoutes(routes: ChatResponse["routes"]): ChatResponse["routes"] {
+  return routes.map((route) => {
+    // ── 把 stops[i] 的 *_from_previous 拼装成 stops[i-1].transit_to_next ──
+    const rawStops = route.stops as unknown as RawStop[];
+    const normalized = rawStops.map((stop, idx): RouteStop => {
+      // queue_level 如果后端没传，从 queue_minutes 推断
+      const queueMinutes = (stop.queue_minutes as number) ?? 0;
+      const queue_level = (stop.queue_level as RouteStop["queue_level"]) ?? inferQueueLevel(queueMinutes);
+
+      // 把当前站的 *_from_previous 转换为前一站的 transit_to_next（idx > 0 时处理）
+      // 这里先原样保留，下面统一处理
+      return { ...(stop as unknown as RouteStop), queue_level };
+    });
+
+    // 第二轮：用 stops[i]._from_previous 填充 stops[i-1].transit_to_next
+    for (let i = 1; i < normalized.length; i++) {
+      const cur = normalized[i] as RawStop & RouteStop;
+      const mode = (cur.transport_mode_from_previous as string) ?? "walk";
+      const duration = (cur.travel_minutes_from_previous as number) ?? 0;
+      // amap_distance_meters_from_previous 精度更高，优先用；否则用 km 字段换算
+      const distanceM =
+        (cur.amap_distance_meters_from_previous as number) ??
+        ((cur.distance_km_from_previous as number) != null
+          ? Math.round((cur.distance_km_from_previous as number) * 1000)
+          : 0);
+      // description 用第一条 route_step（人可读文案）
+      const steps = cur.route_steps_from_previous as string[] | undefined;
+      const description = steps && steps.length > 0 ? steps[0] : undefined;
+
+      // 只有在有意义的交通信息时才填
+      if (duration > 0 || distanceM > 0) {
+        normalized[i - 1] = {
+          ...normalized[i - 1],
+          transit_to_next: {
+            mode: (mode as RouteStop["transit_to_next"] extends { mode: infer M } | undefined ? M : "walk"),
+            duration_minutes: duration,
+            distance_m: distanceM,
+            description,
+          },
+        };
+      }
+    }
+
+    return { ...route, stops: normalized };
+  });
+}
+
+/** 对完整 ChatResponse 做归一化 */
+function normalizeResponse(res: ChatResponse): ChatResponse {
+  return { ...res, routes: normalizeRoutes(res.routes) };
 }

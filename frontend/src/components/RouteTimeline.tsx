@@ -309,9 +309,11 @@ interface PoiPopoverProps {
   stop: RouteStop;
   onAction: (action: PoiAction) => void;
   onClose: () => void;
+  /** 当前方案总节点数，为 1 时禁止删除 */
+  stopsTotal: number;
 }
 
-function PoiPopover({ stop, onAction, onClose }: PoiPopoverProps) {
+function PoiPopover({ stop, onAction, onClose, stopsTotal }: PoiPopoverProps) {
   const ref = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -346,10 +348,12 @@ function PoiPopover({ stop, onAction, onClose }: PoiPopoverProps) {
 
       <button
         className="poi-popover-item danger"
-        onClick={() => { onAction({ type: "remove", poiId: stop.poi_id, poiName: stop.name }); onClose(); }}
+        disabled={stopsTotal <= 1}
+        style={stopsTotal <= 1 ? { opacity: 0.38, cursor: "not-allowed" } : undefined}
+        onClick={() => { if (stopsTotal <= 1) return; onAction({ type: "remove", poiId: stop.poi_id, poiName: stop.name }); onClose(); }}
       >
         <Trash2 size={13} />
-        <span>删除该节点</span>
+        <span>{stopsTotal <= 1 ? "至少保留 1 个节点" : "删除该节点"}</span>
       </button>
     </div>
   );
@@ -361,9 +365,11 @@ interface PoiCardProps {
   index: number;
   isRemoving?: boolean;
   onPoiAction?: (action: PoiAction) => void;
+  /** 当前方案总节点数，用于禁止删除最后一个节点 */
+  stopsTotal: number;
 }
 
-function PoiCard({ stop, index, isRemoving, onPoiAction }: PoiCardProps) {
+function PoiCard({ stop, index, isRemoving, onPoiAction, stopsTotal }: PoiCardProps) {
   const [popoverOpen, setPopoverOpen] = useState(false);
   const nameRef = useRef<HTMLParagraphElement>(null);
   const nameDragRef = useRef<{ dragging: boolean; startX: number; startScroll: number }>({ dragging: false, startX: 0, startScroll: 0 });
@@ -454,6 +460,7 @@ function PoiCard({ stop, index, isRemoving, onPoiAction }: PoiCardProps) {
                 stop={stop}
                 onAction={onPoiAction}
                 onClose={() => setPopoverOpen(false)}
+                stopsTotal={stopsTotal}
               />
             )}
           </div>
@@ -656,6 +663,7 @@ export function RouteTimeline({ stops: initialStops, onPoiAction, onInjectChat, 
             index={idx}
             isRemoving={removingId === stop.poi_id}
             onPoiAction={handlePoiAction}
+            stopsTotal={stops.length}
           />
           {idx < stops.length - 1 && stop.transit_to_next && (
             <TransitBar
