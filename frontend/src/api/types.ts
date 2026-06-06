@@ -34,6 +34,7 @@ export interface RouteStop {
   amap_distance_meters_from_previous?: number | null;
   amap_duration_minutes_from_previous?: number | null;
   route_leg_source_from_previous?: string | null;
+  route_steps_from_previous?: string[];
   reason?: string | null;
 
   // ── POI 卡片展示字段 ────────────────────────────────
@@ -109,12 +110,39 @@ export interface Route {
   stops: RouteStop[];
   reasons: string[];
   replan_reason?: string | null;
+  changed_stops?: Array<{
+    change_type: string;
+    from_poi_id?: string | null;
+    from_name?: string | null;
+    to_poi_id?: string | null;
+    to_name?: string | null;
+    reason: string;
+  }>;
+  live_warnings?: string[];
+  data_sources?: string[];
 }
 
 export interface UserProfile {
   user_id?: string;
+  tags?: string[];
   preferences?: string[];
   avoid_tags?: string[];
+  preference_weights?: Record<string, number>;
+  budget_sensitivity?: number;
+  walking_tolerance?: number;
+  crowd_tolerance?: number;
+  schedule_tightness?: number;
+  novelty_preference?: number;
+  comfort_preference?: number;
+  category_preferences?: Record<string, number>;
+  preferred_route_roles?: string[];
+  preferred_experience_tags?: string[];
+  preferred_time_slots?: string[];
+  preferred_transport_modes?: string[];
+  liked_poi_ids?: string[];
+  disliked_poi_ids?: string[];
+  skipped_categories?: string[];
+  common_adjust_actions?: string[];
   [key: string]: unknown;
 }
 
@@ -131,5 +159,6 @@ export interface ChatResponse {
 
 export type ChatStreamEvent =
   | { type: "progress"; step: AgentTraceStep }
+  | { type: "routes"; routes: Route[] }
   | { type: "final"; response: ChatResponse }
   | { type: "error"; message: string };

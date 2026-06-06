@@ -1,6 +1,7 @@
 import React, { useEffect, useRef } from "react";
 import { MapPin, AlertTriangle } from "lucide-react";
 import type { ChatMessage } from "../hooks/useChat";
+import { AgentTrace } from "./AgentTrace";
 
 interface ChatPanelProps {
   messages: ChatMessage[];
@@ -63,8 +64,15 @@ export function ChatPanel({
     <div className="message-list">
       {messages.map((msg, idx) => (
         <React.Fragment key={msg.timestamp}>
-          <div className={`bubble bubble-${msg.role}`}>
-            {msg.content}
+          <div className={`message-block message-block-${msg.role}`}>
+            <div className={`bubble bubble-${msg.role}`}>
+              {msg.content}
+            </div>
+            {msg.role === "assistant" && msg.agentTrace && msg.agentTrace.length > 0 && (
+              <div className="message-trace">
+                <AgentTrace steps={msg.agentTrace} />
+              </div>
+            )}
           </div>
           {/* 第一条 user 消息后插入追问内容 */}
           {afterFirstUserMessage && idx === firstUserIdx && (

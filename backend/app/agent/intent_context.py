@@ -1,6 +1,7 @@
 from app.agent.schemas import IntentDelta, QueryUnderstanding, SessionState, StateChangeSummary, TripState
 from app.agent.message_router import MessageRoute, TurnType
 from app.agent.intent_enhancer import extract_explicit_trip_fields, normalize_avoid_tags, normalize_preferences
+from app.agent.unit_normalizer import extract_standard_unit_fields
 from app.schemas.intent import Intent
 
 
@@ -68,18 +69,36 @@ def apply_session_context(intent: Intent, message: str, state: SessionState, rou
         merged["city_from_message"] = True
 
     is_add_constraint = bool(route and route.turn_type == TurnType.ADD_CONSTRAINT)
-    explicit_fields = extract_explicit_trip_fields(message)
+    is_local_route_edit = _is_local_route_edit(message, route)
+    explicit_fields = extract_explicit_trip_fields(message) | extract_standard_unit_fields(message)
     for key in ("budget_per_person", "people_count", "start_time", "duration_hours"):
         if key in explicit_fields:
             merged[key] = explicit_fields[key]
-        elif not is_add_constraint and current.get(key) != Intent().model_dump().get(key):
+        elif not is_add_constraint and not is_local_route_edit and current.get(key) != Intent().model_dump().get(key):
             merged[key] = current[key]
 
-    preserve_scenario = bool(is_add_constraint and route and route.preserve_scenario)
+    preserve_scenario = bool((is_add_constraint or is_local_route_edit) and route and route.preserve_scenario)
     if not preserve_scenario and current.get("scenario") != Intent().model_dump().get("scenario"):
         merged["scenario"] = current["scenario"]
 
     return Intent.model_validate(merged)
+
+
+def _is_local_route_edit(message: str, route: MessageRoute | None) -> bool:
+    if not route or not route.inherit_previous:
+        return False
+    local_edit_terms = [
+        "换一家",
+        "替换",
+        "替代",
+        "替代方案",
+        "等待时间短",
+        "排队",
+        "当前路线",
+        "这条路线",
+        "route_",
+    ]
+    return bool(route.references_previous_route or any(term in message for term in local_edit_terms))
 
 
 def apply_query_delta(

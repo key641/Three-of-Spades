@@ -7,6 +7,7 @@ export interface ChatMessage {
   role: "user" | "assistant";
   content: string;
   timestamp: number;
+  agentTrace?: AgentTraceStep[];
 }
 
 export function useChat() {
@@ -32,7 +33,13 @@ export function useChat() {
     });
   }
 
-  async function send(message: string, profile?: OnboardingProfile, trip?: TripConstraints, silent = false) {
+  async function send(
+    message: string,
+    profile?: OnboardingProfile,
+    trip?: TripConstraints,
+    silent = false,
+    options: Record<string, unknown> = {},
+  ) {
     if (inFlightRef.current) return;
 
     if (!silent) {
@@ -52,9 +59,29 @@ export function useChat() {
       const includeProfile =
         !hasSentProfile.current ||
         (profileSig !== null && profileSig !== lastProfileSigRef.current);
-      const res = await sendChatMessageStream(message, profile, includeProfile, (step) => {
-        setLiveTrace((prev) => [...prev, step]);
-      }, trip);
+      const locationOptions = await getCurrentLocationOptions();
+      const res = await sendChatMessageStream(
+        message,
+        profile,
+        includeProfile,
+        (step) => {
+          setLiveTrace((prev) => [...prev, step]);
+        },
+        trip,
+        { ...locationOptions, ...options },
+        (routes) => {
+          setResponse((prev) => ({
+            session_id: prev?.session_id ?? "",
+            message: prev?.message ?? "",
+            need_clarification: prev?.need_clarification ?? false,
+            clarifying_question: prev?.clarifying_question ?? null,
+            intent: prev?.intent ?? null,
+            user_profile: prev?.user_profile ?? null,
+            agent_trace: prev?.agent_trace ?? [],
+            routes,
+          }));
+        },
+      );
 
       if (includeProfile) {
         hasSentProfile.current = true;
@@ -70,6 +97,7 @@ export function useChat() {
         role: "assistant",
         content: res.message,
         timestamp: Date.now(),
+        agentTrace: res.agent_trace,
       };
       setMessages((prev) => [...prev, assistantMsg]);
     } catch (requestError) {
@@ -104,4 +132,29 @@ export function useChat() {
   }
 
   return { messages, response, liveTrace, loading, error, send, inject, reset };
+}
+
+async function getCurrentLocationOptions(): Promise<Record<string, unknown>> {
+  if (typeof navigator === "undefined" || !navigator.geolocation) {
+    return {};
+  }
+  return new Promise((resolve) => {
+    const timer = window.setTimeout(() => resolve({}), 1200);
+    navigator.geolocation.getCurrentPosition(
+      (position) => {
+        window.clearTimeout(timer);
+        resolve({
+          current_lat: position.coords.latitude,
+          current_lng: position.coords.longitude,
+          start_lat: position.coords.latitude,
+          start_lng: position.coords.longitude,
+        });
+      },
+      () => {
+        window.clearTimeout(timer);
+        resolve({});
+      },
+      { enableHighAccuracy: false, maximumAge: 300000, timeout: 1000 },
+    );
+  });
 }

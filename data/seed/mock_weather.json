@@ -1,0 +1,93 @@
+{
+  "mock_weather_intro": [
+    "Mock Weather: 上海、北京；每城 sunny/rainy/hot/cloudy/night 共5个场景。",
+    "用于预制路线生成，不调用真实天气服务。"
+  ],
+  "schema_version": "1.0.0",
+  "cities": {
+    "上海": {
+      "sunny": {
+        "condition": "sunny",
+        "temperature_c": 24,
+        "rain_probability": 0.08,
+        "wind_level": 2,
+        "comfort_level": "comfortable",
+        "suggested_preferences": ["citywalk", "拍照", "自然风景"]
+      },
+      "rainy": {
+        "condition": "rainy",
+        "temperature_c": 21,
+        "rain_probability": 0.86,
+        "wind_level": 4,
+        "comfort_level": "wet",
+        "suggested_preferences": ["室内", "雨天", "少走路"]
+      },
+      "hot": {
+        "condition": "hot",
+        "temperature_c": 34,
+        "rain_probability": 0.18,
+        "wind_level": 2,
+        "comfort_level": "hot",
+        "suggested_preferences": ["室内", "少走路", "咖啡"]
+      },
+      "cloudy": {
+        "condition": "cloudy",
+        "temperature_c": 22,
+        "rain_probability": 0.28,
+        "wind_level": 3,
+        "comfort_level": "mild",
+        "suggested_preferences": ["citywalk", "拍照", "吃好"]
+      },
+      "night": {
+        "condition": "night_clear",
+        "temperature_c": 20,
+        "rain_probability": 0.1,
+        "wind_level": 2,
+        "comfort_level": "comfortable",
+        "suggested_preferences": ["晚上", "夜景", "吃好"]
+      }
+    },
+    "北京": {
+      "sunny": {
+        "condition": "sunny",
+        "temperature_c": 23,
+        "rain_probability": 0.06,
+        "wind_level": 2,
+        "comfort_level": "comfortable",
+        "suggested_preferences": ["citywalk", "拍照", "自然风景"]
+      },
+      "rainy": {
+        "condition": "rainy",
+        "temperature_c": 20,
+        "rain_probability": 0.78,
+        "wind_level": 4,
+        "comfort_level": "wet",
+        "suggested_preferences": ["室内", "雨天", "少走路"]
+      },
+      "hot": {
+        "condition": "hot",
+        "temperature_c": 35,
+        "rain_probability": 0.12,
+        "wind_level": 2,
+        "comfort_level": "hot",
+        "suggested_preferences": ["室内", "少走路", "咖啡"]
+      },
+      "cloudy": {
+        "condition": "cloudy",
+        "temperature_c": 21,
+        "rain_probability": 0.24,
+        "wind_level": 3,
+        "comfort_level": "mild",
+        "suggested_preferences": ["citywalk", "拍照", "吃好"]
+      },
+      "night": {
+        "condition": "night_clear",
+        "temperature_c": 19,
+        "rain_probability": 0.08,
+        "wind_level": 2,
+        "comfort_level": "comfortable",
+        "suggested_preferences": ["晚上", "夜景", "吃好"]
+      }
+    }
+  }
+}

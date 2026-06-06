@@ -1225,7 +1225,16 @@ export function PlannerPage({ profile, onResetProfile, preset, onPresetConsumed,
       return;
     }
     const msg = buildActionMessage(actionKey, routeId);
-    if (msg) send(msg, localProfile, trip ?? DEFAULT_TRIP_CONSTRAINTS);
+    if (!msg) return;
+    if (actionKey === "swap") {
+      send(msg, localProfile, trip ?? DEFAULT_TRIP_CONSTRAINTS, false, {
+        event_type: "replace_poi",
+        selected_route_id: routeId,
+        event_payload: { force_replace: true },
+      });
+      return;
+    }
+    send(msg, localProfile, trip ?? DEFAULT_TRIP_CONSTRAINTS);
   }
 
   const handlePoiAction = useCallback((action: PoiAction, routeId: string) => {

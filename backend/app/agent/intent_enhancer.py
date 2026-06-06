@@ -15,6 +15,10 @@ CITY_ALIASES: dict[str, list[str]] = {
     "西安": ["西安"],
     "苏州": ["苏州"],
     "重庆": ["重庆"],
+    "长沙": ["长沙"],
+    "厦门": ["厦门"],
+    "青岛": ["青岛"],
+    "天津": ["天津"],
 }
 
 PREFERENCE_ALIASES: dict[str, list[str]] = {
@@ -27,6 +31,7 @@ PREFERENCE_ALIASES: dict[str, list[str]] = {
     "亲子友好": ["亲子", "带娃", "小孩", "儿童"],
     "室内": ["室内", "雨天", "下雨"],
     "安静": ["安静", "清净", "人少"],
+    "自然风景": ["自然", "风景", "自然风景", "公园", "江景", "海边", "湖边", "山", "森林"],
 }
 
 PREFERENCE_CANONICAL_ALIASES: dict[str, str] = {

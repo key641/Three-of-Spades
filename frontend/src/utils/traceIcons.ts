@@ -1,4 +1,6 @@
 export const STEP_ICONS: Record<string, string> = {
+  route_message:          "🧭",
+  clarify_intent:         "❓",
   parse_intent:           "🧠",
   get_user_profile:       "👤",
   build_strategy_weights: "⚖️",
