@@ -49,6 +49,48 @@ class MessageRouterTest(unittest.TestCase):
 
         asyncio.run(run_case())
 
+    def test_router_falls_back_to_new_plan_for_outdoor_walk_recommendation(self) -> None:
+        async def run_case() -> None:
+            llm_client = AsyncMock()
+            llm_client.complete = AsyncMock(side_effect=RuntimeError("llm down"))
+
+            result = await MessageRouter(llm_client).classify(
+                "今天天气好，适合户外漫步，有推荐吗",
+                SessionState(session_id="s1"),
+            )
+
+            self.assertEqual(result.intent_type, MessageIntentType.NEW_PLAN)
+            self.assertEqual(result.planning_mode, PlanningMode.NEW_PLAN)
+            self.assertEqual(result.turn_type, TurnType.NEW_PLAN)
+
+        asyncio.run(run_case())
+
+    def test_router_recovers_when_llm_misclassifies_recommendation_as_general_chat(self) -> None:
+        async def run_case() -> None:
+            llm_client = AsyncMock()
+            llm_client.complete = AsyncMock(
+                return_value={
+                    "choices": [
+                        {
+                            "message": {
+                                "content": '{"intent_type":"general_chat","turn_type":"general_chat","planning_mode":"general_chat","confidence":0.86,"reason":"not_route_related"}'
+                            }
+                        }
+                    ]
+                }
+            )
+
+            result = await MessageRouter(llm_client).classify(
+                "今天天气好，适合户外漫步，有推荐吗",
+                SessionState(session_id="s1"),
+            )
+
+            self.assertEqual(result.intent_type, MessageIntentType.NEW_PLAN)
+            self.assertEqual(result.planning_mode, PlanningMode.NEW_PLAN)
+            self.assertGreaterEqual(result.confidence, 0.65)
+
+        asyncio.run(run_case())
+
     def test_router_falls_back_to_add_constraint_for_followup_food_request(self) -> None:
         async def run_case() -> None:
             llm_client = AsyncMock()
