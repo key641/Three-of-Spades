@@ -57,15 +57,15 @@ function buildMockResponse(message: string): ChatResponse {
     routes: [
       {
         route_id: "route_A",
-        title: "🌿 文艺下午茶路线",
+        title: "文艺下午茶路线",
         objective: "citywalk + 咖啡 + 轻食",
-        summary: "田子坊→网红咖啡馆→新天地步行街，全程约 4 公里，轻松惬意",
+        summary: "弄堂里随手一拍就出片，咖啡香气飘出来就走不动道了，完全不赶时间的那种下午",
         total_duration_minutes: 240,
         total_cost_per_person: 138,
         total_queue_minutes: 15,
         score: 8.6,
         score_breakdown: { quality: 0.88, queue: 0.92, budget: 0.80, distance: 0.85, preference: 0.90 },
-        reasons: ["性价比超高", "排队极少", "文艺氛围浓"],
+        reasons: ["性价比超高", "全程排队不超过15分钟，节省大量等待时间", "文艺弄堂气息十足，适合拍照打卡"],
         stops: [
           {
             poi_id: "p1",
@@ -183,15 +183,15 @@ function buildMockResponse(message: string): ChatResponse {
       },
       {
         route_id: "route_B",
-        title: "🍜 市井烟火美食路线",
+        title: "市井烟火美食路线",
         objective: "本地小吃 + 市集 + 网红餐厅",
-        summary: "南京路步行街→城隍庙小吃→外滩夜景，体验最地道上海风味",
+        summary: "城隍庙那家生煎真的绝，外滩夜色一点都不输网上的照片，吃饱了再溜达消食刚好",
         total_duration_minutes: 300,
         total_cost_per_person: 165,
         total_queue_minutes: 40,
         score: 7.9,
         score_breakdown: { quality: 0.85, queue: 0.68, budget: 0.75, distance: 0.78, preference: 0.82 },
-        reasons: ["网红打卡地", "夜景绝美", "市井烟火"],
+        reasons: ["夜景绝美", "城隍庙小吃一条街超划算，品类齐全", "最地道市井烟火气，沉浸感极强"],
         stops: [
           {
             poi_id: "p5",
@@ -287,15 +287,15 @@ function buildMockResponse(message: string): ChatResponse {
       },
       {
         route_id: "route_C",
-        title: "🏛️ 博物馆亲子路线",
+        title: "博物馆亲子路线",
         objective: "博物馆 + 科普 + 轻松步行",
-        summary: "上海博物馆→人民公园→和平饭店下午茶，适合带娃的文化半日游",
+        summary: "孩子在博物馆问了一路问题都没停，公园喂完鸽子又不肯走，比刷手机充实多了",
         total_duration_minutes: 270,
         total_cost_per_person: 120,
         total_queue_minutes: 20,
         score: 8.2,
         score_breakdown: { quality: 0.90, queue: 0.85, budget: 0.82, distance: 0.88, preference: 0.78 },
-        reasons: ["步行最轻松", "亲子友好", "文化体验"],
+        reasons: ["亲子友好", "孩子体验感极佳，互动展区丰富有趣", "一票多用，三大文化地标一日贯通"],
         stops: [
           {
             poi_id: "p9",

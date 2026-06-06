@@ -10,6 +10,7 @@
 
 export interface OnboardingProfile {
   user_id: string;
+  nickname?: string;           // 用户昵称
   scenarios: string[];        // 出行场景（多选）
   scenario: string;           // 兼容后端单字段，取 scenarios[0]
   preferences: string[];      // 偏好标签
@@ -74,7 +75,14 @@ export function buildWeights(
 export function loadProfile(): OnboardingProfile | null {
   try {
     const raw = localStorage.getItem(STORAGE_KEY);
-    return raw ? (JSON.parse(raw) as OnboardingProfile) : null;
+    if (!raw) return null;
+    const profile = JSON.parse(raw) as OnboardingProfile;
+    // 演示默认昵称：若未设置则补充「小桃」
+    if (!profile.nickname) {
+      profile.nickname = "小桃";
+      localStorage.setItem(STORAGE_KEY, JSON.stringify(profile));
+    }
+    return profile;
   } catch {
     return null;
   }
