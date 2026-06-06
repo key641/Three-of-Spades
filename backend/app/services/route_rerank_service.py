@@ -68,6 +68,7 @@ class RouteRerankService:
         weights = self._dynamic_weights(route.objective, request)
         score = sum(features[key] * weights[key] for key in weights)
         score += self._coverage_bonus(route, request, selected_routes)
+        score += self._food_crawl_bonus(route, request)
         score -= self._bad_meal_sequence_penalty(route, request)
         score -= self._common_sense_penalty(route, request)
         return RouteRerankResult(
@@ -260,6 +261,12 @@ class RouteRerankService:
     def _bad_meal_sequence_penalty(self, route: Route, request: RoutePlanRequest) -> float:
         return 0.12 if self._has_bad_meal_sequence(route, request) else 0.0
 
+    def _food_crawl_bonus(self, route: Route, request: RoutePlanRequest) -> float:
+        if not self._allows_food_crawl(request):
+            return 0.0
+        food_stops = sum(1 for stop in route.stops if self._is_food_stop(stop))
+        return 0.04 if food_stops >= 2 else 0.0
+
     def _common_sense_penalty(self, route: Route, request: RoutePlanRequest) -> float:
         terms = self._terms(request)
         explicit_coffee = self._has_any(terms, ["咖啡", "下午茶", "咖啡馆", "咖啡探店", "咖啡路线"])
@@ -337,7 +344,8 @@ class RouteRerankService:
         return self._meal_group(stop) in {"meal", "coffee", "snack"}
 
     def _allows_food_crawl(self, request: RoutePlanRequest) -> bool:
-        return self._has_any(self._terms(request), ["美食路线", "扫街", "吃很多家", "小吃街", "多家餐厅", "咖啡探店", "咖啡路线", "多家咖啡"])
+        crawl_terms = ["美食路线", "扫街", "吃很多家", "小吃街", "多家餐厅", "咖啡探店", "咖啡路线", "多家咖啡"]
+        return any(term == value or value in term for term in self._terms(request) for value in crawl_terms)
 
     def _is_open_for_stop(self, stop: RouteStop, poi: POI) -> bool:
         start = self._parse_time(stop.start_time)

@@ -7,6 +7,8 @@ from typing import Any
 from app.schemas.intent import Intent
 from app.schemas.poi import POI
 from app.schemas.user import StrategyTag, UserProfile
+from app.services.coarse_rank_service import CoarseRankService
+from app.services.recall_service import RecallService
 from app.services.strategy_service import StrategyService
 
 
@@ -26,8 +28,17 @@ class POIService:
         self.data_path = data_path or Path(__file__).resolve().parents[3] / "data" / "seed" / "pois.json"
         self._candidates = self._load_candidates()
         self.strategy_service = StrategyService()
+        self.recall_service = RecallService()
+        self.coarse_rank_service = CoarseRankService(self.strategy_service)
 
-    def search(self, intent: Intent, user_profile: UserProfile | None = None, limit: int = 40, strategy_tags: list[StrategyTag] | None = None) -> list[POI]:
+    def search(
+        self,
+        intent: Intent,
+        user_profile: UserProfile | None = None,
+        limit: int = 40,
+        strategy_tags: list[StrategyTag] | None = None,
+        relax_preferences: bool = False,
+    ) -> list[POI]:
         city_matches = [candidate for candidate in self._candidates if candidate.poi.city == intent.city]
         if not city_matches:
             city_matches = self._fallback_candidates(intent.city)
@@ -40,19 +51,14 @@ class POIService:
             and not self._matches_avoid_tags(candidate, intent)
             and self._is_not_extreme_budget_mismatch(candidate.poi, intent)
         ]
-        candidates = strict_matches or [
+        relaxed_matches = [
             candidate
             for candidate in city_matches
             if not self._matches_avoid_tags(candidate, intent)
             and self._is_not_extreme_budget_mismatch(candidate.poi, intent)
         ]
+        candidates = relaxed_matches if relax_preferences else strict_matches or relaxed_matches
         if len(candidates) < min_candidates:
-            relaxed_matches = [
-                candidate
-                for candidate in city_matches
-                if not self._matches_avoid_tags(candidate, intent)
-                and self._is_not_extreme_budget_mismatch(candidate.poi, intent)
-            ]
             candidates = self._merge_candidates(candidates, relaxed_matches)
         if len(candidates) < min_candidates:
             low_risk_matches = [
@@ -89,6 +95,8 @@ class POIService:
         quality = raw.get("quality", {})
         suitability = raw.get("suitability", {})
         planning = raw.get("planning_features", {})
+        district = str(raw.get("district") or location.get("district", ""))
+        business_area = str(raw.get("business_area") or location.get("business_area", ""))
 
         tags = self._as_string_list(raw.get("tags"))
         highlight_tags = self._as_string_list(raw.get("highlight_text_tags"))
@@ -120,7 +128,8 @@ class POIService:
             id=str(raw.get("poi_id", "")),
             name=str(raw.get("name", "")),
             city=str(location.get("city", "")),
-            district=str(location.get("district", "")),
+            district=district,
+            business_area=business_area,
             address=str(location.get("address", "")),
             category=category,
             external_place_ids=dict(raw.get("external_place_ids") or {}),
@@ -181,6 +190,7 @@ class POIService:
         searchable_parts = [
             poi.name,
             poi.district,
+            poi.business_area,
             poi.address,
             poi.category,
             poi.primary_category,
@@ -344,7 +354,7 @@ class POIService:
             return "landmark"
         if category in {"park", "nature"}:
             return "nature"
-        if category in {"shopping", "mall"}:
+        if category in {"shopping", "mall", "boutique", "bookstore", "lifestyle_store", "toy_collectible", "sports_outdoor", "beauty_retail", "design_store"}:
             return "shopping"
         if category in {"amusement", "entertainment"}:
             return "entertainment"
@@ -457,6 +467,14 @@ class POIService:
             "low_walking": ["少走路", "轻松", "交通", "metro", "low"],
             "轻松": ["少走路", "轻松", "low", "metro"],
             "citywalk": ["citywalk", "街区", "散步", "漫步", "拍照", "landmark"],
+            "逛店": ["逛店", "逛街", "购物", "买手店", "书店", "生活方式", "潮玩", "美妆", "设计商店", "shopping", "boutique", "bookstore", "lifestyle_store", "toy_collectible", "beauty_retail", "design_store"],
+            "购物": ["逛店", "逛街", "购物", "商场", "买手店", "生活方式", "shopping", "boutique", "lifestyle_store"],
+            "书店": ["书店", "书局", "阅读", "bookstore"],
+            "买手店": ["买手店", "选品店", "设计师品牌", "boutique"],
+            "潮玩": ["潮玩", "手办", "盲盒", "toy_collectible"],
+            "美妆": ["美妆", "香氛", "护肤", "beauty_retail"],
+            "户外": ["户外", "运动户外", "跑步", "骑行", "sports_outdoor"],
+            "文创": ["文创", "设计商店", "艺术周边", "design_store"],
             "室内": ["室内", "雨天", "museum", "gallery", "theater", "cafe", "shopping"],
             "indoor_rainy": ["室内", "雨天", "museum", "gallery", "theater", "cafe", "shopping"],
             "雨天": ["雨天", "室内", "museum", "gallery", "theater", "cafe", "shopping"],

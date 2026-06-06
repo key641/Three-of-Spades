@@ -16,6 +16,7 @@ class RouteStop(BaseModel):
     route_roles: list[str] = Field(default_factory=list)
     experience_tags: list[str] = Field(default_factory=list)
     district: str = ""
+    business_area: str = ""
     address: str = ""
     lat: float | None = None
     lng: float | None = None

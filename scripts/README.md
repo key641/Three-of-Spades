@@ -26,7 +26,7 @@ python3 scripts/build_recall_assets.py
 - `data/models/cf/item_similarity.json`
 - `data/models/two_tower/*.json`
 
-脚本是确定性的，重复运行会保持同一套 mock 数据规模：1680 条 POI、16000 条 interaction events、64 维双塔 embedding。
+脚本是确定性的，重复运行会保持同一套 mock 数据规模：2240 条 POI、16000 条 interaction events、64 维双塔 embedding。
 
 ## B 侧精排模型训练
 

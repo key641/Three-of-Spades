@@ -38,6 +38,13 @@ TARGET_CATEGORY_COUNTS = {
     "cafe": 120,
     "market": 80,
     "shopping": 80,
+    "boutique": 40,
+    "bookstore": 40,
+    "lifestyle_store": 40,
+    "toy_collectible": 40,
+    "sports_outdoor": 40,
+    "beauty_retail": 40,
+    "design_store": 40,
     "landmark": 80,
     "museum": 70,
     "gallery": 70,
@@ -45,6 +52,82 @@ TARGET_CATEGORY_COUNTS = {
     "night_view": 70,
     "theater": 60,
 }
+
+STORE_CATEGORIES = {
+    "shopping",
+    "boutique",
+    "bookstore",
+    "lifestyle_store",
+    "toy_collectible",
+    "sports_outdoor",
+    "beauty_retail",
+    "design_store",
+}
+
+CATEGORY_BASE = {
+    "boutique": "shopping",
+    "bookstore": "shopping",
+    "lifestyle_store": "shopping",
+    "toy_collectible": "shopping",
+    "sports_outdoor": "shopping",
+    "beauty_retail": "shopping",
+    "design_store": "shopping",
+}
+
+CITY_CODES = {"上海": "sh", "北京": "bj"}
+
+BUSINESS_AREAS = {
+    "上海": {
+        "徐汇区": ["武康路-安福路", "衡山路", "西岸"],
+        "静安区": ["静安寺", "南京西路", "愚园路"],
+        "黄浦区": ["外滩-南京东路", "新天地", "淮海中路"],
+        "浦东新区": ["陆家嘴", "前滩", "世纪公园"],
+        "长宁区": ["中山公园", "新华路", "古北"],
+        "虹口区": ["北外滩", "鲁迅公园", "甜爱路"],
+        "普陀区": ["长风公园", "真如", "曹杨"],
+        "杨浦区": ["大学路", "五角场", "滨江"],
+    },
+    "北京": {
+        "朝阳区": ["三里屯", "亮马河", "国贸"],
+        "东城区": ["雍和宫", "南锣鼓巷", "王府井"],
+        "西城区": ["什刹海", "西单", "金融街"],
+        "海淀区": ["五道口", "中关村", "学院路"],
+        "丰台区": ["丽泽", "方庄", "花乡"],
+        "石景山区": ["首钢园", "古城", "苹果园"],
+        "昌平区": ["回龙观", "天通苑", "沙河"],
+        "通州区": ["运河商务区", "宋庄", "北关"],
+    },
+}
+
+STREET_NAMES = {
+    "上海": {
+        "武康路-安福路": ["安福路", "武康路", "湖南路"],
+        "静安寺": ["愚园路", "万航渡路", "南京西路"],
+        "外滩-南京东路": ["圆明园路", "南京东路", "四川中路"],
+        "陆家嘴": ["陆家嘴环路", "银城中路", "东泰路"],
+    },
+    "北京": {
+        "三里屯": ["三里屯路", "太古里西街", "工体北路"],
+        "雍和宫": ["五道营胡同", "国子监街", "雍和宫大街"],
+        "什刹海": ["烟袋斜街", "地安门外大街", "前海北沿"],
+        "五道口": ["成府路", "学院路", "中关村东路"],
+    },
+}
+
+NAME_PREFIXES = [
+    "春山",
+    "梧桐里",
+    "慢岛",
+    "里弄",
+    "晴野",
+    "南窗",
+    "白石",
+    "有光",
+    "半日",
+    "旧庭",
+    "青苔",
+    "云边",
+]
 
 EVENT_WEIGHTS = {
     "view": 0.5,
@@ -84,6 +167,41 @@ TAG_VARIANTS = {
         ["夜间", "低步行", "交通方便", "朋友"],
         ["亲子", "餐饮附近", "室内休息", "预算友好"],
     ],
+    "boutique": [
+        ["买手店", "潮流", "逛街", "小众"],
+        ["设计师品牌", "拍照", "朋友", "citywalk"],
+        ["服饰", "生活方式", "低步行", "室内"],
+    ],
+    "bookstore": [
+        ["书店", "安静", "文艺", "休息"],
+        ["独立出版", "展览", "小众", "雨天"],
+        ["阅读", "咖啡附近", "低步行", "室内"],
+    ],
+    "lifestyle_store": [
+        ["生活方式", "家居", "香氛", "逛街"],
+        ["杂货", "设计", "拍照", "小众"],
+        ["礼物", "预算友好", "朋友", "室内"],
+    ],
+    "toy_collectible": [
+        ["潮玩", "手办", "拍照", "朋友"],
+        ["盲盒", "收藏", "亲子", "室内"],
+        ["玩具", "小众", "逛街", "低步行"],
+    ],
+    "sports_outdoor": [
+        ["运动户外", "装备", "轻松", "朋友"],
+        ["跑步", "骑行", "城市运动", "交通方便"],
+        ["户外生活", "预算友好", "逛街", "低步行"],
+    ],
+    "beauty_retail": [
+        ["美妆", "香氛", "试妆", "室内"],
+        ["护肤", "礼物", "朋友", "逛街"],
+        ["集合店", "拍照", "低步行", "雨天"],
+    ],
+    "design_store": [
+        ["设计商店", "文创", "展览", "小众"],
+        ["艺术周边", "拍照", "文艺", "citywalk"],
+        ["器物", "家居", "安静", "室内"],
+    ],
     "landmark": [
         ["citywalk", "拍照", "经典", "交通方便"],
         ["街区", "散步", "文艺", "本地"],
@@ -121,6 +239,13 @@ NAME_SUFFIXES = {
     "cafe": ["咖啡", "咖啡馆", "烘焙咖啡", "下午茶室"],
     "market": ["市集", "食集", "街区小吃", "集市"],
     "shopping": ["商场", "生活广场", "购物中心", "室内街区"],
+    "boutique": ["买手集合", "衣橱", "选品店", "服饰廊"],
+    "bookstore": ["书局", "书店", "阅读室", "书房"],
+    "lifestyle_store": ["生活研究所", "杂货社", "家居店", "生活馆"],
+    "toy_collectible": ["潮玩局", "收藏社", "玩具仓", "手办店"],
+    "sports_outdoor": ["运动户外", "跑步社", "骑行仓", "装备店"],
+    "beauty_retail": ["香氛店", "美妆集合", "护肤间", "试妆室"],
+    "design_store": ["设计商店", "文创社", "器物店", "艺术商店"],
     "landmark": ["地标", "街区", "步道", "城市客厅"],
     "museum": ["博物馆", "展馆", "文化馆", "陈列馆"],
     "gallery": ["画廊", "美术空间", "艺术馆", "展览空间"],
@@ -138,6 +263,7 @@ def main() -> None:
     print("refreshing nearby...")
     _refresh_nearby(expanded)
     payload["pois"] = expanded
+    payload.update(_poi_metadata(expanded))
     _write_json(POI_PATH, payload)
 
     profiles_payload = _read_json(PROFILE_PATH)
@@ -155,6 +281,61 @@ def main() -> None:
 
 
 def expand_pois(raw_pois: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    by_city_category: dict[tuple[str, str], list[dict[str, Any]]] = defaultdict(list)
+    for poi in raw_pois:
+        by_city_category[(poi["location"]["city"], poi["category"])].append(poi)
+
+    expanded = list(raw_pois)
+    existing_ids = {poi["poi_id"] for poi in raw_pois}
+    existing_names = {poi["name"] for poi in raw_pois}
+
+    cities = sorted({poi["location"]["city"] for poi in raw_pois})
+    for city in cities:
+        for category, target in TARGET_CATEGORY_COUNTS.items():
+            pois = by_city_category.get((city, category), [])
+            base_category = CATEGORY_BASE.get(category, category)
+            base_pois = pois or by_city_category.get((city, base_category), [])
+            if not base_pois:
+                continue
+            current_count = len(pois)
+            needed = target - current_count
+            if needed <= 0:
+                continue
+            prefix = base_pois[0]["poi_id"].rsplit("_", 1)[0] if pois else f"poi_{CITY_CODES.get(city, stable_int(city) % 1000)}_{category}"
+            for index in range(needed):
+                base = base_pois[index % len(base_pois)]
+                serial = current_count + index + 1
+                new_poi = _mutate_poi(base, city, category, prefix, serial, existing_ids, existing_names)
+                expanded.append(new_poi)
+                by_city_category[(city, category)].append(new_poi)
+                existing_ids.add(new_poi["poi_id"])
+                existing_names.add(new_poi["name"])
+
+    normalized: list[dict[str, Any]] = []
+    seen_names: set[str] = set()
+    for poi in expanded:
+        normalized_poi = _normalize_poi(poi, seen_names)
+        normalized.append(normalized_poi)
+        seen_names.add(normalized_poi["name"])
+    return normalized
+
+
+def _poi_metadata(pois: list[dict[str, Any]]) -> dict[str, Any]:
+    by_city: dict[str, Counter[str]] = defaultdict(Counter)
+    for poi in pois:
+        by_city[poi["location"]["city"]][poi["category"]] += 1
+    city_lines = []
+    for city, counts in sorted(by_city.items()):
+        category_counts = ", ".join(f"{category}:{count}" for category, count in sorted(counts.items()))
+        city_lines.append(f"{city}: {sum(counts.values())}条；{category_counts}。")
+    return {
+        "mock_poi_intro": [f"Mock POI: 上海、北京，共{len(pois)}条。", *city_lines],
+        "schema_version": "1.2.0",
+        "description": "Curated Shanghai/Beijing mock POI data for route recall, with realistic fictional names, district and business_area fields, and expanded shopping/lifestyle store categories.",
+    }
+
+
+def _legacy_expand_pois(raw_pois: list[dict[str, Any]]) -> list[dict[str, Any]]:
     by_city_category: dict[tuple[str, str], list[dict[str, Any]]] = defaultdict(list)
     for poi in raw_pois:
         by_city_category[(poi["location"]["city"], poi["category"])].append(poi)
@@ -196,6 +377,10 @@ def _mutate_poi(
         poi_id = f"{prefix}_{serial:03d}"
 
     district = poi["location"]["district"]
+    poi["category"] = category
+    poi["primary_category"] = _primary_category(category, poi["planning_features"].get("meal_type", "non_meal"))
+    poi["map_category"] = category
+    poi["map_category_code"] = f"mock_{category}"
     suffix = NAME_SUFFIXES[category][serial % len(NAME_SUFFIXES[category])]
     variant_tags = TAG_VARIANTS[category][serial % len(TAG_VARIANTS[category])]
     theme = variant_tags[0]
@@ -264,6 +449,117 @@ def _mutate_poi(
     poi["highlight_text"] = f"{name}，适合{ '、'.join(variant_tags[:3]) }需求。"
     poi["ugc_tip"] = f"用户常提到{variant_tags[0]}和{variant_tags[min(1, len(variant_tags)-1)]}，适合与周边点位组合。"
     return poi
+
+
+def _normalize_poi(poi: dict[str, Any], seen_names: set[str]) -> dict[str, Any]:
+    poi = copy.deepcopy(poi)
+    location = poi.setdefault("location", {})
+    city = str(location.get("city") or poi.get("city") or "上海")
+    district = str(poi.get("district") or location.get("district") or _fallback_district(city))
+    business_area = str(poi.get("business_area") or location.get("business_area") or _business_area(city, district, poi["poi_id"]))
+    serial = stable_int(poi["poi_id"])
+    category = str(poi.get("category") or "landmark")
+    variant_tags = TAG_VARIANTS.get(category, TAG_VARIANTS["shopping"])[serial % len(TAG_VARIANTS.get(category, TAG_VARIANTS["shopping"]))]
+
+    location["district"] = district
+    location["business_area"] = business_area
+    poi["district"] = district
+    poi["business_area"] = business_area
+    poi["name"] = _realistic_name(city, district, business_area, category, serial, seen_names)
+    location["address"] = _realistic_address(city, business_area, serial)
+    poi["source_updated_at"] = "2026-06-06"
+    poi["map_category"] = category
+    poi["map_category_code"] = f"mock_{category}"
+    poi["primary_category"] = _primary_category(category, poi.get("planning_features", {}).get("meal_type", "non_meal"))
+
+    planning = poi.setdefault("planning_features", {})
+    planning["walking_intensity"] = _walking_intensity(category, variant_tags, serial)
+    planning["indoor"] = category in {"restaurant", "cafe", "shopping", "museum", "gallery", "theater", *STORE_CATEGORIES} or "室内" in variant_tags
+    planning["recommended_transport"] = _transport_modes(category, variant_tags, serial)
+    planning["transit_hub_nearby"] = "交通方便" in variant_tags or serial % 4 == 0
+    planning["parking_available"] = category in {"shopping", "restaurant", "theater", "sports_outdoor"} and serial % 3 == 0
+    planning["meal_type"] = _meal_type(category, variant_tags, serial)
+
+    poi["secondary_categories"] = _unique([*poi.get("secondary_categories", []), *_secondary_categories(category, variant_tags, planning, poi.get("suitability", {})), business_area])
+    poi["route_roles"] = _unique([*_route_roles(category, variant_tags, planning), *poi.get("route_roles", [])])
+    poi["experience_tags"] = _unique([*poi.get("experience_tags", []), *_experience_tags(variant_tags)])
+    poi["tags"] = _unique([business_area, district, *variant_tags, *poi.get("tags", [])])
+    poi["highlight_text_tags"] = _unique([business_area, *variant_tags[:2], *poi.get("highlight_text_tags", [])])
+    poi["highlight_text"] = f"{poi['name']}位于{business_area}，适合{ '、'.join(variant_tags[:3]) }需求。"
+    poi["ugc_tip"] = f"{business_area}周边可步行串联，用户常提到{variant_tags[0]}和{variant_tags[min(1, len(variant_tags)-1)]}。"
+    poi["cover_image_url"] = f"https://picsum.photos/seed/{poi['poi_id']}/640/360"
+    return poi
+
+
+def _fallback_district(city: str) -> str:
+    areas = BUSINESS_AREAS.get(city) or BUSINESS_AREAS["上海"]
+    return next(iter(areas))
+
+
+def _business_area(city: str, district: str, poi_id: str) -> str:
+    areas = (BUSINESS_AREAS.get(city) or {}).get(district)
+    if not areas:
+        areas = ["城市中心", "老街区", "滨水片区"]
+    return areas[stable_int(poi_id) % len(areas)]
+
+
+def _realistic_name(city: str, district: str, business_area: str, category: str, serial: int, seen_names: set[str]) -> str:
+    prefix = NAME_PREFIXES[serial % len(NAME_PREFIXES)]
+    suffixes = NAME_SUFFIXES.get(category, NAME_SUFFIXES["shopping"])
+    suffix = suffixes[(serial // 7) % len(suffixes)]
+    area_hint = business_area.split("-")[0].split("/")[0]
+    if category in STORE_CATEGORIES:
+        candidates = [
+            f"{area_hint}{prefix}{suffix}",
+            f"{prefix}{suffix}{area_hint}店",
+            f"{prefix}{business_area}{suffix}",
+        ]
+    elif category in {"landmark", "night_view", "park"}:
+        candidates = [
+            f"{area_hint}{suffix}",
+            f"{prefix}{area_hint}{suffix}",
+            f"{business_area}{suffix}",
+        ]
+    else:
+        candidates = [
+            f"{prefix}{suffix}",
+            f"{area_hint}{prefix}{suffix}",
+            f"{prefix}{business_area}{suffix}",
+        ]
+    fallback_marks = ["别馆", "东馆", "西馆", "南馆", "北馆", "小楼", "里间", "新馆"]
+    for candidate in candidates:
+        if candidate not in seen_names:
+            return candidate
+    for offset, mark in enumerate(fallback_marks):
+        candidate = f"{candidates[0]}{mark}"
+        if candidate not in seen_names:
+            return candidate
+    chinese_marks = ["甲", "乙", "丙", "丁", "戊", "己", "庚", "辛", "壬", "癸"]
+    return f"{candidates[0]}{chinese_marks[serial % len(chinese_marks)]}馆"
+
+
+def _realistic_address(city: str, business_area: str, serial: int) -> str:
+    city_streets = STREET_NAMES.get(city, {})
+    streets = city_streets.get(business_area) or ["梧桐路", "春山路", "云锦街", "南窗巷"]
+    street = streets[serial % len(streets)]
+    lane = 12 + serial % 86
+    return f"{street}{lane}号"
+
+
+def _primary_category(category: str, meal_type: str) -> str:
+    if category == "cafe" or meal_type == "cafe":
+        return "cafe"
+    if category in {"restaurant", "market"} or meal_type in {"local_food", "fine_dining", "light_meal", "fast_food"}:
+        return "food"
+    if category in {"museum", "gallery", "theater"}:
+        return "culture"
+    if category in {"landmark", "night_view"}:
+        return "landmark"
+    if category in {"park", "nature"}:
+        return "nature"
+    if category in STORE_CATEGORIES:
+        return "shopping"
+    return category or "activity"
 
 
 def _refresh_nearby(pois: list[dict[str, Any]]) -> None:
@@ -618,7 +914,7 @@ def _objective_for_poi(poi: dict[str, Any], preferences: list[str]) -> str:
 
 
 def _walking_intensity(category: str, tags: list[str], serial: int) -> str:
-    if "低步行" in tags or "低强度" in tags or category in {"shopping", "museum", "gallery", "theater"}:
+    if "低步行" in tags or "低强度" in tags or category in {"museum", "gallery", "theater", *STORE_CATEGORIES}:
         return "low"
     if category in {"park", "landmark"} and serial % 3 == 0:
         return "high"
@@ -627,9 +923,9 @@ def _walking_intensity(category: str, tags: list[str], serial: int) -> str:
 
 def _transport_modes(category: str, tags: list[str], serial: int) -> list[str]:
     modes = ["metro"] if "交通方便" in tags or serial % 4 == 0 else ["walk"]
-    if category in {"restaurant", "shopping", "theater"}:
+    if category in {"restaurant", "theater", "sports_outdoor"}:
         modes.append("taxi")
-    if category in {"park", "market", "landmark"}:
+    if category in {"park", "market", "landmark", *STORE_CATEGORIES}:
         modes.append("bus")
     return _unique(modes)
 
@@ -664,6 +960,8 @@ def _secondary_categories(category: str, tags: list[str], planning: dict[str, An
         values.append("food")
     if category == "park":
         values.append("nature")
+    if category in STORE_CATEGORIES:
+        values.extend(["shopping", "retail", "citywalk"])
     return values
 
 
@@ -675,7 +973,7 @@ def _route_roles(category: str, tags: list[str], planning: dict[str, Any]) -> li
         roles.extend(["meal", "photo_stop", "main_activity"])
     if category == "cafe":
         roles.extend(["coffee_break", "rest_stop"])
-    if category in {"shopping", "landmark", "museum", "gallery", "park", "night_view", "theater"}:
+    if category in {"landmark", "museum", "gallery", "park", "night_view", "theater", *STORE_CATEGORIES}:
         roles.append("main_activity")
     if "拍照" in tags or "出片" in tags or "citywalk" in tags:
         roles.append("photo_stop")
@@ -689,7 +987,7 @@ def _route_roles(category: str, tags: list[str], planning: dict[str, Any]) -> li
 
 
 def _experience_tags(tags: list[str]) -> list[str]:
-    candidates = ["老字号", "安静", "市井", "展览", "江景", "亲子", "文艺", "小众", "经典", "夜景", "本地", "雨天", "免费", "高性价比"]
+    candidates = ["老字号", "安静", "市井", "展览", "江景", "亲子", "文艺", "小众", "经典", "夜景", "本地", "雨天", "免费", "高性价比", "买手店", "书店", "生活方式", "潮玩", "运动户外", "美妆", "设计"]
     return [tag for tag in candidates if tag in tags]
 
 
@@ -698,6 +996,10 @@ def _poi_text(poi: dict[str, Any]) -> str:
         str(part)
         for part in [
             poi.get("name"),
+            poi.get("district"),
+            poi.get("business_area"),
+            poi.get("location", {}).get("district"),
+            poi.get("location", {}).get("business_area"),
             poi.get("category"),
             poi.get("primary_category"),
             poi.get("highlight_text"),

@@ -97,7 +97,7 @@ user_id + city + weather_scenario + 可选 user_profile
 
 ### 3.1 数据来源
 
-当前 POI 来自 `data/seed/pois.json`，只覆盖上海和北京。当前规模是 1680 条：上海 840 条、北京 840 条。每个城市每个 category 数量一致：
+当前 POI 来自 `data/seed/pois.json`，只覆盖上海和北京。当前规模是 2240 条：上海 1120 条、北京 1120 条。每个城市每个 category 数量一致：
 
 | category | 每城数量 |
 | --- | ---: |
@@ -105,6 +105,13 @@ user_id + city + weather_scenario + 可选 user_profile
 | `cafe` | 120 |
 | `market` | 80 |
 | `shopping` | 80 |
+| `boutique` | 40 |
+| `bookstore` | 40 |
+| `lifestyle_store` | 40 |
+| `toy_collectible` | 40 |
+| `sports_outdoor` | 40 |
+| `beauty_retail` | 40 |
+| `design_store` | 40 |
 | `landmark` | 80 |
 | `museum` | 70 |
 | `gallery` | 70 |
@@ -116,6 +123,7 @@ user_id + city + weather_scenario + 可选 user_profile
 
 - `primary_category`：主类目，例如 `food`、`culture`、`landmark`、`nature`。
 - `secondary_categories`：辅助标签，例如 `photo`、`indoor`、`night`、`rainy`、`budget`。
+- `district` / `business_area`：区和商圈，例如 `徐汇区`、`武康路-安福路`，会进入召回搜索文本并用于区域软排序。
 - `route_roles`：路线角色，例如 `main_activity`、`meal`、`coffee_break`、`photo_stop`、`rest_stop`、`transit_anchor`、`night_end`。
 - `experience_tags`：体验标签，例如 `老字号`、`安静`、`文艺`、`夜景`、`雨天`。
 
@@ -139,7 +147,7 @@ target_pool_size = max(limit * 6, 240)
 - 路线角色召回 `RouteRoleRecallChannel`：强制补 `main_activity`、`meal`、`coffee_break/rest_stop`、`photo_stop`、`transit_anchor/night_end` 等路线结构角色。
 - fallback 召回：候选不足时补低风险、多类目 POI。
 
-协同过滤和双塔模型的训练数据来自 `data/seed/interaction_events.json`，当前是 16000 条 mock user-item 行为事件，覆盖 80 个用户和 1680 个 POI。事件包括 `view/click/save/like/selected_in_route/completed_visit/skip/replace/dislike`。
+协同过滤和双塔模型的训练数据来自 `data/seed/interaction_events.json`，当前是 16000 条 mock user-item 行为事件，覆盖 80 个用户和 2240 个 POI。事件包括 `view/click/save/like/selected_in_route/completed_visit/skip/replace/dislike`。
 
 ### 3.3 召回过滤
 

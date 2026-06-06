@@ -20,6 +20,8 @@ class FailingLLMClient:
 
 class MockLLMClient:
     async def complete(self, messages: list[dict], tools: list[dict] | None = None, json_mode: bool = True) -> dict:
+        payload = json.loads(messages[-1]["content"])
+        route_id = payload["routes"][0]["route_id"]
         return {
             "choices": [
                 {
@@ -28,7 +30,7 @@ class MockLLMClient:
                             {
                                 "evaluations": [
                                     {
-                                        "route_id": "route_balanced_best",
+                                        "route_id": route_id,
                                         "score": 91,
                                         "summary": "节奏均衡，适合首次游玩。",
                                         "highlights": ["点位集中", "预算稳定"],
@@ -70,6 +72,6 @@ async def test_route_evaluation_parses_llm_result() -> None:
     response = await RouteEvaluationService(llm_client=MockLLMClient()).evaluate(request)
 
     assert response.evaluations
-    assert response.evaluations[0].route_id == "route_balanced_best"
+    assert response.evaluations[0].route_id == request.routes[0].route_id
     assert response.evaluations[0].score == 91
     assert response.evaluations[0].source == "llm"

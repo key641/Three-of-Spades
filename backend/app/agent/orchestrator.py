@@ -286,49 +286,71 @@ class AgentOrchestrator:
             len(pois),
             [poi.name for poi in pois],
         )
-        poi_relevance_scores, poi_fine_rank_details = self.fine_rank_service.score_map(
-            pois,
-            intent,
-            user_profile,
-            strategy_tags=strategy_tags,
-            objective="balanced",
-        )
+        expanded_recall = False
+        relaxed_min_stops = False
+        final_pois = pois
 
-        routes: list[Route] = []
-        route_updates: asyncio.Queue[list[Route] | None] = asyncio.Queue()
-        loop = asyncio.get_running_loop()
-        route_request = RoutePlanRequest(
-            intent=intent,
-            user_profile=user_profile,
-            strategy_weights=strategy_weights,
-            strategy_tags=strategy_tags,
-            candidate_pois=pois,
-            poi_relevance_scores=poi_relevance_scores,
-            poi_fine_rank_details=poi_fine_rank_details,
-        )
+        async def build_routes(candidate_pois, allow_min_stops_fallback: bool) -> list[Route]:
+            scores, fine_rank_details = self.fine_rank_service.score_map(
+                candidate_pois,
+                intent,
+                user_profile,
+                strategy_tags=strategy_tags,
+                objective="balanced",
+            )
+            route_request = RoutePlanRequest(
+                intent=intent,
+                user_profile=user_profile,
+                strategy_weights=strategy_weights,
+                strategy_tags=strategy_tags,
+                candidate_pois=candidate_pois,
+                poi_relevance_scores=scores,
+                poi_fine_rank_details=fine_rank_details,
+            )
+            response = await asyncio.to_thread(
+                self.route_service.generate_routes,
+                route_request,
+                None,
+                None,
+                allow_min_stops_fallback,
+            )
+            return response.routes
 
-        def collect_route(route: Route) -> None:
-            routes.append(route)
-            loop.call_soon_threadsafe(route_updates.put_nowait, list(routes))
-
-        async def generate_route_candidates() -> None:
-            try:
-                await asyncio.to_thread(self.route_service.generate_routes, route_request, collect_route)
-            finally:
-                await route_updates.put(None)
-
-        route_task = asyncio.create_task(generate_route_candidates())
-        while True:
-            route_update = await route_updates.get()
-            if route_update is None:
+        routes = await build_routes(pois, allow_min_stops_fallback=False)
+        for recall_limit in [64, 80]:
+            if len(routes) >= 3:
                 break
-            await emit_routes(route_update)
-        await route_task
+            expanded_recall = True
+            expanded_pois = self.poi_service.search(
+                intent,
+                user_profile=user_profile,
+                strategy_tags=strategy_tags,
+                limit=recall_limit,
+                relax_preferences=True,
+            )
+            expanded_routes = await build_routes(expanded_pois, allow_min_stops_fallback=False)
+            if len(expanded_routes) > len(routes):
+                routes = expanded_routes
+                final_pois = expanded_pois
+
+        if len(routes) < 3:
+            relaxed_routes = await build_routes(final_pois, allow_min_stops_fallback=True)
+            if len(relaxed_routes) > len(routes):
+                routes = relaxed_routes
+                relaxed_min_stops = any(len(route.stops) == 2 for route in routes)
+
+        if routes:
+            await emit_routes(routes)
         trace.append(AgentTraceStep(step="generate_routes", label="生成多目标路线", status="done"))
         trace[-1].details = {
             "count": len(routes),
             "route_titles": [route.title for route in routes[:5]],
             "objectives": [route.objective for route in routes[:5]],
+            "cross_route_dedup": True,
+            "expanded_recall": expanded_recall,
+            "final_candidate_poi_count": len(final_pois),
+            "relaxed_min_stops_to_2": relaxed_min_stops,
+            "min_stop_counts": [len(route.stops) for route in routes[:5]],
         }
         await emit_pending_trace()
         logger.info(

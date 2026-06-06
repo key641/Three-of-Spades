@@ -23,6 +23,7 @@ export interface RouteStop {
   name: string;
   category: string;
   district?: string;
+  business_area?: string;
   address?: string;
   lat?: number | null;
   lng?: number | null;

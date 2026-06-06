@@ -6,6 +6,7 @@ class POI(BaseModel):
     name: str
     city: str
     district: str = ""
+    business_area: str = ""
     address: str = ""
     category: str
     external_place_ids: dict[str, str] = Field(default_factory=dict)

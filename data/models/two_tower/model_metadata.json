@@ -2,7 +2,7 @@
   "version": "1.0",
   "dimension": 64,
   "training_events": 16000,
-  "poi_count": 1680,
+  "poi_count": 2240,
   "user_count": 80,
   "loss": "weighted_binary_interaction_prototype",
   "built_at": "2026-06-04T00:00:00+08:00"

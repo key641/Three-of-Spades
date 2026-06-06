@@ -16,6 +16,13 @@ EXPECTED_CATEGORY_COUNTS = {
     "cafe": 120,
     "market": 80,
     "shopping": 80,
+    "boutique": 40,
+    "bookstore": 40,
+    "lifestyle_store": 40,
+    "toy_collectible": 40,
+    "sports_outdoor": 40,
+    "beauty_retail": 40,
+    "design_store": 40,
     "landmark": 80,
     "museum": 70,
     "gallery": 70,
@@ -36,6 +43,7 @@ def test_search_returns_enriched_poi_fields() -> None:
     poi = POIService().search(Intent(city="上海"))[0]
 
     assert poi.district
+    assert poi.business_area
     assert poi.address
     assert poi.meal_type
     assert poi.cover_image_url
@@ -317,6 +325,9 @@ def test_seed_data_has_valid_planning_fields() -> None:
         planning = raw["planning_features"]
 
         assert raw["poi_id"]
+        assert raw["district"]
+        assert raw["business_area"]
+        assert raw["district"] == location["district"]
         assert location["city"]
         assert -90 <= float(location["lat"]) <= 90
         assert -180 <= float(location["lng"]) <= 180
@@ -328,6 +339,24 @@ def test_seed_data_has_valid_planning_fields() -> None:
         assert planning["meal_type"]
         assert planning["walking_intensity"] in {"low", "medium", "high"}
         assert all(poi_id in ids for poi_id in planning["nearby_poi_ids"])
+
+
+def test_seed_poi_names_are_realistic_and_area_tagged() -> None:
+    payload = json.loads((Path(__file__).resolve().parents[3] / "data" / "seed" / "pois.json").read_text(encoding="utf-8"))
+    bad_tokens = ["推荐路", "示范路", "慢游点"]
+
+    for raw in payload["pois"]:
+        assert not raw["name"][-1].isdigit()
+        assert not any(token in raw["name"] for token in bad_tokens)
+        assert not any(token in raw["location"]["address"] for token in bad_tokens)
+
+
+def test_region_terms_soft_prioritize_district_and_business_area() -> None:
+    district_results = POIService().search(Intent(city="上海", preferences=["徐汇区", "citywalk"]), limit=8)
+    area_results = POIService().search(Intent(city="上海", preferences=["武康路", "逛店"]), limit=8)
+
+    assert sum(1 for poi in district_results[:5] if poi.district == "徐汇区") >= 3
+    assert any("武康路" in poi.business_area for poi in area_results[:5])
 
 
 def test_key_city_searches_do_not_return_empty_results() -> None:
@@ -440,8 +469,9 @@ def test_recall_model_artifacts_exist_and_have_expected_shape() -> None:
     assert len(first_user_vector) == 64
     assert len(first_poi_vector) == 64
     assert len(user_embeddings["embeddings"]) == 80
-    assert len(poi_embeddings["embeddings"]) == 1680
-    assert len(item_similarity["items"]) == 1680
+    expected_poi_count = len(json.loads((root / "data" / "seed" / "pois.json").read_text(encoding="utf-8"))["pois"])
+    assert len(poi_embeddings["embeddings"]) == expected_poi_count
+    assert len(item_similarity["items"]) == expected_poi_count
 
 
 def test_default_recall_results_are_not_limited_to_two_categories() -> None:
@@ -451,3 +481,11 @@ def test_default_recall_results_are_not_limited_to_two_categories() -> None:
     assert any("main_activity" in poi.route_roles for poi in pois)
     assert any("meal" in poi.route_roles or "coffee_break" in poi.route_roles for poi in pois)
     assert any("photo_stop" in poi.route_roles for poi in pois)
+
+
+def test_shopping_recall_includes_fine_grained_store_categories() -> None:
+    pois = POIService().search(Intent(city="上海", preferences=["武康路", "逛店", "书店", "买手店"]), limit=20)
+    store_categories = {"boutique", "bookstore", "lifestyle_store", "toy_collectible", "sports_outdoor", "beauty_retail", "design_store"}
+
+    assert any(poi.category in store_categories for poi in pois[:10])
+    assert any("武康路" in poi.business_area for poi in pois[:10])
