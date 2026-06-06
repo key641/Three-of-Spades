@@ -55,6 +55,64 @@
 
 ---
 
+## 2026-06-06 - `uncommitted` - `feat(route): 局部 POI 修改升级为候选生成链路`
+
+负责人：路线策略 / 局部重规划 / B 同学
+
+### 更新概览
+
+本次更新把“修改路线中的一些 POI”从单点贪心替换升级为小型推荐链路。局部修改会先确定受影响的 future stops，再为每个位置召回多个替代 POI，用 beam search 组合成多条局部候选路线，最后复用路线评分和路线层重排选出最佳修改版本。
+
+用户可感知的变化是：一次可以同时替换多个路线点；替换结果不再只找同类 POI，而是综合路线角色、偏好、时间、预算、排队、交通和精排 relevance；替换后会重新计算后续时间线和交通步骤。
+
+### 主要变更
+
+- `ReplanService` 支持多点局部修改：
+  - `event_payload.affected_poi_ids` 可指定多个受影响 POI。
+  - `replace_count` 可限制本次最多替换几个点，不传时默认等于 affected 数量。
+  - `preserve_poi_ids` 和 `locked_poi_ids` 继续默认保留，闭店、不可达、售罄除外。
+- 替代候选链路升级：
+  - 每个待替换位置默认召回 top 8 个替代 POI。
+  - 候选不只限同 category，会按 route_roles、primary_category、experience_tags、suitable_time_slots、prefer/avoid tags、预算、排队、距离和营业情况综合召回。
+  - 替代评分叠加 `FineRankService` 的 POI relevance。
+- 局部候选路线生成：
+  - 多点替换用 beam search 组合候选，默认 beam width 为 6，最多生成 10 条局部候选路线。
+  - 每条局部候选都会重建后续 stops 的开始/结束时间、交通方式、距离和 `route_steps_from_previous`。
+  - 最终复用 `ScoringService` 和 `RouteRerankService` 选择最佳局部修改路线。
+- API 兼容：
+  - 继续使用 `POST /api/routes/replan`。
+  - 返回结构仍是原有 `RoutePlanResponse`，通过 `changed_stops / live_warnings / replan_reason` 表达差异。
+
+### 涉及文件
+
+- `backend/app/services/replan_service.py`
+- `backend/app/tests/test_replan_service.py`
+- `docs/api_contract.md`
+- `docs/route_strategy_logic.md`
+- `docs/version_log.md`
+
+### 协作影响
+
+| 角色 | 影响 | 需要关注 |
+| --- | --- | --- |
+| A 同学：Agent / 后端 | 解析局部修改时可以传多个 `affected_poi_ids` 和 `replace_count`，不需要新增工具接口。 | 如果用户说“这两个点都换掉”，应结构化为 `affected_poi_ids`；如果说“先换一个”，应传 `replace_count=1`。 |
+| B 同学：POI / 路线策略 | 局部修改开始复用候选生成、精排和路线重排思想。 | 调试时需要看替代候选、beam 组合、最终 changed_stops，而不是只看单个 replacement_score。 |
+| C 同学：前端 / UI | API 返回结构不变，但 `changed_stops` 可能包含多条替换记录。 | 前端差异展示需要支持一次展示多个替换项；原有单条展示逻辑仍可兼容第一条。 |
+
+### 风险与注意事项
+
+- 本阶段仍是局部修改，不会生成三条全新路线。
+- 外部地图候选仍是兜底能力，默认优先本地 POI。
+- 多点替换会增加少量计算，但候选数量限制在 10 条局部路线以内。
+
+### 建议验证
+
+- `cd backend && PYTHONPATH=. .venv/bin/pytest app/tests/test_replan_service.py -q`
+- `cd backend && PYTHONPATH=. .venv/bin/pytest app/tests/test_route_plan.py app/tests/test_predictive_route_service.py app/tests/test_route_rerank_service.py -q`
+- `cd backend && PYTHONPATH=. .venv/bin/pytest app/tests -q`
+
+---
+
 ## 2026-06-05 - `uncommitted` - `feat(route): 增加路线常识约束和交通步骤兜底`
 
 负责人：路线策略 / Mock 地图 / B 同学

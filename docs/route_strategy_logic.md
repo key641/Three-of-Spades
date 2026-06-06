@@ -41,9 +41,10 @@
 已有 current_routes + selected_route_id + event_type/event_payload
 -> ReplanService.replan()
 -> 判断哪些未来 stop 受影响
--> 从本地 POI 或 mock map provider 找替代点
--> 重建后续 stops 时间线
--> 重新计算路线总计和评分
+-> 为每个受影响位置召回多个替代 POI
+-> 用局部 beam search 组合多点替代方案
+-> 重建后续 stops 时间线和交通字段
+-> 用 ScoringService + RouteRerankService 选择最佳局部修改路线
 -> 返回更新后的 routes
 ```
 
@@ -527,8 +528,9 @@ final_route_score =
 - 同城市。
 - 不在已选、已完成、锁定、保留、不可用集合中。
 - 不命中 `avoid_tags`。
-- 如果传了 `replacement_category`，必须匹配替代类目。
-- 和原 POI 有角色重叠、主类目相同或餐饮类型相同。
+- 如果传了 `replacement_category`，优先匹配替代类目。
+- 如果 `allow_cross_category = true`，允许跨 category，但需要和原 POI 在路线角色、主类目、体验标签、适合时段或本次偏好上有合理关联。
+- 和原 POI 有角色重叠、主类目相同、餐饮类型相同、体验标签重叠或适合时段重叠时，会进入候选池。
 - 实时状态不是关闭或不可用。
 
 如果本地没有可用替代点，才会调用 `map_provider.search_nearby_pois()` 找外部候选。当前 mock provider 默认不返回外部候选，除非 `event_payload.allow_external_candidates = true`。
@@ -545,26 +547,63 @@ final_route_score =
 - 命中 `avoid_tags` 扣分。
 - 超预算扣分。
 - 匹配当前 route objective 加分。
+- `FineRankService` 的 POI relevance 加分。
 - `user_tired` 时低步行、室内加分。
 - `weather_change` 或雨天偏好时室内加分，非室内扣分。
 - 关闭、不可用、售罄大幅扣分。
 
+每个待替换位置默认保留排序前 8 个候选，供后续局部路线候选生成使用；不是直接取第一名。
+
 ### 8.5 重建和重新评分
 
-替换完成后：
+每条局部候选路线生成后：
 
 1. 已完成 stops 原样保留。
 2. 后续 POI 重新按当前时间和当前位置计算 start/end time。
 3. 用 `map_provider.get_live_travel_time()` 补交通时间和距离。
 4. 重新计算路线总费用、总排队、总交通、总距离、总时长。
 5. 复用 `ScoringService` 重新打分。
-6. 输出：
+6. 多条局部候选会再交给 `RouteRerankService` 选择最佳版本。
+7. 输出：
    - `changed_stops`
    - `live_warnings`
    - `data_sources`
    - `replan_reason`
 
-注意：局部修改目前主要是“替换后续受影响点”，不是重新生成三条全新路线。
+注意：局部修改目前主要是“替换后续受影响点”，不是重新生成三条全新路线，也不会新增额外 stop。
+
+### 8.6 多点局部修改候选生成
+
+局部修改现在不是每个受影响点贪心找一个替代 POI，而是复用路线生成的候选思想：
+
+```text
+确定受影响 future stops
+-> 每个位置召回 top N 替代 POI
+-> beam search 组合多个位置的替代方案
+-> 重建后续时间线和交通字段
+-> ScoringService + RouteRerankService 选择最佳局部修改路线
+```
+
+当前默认参数：
+
+- 每个待替换位置保留 `REPLACEMENT_CANDIDATES_PER_STOP = 8` 个替代 POI。
+- 多点组合时保留 `LOCAL_REPLAN_BEAM_WIDTH = 6` 条 partial beams。
+- 最多生成 `LOCAL_REPLAN_MAX_CANDIDATES = 10` 条局部候选路线。
+
+`event_payload.affected_poi_ids` 可以指定多个目标点。`replace_count` 可以限制本次最多替换几个点；不传时默认等于 affected 数量。已完成点不会被替换，`locked_poi_ids` 和 `preserve_poi_ids` 默认保留，除非该点闭店、不可达或售罄。
+
+替代 POI 召回不再只限同 category。系统会优先满足 `replacement_category`，然后按路线角色、主类目、体验标签、适合时段、本次 `prefer_tags`、预算、排队、距离、营业和 avoid 规则召回与排序。候选排序会叠加 `FineRankService` 的 POI relevance；最终局部候选路线再交给路线评分和路线层重排。
+
+局部替换完成后，会重新计算被影响后续 stop 的：
+
+- `start_time / end_time`
+- `travel_minutes_from_previous`
+- `distance_km_from_previous`
+- `transport_mode_from_previous`
+- `route_steps_from_previous`
+- `route_leg_source_from_previous`
+
+返回结构仍使用原有 `changed_stops / live_warnings / replan_reason`，前端 API 不变。
 
 ## 9. 预制路线
 
