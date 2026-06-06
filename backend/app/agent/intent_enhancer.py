@@ -1,5 +1,13 @@
 import re
 
+from app.agent.tag_taxonomy import (
+    extract_tag_layers,
+    legacy_preferences_from_layers,
+    normalize_avoid_tags as normalize_taxonomy_avoid_tags,
+    normalize_interest_tags,
+    normalize_optimization_goals,
+    split_preference_terms,
+)
 from app.schemas.intent import Intent
 
 
@@ -95,22 +103,30 @@ def enhance_intent_from_message(intent: Intent, message: str) -> Intent:
     if start_time:
         data["start_time"] = start_time
 
-    added_preferences = _extract_terms(text, PREFERENCE_ALIASES)
-    removed_preferences = _extract_terms(text, NEGATIVE_PREFERENCE_ALIASES)
-    data["preferences"] = _remove_values(
-        _remove_non_preferences(_unique([*_normalize_preferences(intent.preferences), *added_preferences])),
-        removed_preferences,
+    layers = extract_tag_layers(
+        text,
+        seed_preferences=[*intent.preferences, *intent.interest_tags, *intent.optimization_goals],
+        seed_avoid_tags=intent.avoid_tags,
     )
-    data["avoid_tags"] = _unique([*_normalize_avoid_tags(intent.avoid_tags), *_extract_terms(text, AVOID_ALIASES)])
+    removed_preferences = extract_removed_preferences(text)
+    layers.interest_tags = _remove_values(layers.interest_tags, removed_preferences)
+    data["interest_tags"] = layers.interest_tags
+    data["optimization_goals"] = layers.optimization_goals
+    data["avoid_tags"] = layers.avoid_tags
+    data["preferences"] = legacy_preferences_from_layers(
+        layers.interest_tags,
+        layers.optimization_goals,
+        layers.unknown_preferences,
+    )
 
     if city or duration_hours or data["preferences"] or data["avoid_tags"]:
         data["need_clarification"] = False
 
-    if "亲子友好" in data["preferences"]:
+    if "亲子" in data["interest_tags"]:
         data["scenario"] = "family_trip"
-    elif "吃好" in data["preferences"]:
+    elif "美食" in data["interest_tags"]:
         data["scenario"] = "foodie_tour"
-    elif "citywalk" in data["preferences"]:
+    elif "citywalk" in data["interest_tags"]:
         data["scenario"] = "friends_citywalk"
 
     return Intent.model_validate(data)
@@ -138,15 +154,26 @@ def extract_explicit_trip_fields(message: str) -> dict[str, object]:
 
 
 def extract_removed_preferences(message: str) -> list[str]:
-    return _extract_terms(message.strip(), NEGATIVE_PREFERENCE_ALIASES)
+    return split_preference_terms(_extract_terms(message.strip(), NEGATIVE_PREFERENCE_ALIASES)).interest_tags
 
 
 def normalize_preferences(values: list[str]) -> list[str]:
-    return _unique(_normalize_preferences(values))
+    layers = split_preference_terms(values)
+    return legacy_preferences_from_layers(layers.interest_tags, layers.optimization_goals, layers.unknown_preferences)
+
+
+def normalize_interest_preferences(values: list[str]) -> list[str]:
+    layers = split_preference_terms(values)
+    return normalize_interest_tags([*layers.interest_tags, *values])
+
+
+def normalize_goal_preferences(values: list[str]) -> list[str]:
+    layers = split_preference_terms(values)
+    return normalize_optimization_goals([*layers.optimization_goals, *values])
 
 
 def normalize_avoid_tags(values: list[str]) -> list[str]:
-    return _unique(_normalize_avoid_tags(values))
+    return normalize_taxonomy_avoid_tags(values)
 
 
 def _extract_city(text: str) -> str | None:

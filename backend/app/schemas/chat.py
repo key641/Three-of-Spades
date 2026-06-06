@@ -16,6 +16,8 @@ class ChatRequest(BaseModel):
     scenarios: list[str] = Field(default_factory=list)
     scenario: str | None = None
     preferences: list[str] = Field(default_factory=list)
+    interest_tags: list[str] = Field(default_factory=list)
+    optimization_goals: list[str] = Field(default_factory=list)
     avoid_tags: list[str] = Field(default_factory=list)
     budget_level: str | None = None
     preference_weights: dict[str, float] | None = None

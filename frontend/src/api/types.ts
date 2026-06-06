@@ -77,6 +77,8 @@ export interface UserProfile {
   user_id?: string;
   tags?: string[];
   preferences?: string[];
+  interest_tags?: string[];
+  optimization_goals?: string[];
   avoid_tags?: string[];
   preference_weights?: Record<string, number>;
   budget_sensitivity?: number;

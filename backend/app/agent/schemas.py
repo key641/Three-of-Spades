@@ -61,6 +61,8 @@ class TripState(BaseModel):
     scenario: str = "friends_citywalk"
     hard_constraints: dict[str, object] = Field(default_factory=dict)
     soft_preferences: list[str] = Field(default_factory=list)
+    interest_tags: list[str] = Field(default_factory=list)
+    optimization_goals: list[str] = Field(default_factory=list)
     avoid_tags: list[str] = Field(default_factory=list)
     implicit_needs: list[str] = Field(default_factory=list)
     must_include: list[str] = Field(default_factory=list)
@@ -86,6 +88,8 @@ class TripState(BaseModel):
             scenario=intent.scenario,
             hard_constraints=hard_constraints,
             soft_preferences=list(intent.preferences),
+            interest_tags=list(intent.interest_tags),
+            optimization_goals=list(intent.optimization_goals),
             avoid_tags=list(intent.avoid_tags),
             implicit_needs=_default_implicit_needs(intent.duration_hours),
         )
@@ -98,6 +102,8 @@ class TripState(BaseModel):
             duration_hours=self.duration_hours,
             budget_per_person=self.budget_per_person,
             preferences=list(self.soft_preferences),
+            interest_tags=list(self.interest_tags),
+            optimization_goals=list(self.optimization_goals),
             avoid_tags=list(self.avoid_tags),
             scenario=self.scenario,
         )

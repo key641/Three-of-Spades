@@ -507,9 +507,9 @@ class ReplanService:
     def _objective_bonus(self, poi: POI, request: ReplanRequest) -> float:
         terms: set[str] = set()
         if request.intent:
-            terms.update(request.intent.preferences)
+            terms.update(request.intent.interest_tags + request.intent.optimization_goals + request.intent.preferences)
         if request.user_profile:
-            terms.update(request.user_profile.tags + request.user_profile.preferences)
+            terms.update(request.user_profile.interest_tags + request.user_profile.optimization_goals + request.user_profile.tags + request.user_profile.preferences)
         terms.add(request.event_type)
         if self._has_any(terms, {"少排队", "low_queue"}) and poi.queue_minutes <= 15:
             return 1
@@ -517,7 +517,7 @@ class ReplanService:
             return 1
         if self._has_any(terms, {"室内", "雨天", "indoor_rainy"}) and poi.indoor:
             return 1
-        if self._has_any(terms, {"吃好", "咖啡", "food_first"}) and poi.meal_type != "non_meal":
+        if self._has_any(terms, {"美食", "吃好", "咖啡", "food_first"}) and poi.meal_type != "non_meal":
             return 1
         return 0
 

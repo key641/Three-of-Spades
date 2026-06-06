@@ -63,8 +63,15 @@ def test_low_queue_preference_prioritizes_short_queues() -> None:
     assert max(poi.queue_minutes for poi in pois) <= 20
 
 
+def test_saving_money_goal_uses_price_not_text_tag() -> None:
+    pois = POIService().search(Intent(city="上海", optimization_goals=["省钱"], budget_per_person=120), limit=8)
+
+    assert pois
+    assert sum(1 for poi in pois[:5] if poi.avg_price <= 120 or poi.budget_friendly >= 0.7) >= 4
+
+
 def test_food_preference_prioritizes_restaurants() -> None:
-    pois = POIService().search(Intent(city="上海", preferences=["吃好"]), limit=5)
+    pois = POIService().search(Intent(city="上海", interest_tags=["美食"]), limit=5)
 
     assert pois
     assert any(poi.category == "restaurant" or poi.meal_type in {"local_food", "fine_dining"} for poi in pois[:3])

@@ -208,6 +208,8 @@ class AgentOrchestrator:
                 status="done",
                 details={
                     "preferences": user_profile.preferences,
+                    "interest_tags": user_profile.interest_tags,
+                    "optimization_goals": user_profile.optimization_goals,
                     "avoid_tags": user_profile.avoid_tags,
                     "tags": user_profile.tags,
                     "budget_sensitivity": user_profile.budget_sensitivity,
@@ -634,6 +636,8 @@ class AgentOrchestrator:
             "start_time": intent.start_time,
             "duration_hours": intent.duration_hours,
             "budget_per_person": intent.budget_per_person,
+            "interest_tags": intent.interest_tags,
+            "optimization_goals": intent.optimization_goals,
             "preferences": intent.preferences,
             "avoid_tags": intent.avoid_tags,
             "scenario": intent.scenario,
@@ -698,8 +702,8 @@ class AgentOrchestrator:
                 "added_hard_constraints": "object",
                 "modified_hard_constraints": "object; explicit user changes such as people_count=2",
                 "removed_hard_constraints": "array",
-                "added_preferences": "array using canonical labels",
-                "removed_preferences": "array using canonical labels",
+                "added_preferences": "array using canonical labels; compatibility field, may include interest tags or optimization goals",
+                "removed_preferences": "array using canonical labels; compatibility field, may include interest tags or optimization goals",
                 "added_avoid_tags": "array using canonical labels",
                 "removed_avoid_tags": "array using canonical labels",
                 "added_implicit_needs": "array",
@@ -725,7 +729,10 @@ class AgentOrchestrator:
                         "start_time 必须是 24 小时制 HH:MM，下午两点=14:00，晚上七点=19:00。"
                         "示例：用户说“改成上海两个人一天”，modified_hard_constraints 应为 {\"city\":\"上海\",\"people_count\":2,\"duration_hours\":8}。"
                         "示例：用户说“两个人人均400”，budget_per_person 应为 400；用户说“两个人总预算400”，budget_per_person 应为 200。"
-                        "用户否定的偏好必须进入 removed_preferences 或 removed_must_include。"
+                        "标签分层：体验类写入 preferences，例如 美食、咖啡、拍照、citywalk、艺术展、自然风景、本地感、夜景、亲子、室内、安静；"
+                        "优化类也暂时写入 preferences 兼容字段，例如 少排队、省钱、少走路、高性价比、轻松、时间紧；"
+                        "避雷类写入 avoid_tags，例如 人流密集、排队久、太贵、需要预约、商业街、拍照打卡、步行多、辣。"
+                        "用户否定的偏好必须进入 removed_preferences 或 removed_must_include；用户明确避开的内容必须进入 added_avoid_tags。"
                         "不要发明标签；preferences/avoid_tags/must_include 只能使用允许值。"
                         "如果只是隐含建议升级为显式必须，只写 added_must_include 和 removed_implicit_needs。"
                     ),
@@ -775,8 +782,8 @@ class AgentOrchestrator:
 
         data["added_hard_constraints"].pop("budget_per_person", None)
         data["modified_hard_constraints"].pop("budget_per_person", None)
-        if self._message_requests_lower_budget(message) and "更省钱" not in data["added_preferences"]:
-            data["added_preferences"].append("更省钱")
+        if self._message_requests_lower_budget(message) and "省钱" not in data["added_preferences"]:
+            data["added_preferences"].append("省钱")
         return data
 
     def _message_requests_lower_budget(self, message: str) -> bool:
@@ -785,8 +792,8 @@ class AgentOrchestrator:
 
     def _delta_allowed_values(self) -> dict[str, list[str]]:
         return {
-            "preferences": ["吃好", "少排队", "更省钱", "少走路", "citywalk", "拍照", "亲子友好", "室内", "安静", "朋友同行"],
-            "avoid_tags": ["人流密集", "排队久", "太贵", "商业街", "辣", "步行多"],
+            "preferences": ["美食", "咖啡", "拍照", "citywalk", "艺术展", "自然风景", "本地感", "夜景", "亲子", "室内", "安静", "少排队", "省钱", "少走路", "高性价比", "轻松", "时间紧", "朋友同行"],
+            "avoid_tags": ["人流密集", "排队久", "太贵", "需要预约", "商业街", "拍照打卡", "辣", "步行多"],
             "needs": ["meal_stop", "rest_stop"],
             "hard_constraints": ["city", "people_count", "start_time", "duration_hours", "budget_per_person", "scenario"],
         }
@@ -881,7 +888,7 @@ class AgentOrchestrator:
     def _message_requests_meal_stop(self, message: str, added_preferences: list[str], message_route) -> bool:
         meal_terms = ["吃饭", "吃好", "餐厅", "美食", "小吃", "晚饭", "午饭", "饭"]
         is_add_constraint = bool(message_route.turn_type and message_route.turn_type.value == "add_constraint")
-        return is_add_constraint and ("吃好" in added_preferences or any(term in message for term in meal_terms))
+        return is_add_constraint and ("美食" in added_preferences or any(term in message for term in meal_terms))
 
     def _format_state_change_summary(self, summary: StateChangeSummary) -> str:
         parts: list[str] = []
@@ -1279,8 +1286,10 @@ class AgentOrchestrator:
             "start_location_name": "string or null, route start place name when mentioned",
             "start_lat": "number or null, route start latitude when known",
             "start_lng": "number or null, route start longitude when known",
-            "preferences": "array of short Chinese strings",
-            "avoid_tags": "array of short Chinese strings",
+            "interest_tags": "array, experience tags only: 美食/咖啡/拍照/citywalk/艺术展/自然风景/本地感/夜景/亲子/室内/安静",
+            "optimization_goals": "array, route optimization goals only: 少排队/省钱/少走路/高性价比/轻松/时间紧",
+            "preferences": "array, compatibility field; can be empty or interest_tags + optimization_goals",
+            "avoid_tags": "array, avoid items: 人流密集/排队久/太贵/需要预约/商业街/拍照打卡/步行多/辣",
             "scenario": "short snake_case string",
             "need_clarification": "boolean",
         }
@@ -1294,6 +1303,9 @@ class AgentOrchestrator:
                         "必须只返回一个 JSON object，不要 Markdown，不要解释。"
                         "无论信息是否完整，都必须包含所有字段。"
                         "用户只打招呼或需求不清时，用默认值补齐字段，并把 need_clarification 设为 true。"
+                        "不要把优化目标当兴趣标签：少排队、省钱、少走路、高性价比、轻松、时间紧必须进入 optimization_goals。"
+                        "不要把预算硬约束当标签：人均100以内只设置 budget_per_person=100；更省钱/便宜点才进入 optimization_goals=省钱。"
+                        "否定表达要进入 avoid_tags，例如不想拍照=拍照打卡，不想排队=排队久，不要太贵=太贵。"
                     ),
                 },
                 {
@@ -1342,7 +1354,7 @@ class AgentOrchestrator:
             if normalized[key] <= 0:
                 normalized[key] = defaults[key]
 
-        for key in ("preferences", "avoid_tags"):
+        for key in ("preferences", "interest_tags", "optimization_goals", "avoid_tags"):
             normalized[key] = self._coerce_string_list(normalized.get(key))
 
         value = normalized.get("need_clarification", defaults["need_clarification"])
@@ -1396,7 +1408,7 @@ class AgentOrchestrator:
     def _mock_parse_intent(self, message: str) -> Intent:
         preferences = []
         if any(term in message for term in ["吃好", "美食", "餐厅", "小吃"]):
-            preferences.append("吃好")
+            preferences.append("美食")
         if any(term in message for term in ["少排队", "别排队", "不排队", "不想排队"]):
             preferences.append("少排队")
         if any(term in message for term in ["拍照", "出片", "打卡", "citywalk", "街区"]):
@@ -1404,9 +1416,9 @@ class AgentOrchestrator:
         if any(term in message for term in ["少走路", "轻松", "别太累", "不要太累"]):
             preferences.append("少走路")
         if "省钱" in message or "便宜" in message:
-            preferences.append("更省钱")
+            preferences.append("省钱")
         if "亲子" in message or "小孩" in message:
-            preferences.append("亲子友好")
+            preferences.append("亲子")
 
         avoid_tags = []
         if any(term in message for term in ["人多", "拥挤", "人流密集"]):

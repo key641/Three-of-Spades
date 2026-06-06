@@ -132,6 +132,14 @@ class RouteService:
                 result.append(objective)
         return result
 
+    def _unique(self, values: list[str]) -> list[str]:
+        result: list[str] = []
+        for value in values:
+            normalized = str(value).strip()
+            if normalized and normalized not in result:
+                result.append(normalized)
+        return result
+
     def _score_candidates(
         self,
         candidates: list[Route],
@@ -165,8 +173,21 @@ class RouteService:
         }.get(objective, route.score_breakdown.preference)
         return (route.score, objective_fit, stop_fit, time_fit, -route.total_distance_km, preference_fit)
 
+    def _request_terms(self, request: RoutePlanRequest) -> list[str]:
+        return self._unique(
+            [
+                *request.intent.interest_tags,
+                *request.intent.optimization_goals,
+                *request.intent.preferences,
+                *request.user_profile.interest_tags,
+                *request.user_profile.optimization_goals,
+                *request.user_profile.tags,
+                *request.user_profile.preferences,
+            ]
+        )
+
     def _select_objectives(self, request: RoutePlanRequest) -> list[str]:
-        if not request.intent.preferences and not request.user_profile.tags and not request.user_profile.preferences:
+        if not self._request_terms(request):
             return ["photo_citywalk", "food_first", "balanced"]
 
         data_counts = self._objective_data_counts(request.candidate_pois)
@@ -432,7 +453,7 @@ class RouteService:
         else:
             min_stops, max_stops = 4, 5
 
-        terms = set(request.intent.preferences + request.user_profile.tags + request.user_profile.preferences)
+        terms = set(self._request_terms(request))
         if self._has_any(terms, ["轻松", "少走路", "老人", "亲子"]):
             max_stops = max(min_stops, max_stops - 1)
         if self._has_any(terms, ["多打卡", "citywalk", "拍照"]):
@@ -468,7 +489,7 @@ class RouteService:
         return score
 
     def _preference_match(self, poi: POI, request: RoutePlanRequest) -> float:
-        terms = request.intent.preferences + request.user_profile.tags + request.user_profile.preferences
+        terms = self._request_terms(request)
         if not terms:
             return 0
         return sum(1 for term in terms if self._term_matches_poi(term, poi)) / len(terms)
@@ -493,6 +514,7 @@ class RouteService:
         ).lower()
         aliases = {
             "少排队": ["少排队", "不排队", "低排队"],
+            "美食": ["餐厅", "美食", "聚餐", "restaurant", "local_food", "fine_dining"],
             "吃好": ["餐厅", "美食", "聚餐", "restaurant", "local_food", "fine_dining"],
             "food_first": ["餐厅", "美食", "聚餐", "restaurant", "local_food", "fine_dining"],
             "photo_food": ["拍照", "出片", "好看", "环境", "餐厅", "美食", "restaurant", "photo"],
@@ -507,6 +529,8 @@ class RouteService:
             "雨天": ["室内", "雨天", "rainy"],
             "少走路": ["少走路", "轻松", "low"],
             "low_walking": ["少走路", "轻松", "low"],
+            "省钱": ["省钱", "便宜", "免费", "budget", "高性价比"],
+            "高性价比": ["高性价比", "免费", "budget"],
             "晚上": ["晚上", "夜景", "night", "evening"],
             "night_view": ["晚上", "夜景", "night", "evening"],
         }
@@ -680,15 +704,15 @@ class RouteService:
         }
 
     def _allows_repeated_coffee(self, request: RoutePlanRequest) -> bool:
-        terms = request.intent.preferences + request.user_profile.tags + request.user_profile.preferences
+        terms = self._request_terms(request)
         return self._has_any(set(terms), ["咖啡探店", "咖啡路线", "多家咖啡", "咖啡馆"])
 
     def _allows_repeated_meals(self, request: RoutePlanRequest) -> bool:
-        terms = request.intent.preferences + request.user_profile.tags + request.user_profile.preferences
+        terms = self._request_terms(request)
         return self._has_any(set(terms), ["美食路线", "扫街", "吃很多家", "小吃街", "多家餐厅"])
 
     def _allows_mixed_meal_nodes(self, request: RoutePlanRequest) -> bool:
-        terms = set(request.intent.preferences + request.user_profile.tags + request.user_profile.preferences)
+        terms = set(self._request_terms(request))
         wants_coffee = self._has_any(terms, ["咖啡", "下午茶", "咖啡馆", "咖啡探店"])
         wants_meal = self._has_any(terms, ["吃好", "美食", "餐厅", "正餐", "火锅", "小吃"])
         return wants_coffee and wants_meal
@@ -737,7 +761,7 @@ class RouteService:
         return max(viable, key=lambda poi: self._poi_score(poi, objective, request, state.current_lat, state.current_lng))
 
     def _route_wants_food(self, objective: str, request: RoutePlanRequest) -> bool:
-        terms = set(request.intent.preferences + request.user_profile.tags + request.user_profile.preferences)
+        terms = set(self._request_terms(request))
         return objective in {"food_first", "photo_food"} or self._has_any(terms, ["吃好", "咖啡", "聚餐", "餐厅", "美食"])
 
     def _is_food_poi(self, stop: RouteStop) -> bool:
@@ -839,7 +863,7 @@ class RouteService:
     def _prefers_less_walking(self, request: RoutePlanRequest | None) -> bool:
         if request is None:
             return False
-        terms = set(request.intent.preferences + request.user_profile.tags + request.user_profile.preferences)
+        terms = set(self._request_terms(request))
         if self._has_any(terms, ["少走路", "轻松", "室内", "亲子", "老人"]):
             return True
         return request.intent.duration_hours <= 4 and request.intent.scenario in {"family_trip"}

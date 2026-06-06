@@ -56,8 +56,10 @@ class ProfileRequestSyncTest(unittest.TestCase):
         profile = ProfileService().get_profile(request.user_id, request)
 
         self.assertEqual(profile.user_id, "user_frontend")
-        self.assertEqual(profile.tags, ["少排队", "吃好", "更省钱"])
-        self.assertEqual(profile.preferences, ["少排队", "吃好", "更省钱"])
+        self.assertEqual(profile.interest_tags, ["美食"])
+        self.assertEqual(profile.optimization_goals, ["少排队", "高性价比"])
+        self.assertEqual(profile.tags, ["美食", "少排队", "高性价比"])
+        self.assertEqual(profile.preferences, ["美食", "少排队", "高性价比"])
         self.assertEqual(profile.avoid_tags, ["人流密集", "太贵"])
         self.assertEqual(profile.preference_weights["queue"], 0.35)
         self.assertEqual(profile.category_preferences["museum"], 0.9)
@@ -83,6 +85,8 @@ class ProfileRequestSyncTest(unittest.TestCase):
 
         self.assertEqual(merged.city, "杭州")
         self.assertEqual(merged.scenario, "friends_citywalk")
+        self.assertEqual(merged.interest_tags, ["拍照"])
+        self.assertEqual(merged.optimization_goals, ["少排队"])
         self.assertEqual(merged.preferences, ["拍照", "少排队"])
         self.assertEqual(merged.avoid_tags, ["人流密集", "太贵"])
         self.assertEqual(merged.budget_per_person, 100)
@@ -122,8 +126,8 @@ class ProfileRequestSyncTest(unittest.TestCase):
             Intent(preferences=["少排队", "更省钱"], avoid_tags=["排队久", "太贵"]),
         )
 
-        self.assertEqual(updated.preferences, ["网红打卡", "少排队", "更省钱"])
-        self.assertEqual(updated.tags, ["网红打卡", "少排队", "更省钱"])
+        self.assertEqual(updated.preferences, ["拍照", "少排队", "省钱"])
+        self.assertEqual(updated.tags, ["拍照", "少排队", "省钱"])
         self.assertEqual(updated.avoid_tags, ["商业街", "排队久", "太贵"])
         self.assertGreaterEqual(updated.preference_weights["queue"], 0.3)
         self.assertGreaterEqual(updated.preference_weights["budget"], 0.3)
@@ -140,8 +144,8 @@ class ProfileRequestSyncTest(unittest.TestCase):
         service.update_from_chat(profile, Intent(preferences=["少排队"], avoid_tags=["排队久"]))
         loaded = ProfileService(runtime_data_path=runtime_path).get_profile("user_persisted")
 
-        self.assertEqual(loaded.preferences, ["吃好", "少排队"])
-        self.assertEqual(loaded.tags, ["吃好", "少排队"])
+        self.assertEqual(loaded.preferences, ["美食", "少排队"])
+        self.assertEqual(loaded.tags, ["美食", "少排队"])
         self.assertEqual(loaded.avoid_tags, ["排队久"])
         self.assertGreaterEqual(loaded.preference_weights["queue"], 0.3)
 
@@ -162,7 +166,7 @@ class ProfileRequestSyncTest(unittest.TestCase):
         loaded = ProfileService(runtime_data_path=runtime_path).get_profile("user_trip_only")
 
         self.assertIn("少排队", updated.preferences)
-        self.assertEqual(loaded.preferences, ["吃好"])
+        self.assertEqual(loaded.preferences, ["美食"])
         self.assertEqual(loaded.avoid_tags, [])
 
     def test_profile_service_persists_explicit_long_term_preferences(self) -> None:
@@ -181,7 +185,7 @@ class ProfileRequestSyncTest(unittest.TestCase):
         )
         loaded = ProfileService(runtime_data_path=runtime_path).get_profile("user_long_term")
 
-        self.assertEqual(loaded.preferences, ["吃好", "少排队"])
+        self.assertEqual(loaded.preferences, ["美食", "少排队"])
         self.assertEqual(loaded.avoid_tags, ["排队久"])
 
     def test_profile_service_loads_seed_profile_when_request_has_no_profile(self) -> None:
@@ -189,7 +193,7 @@ class ProfileRequestSyncTest(unittest.TestCase):
 
         self.assertEqual(profile.user_id, "user_001")
         self.assertIn("拍照", profile.preferences)
-        self.assertIn("排队", profile.avoid_tags)
+        self.assertIn("排队久", profile.avoid_tags)
         self.assertTrue(profile.preference_weights)
         self.assertEqual(profile.budget_sensitivity, 0.52)
         self.assertEqual(profile.walking_tolerance, 0.38)

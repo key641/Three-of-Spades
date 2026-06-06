@@ -1,6 +1,13 @@
 from app.agent.schemas import IntentDelta, QueryUnderstanding, SessionState, StateChangeSummary, TripState
 from app.agent.message_router import MessageRoute, TurnType
-from app.agent.intent_enhancer import extract_explicit_trip_fields, normalize_avoid_tags, normalize_preferences
+from app.agent.intent_enhancer import (
+    extract_explicit_trip_fields,
+    normalize_avoid_tags,
+    normalize_goal_preferences,
+    normalize_interest_preferences,
+    normalize_preferences,
+)
+from app.agent.tag_taxonomy import legacy_preferences_from_layers
 from app.agent.unit_normalizer import extract_standard_unit_fields
 from app.schemas.intent import Intent
 
@@ -59,10 +66,12 @@ def apply_session_context(intent: Intent, message: str, state: SessionState, rou
     base = state.last_intent.model_dump()
     current = intent.model_dump()
     merged = base | {
-        "preferences": normalize_preferences([*state.last_intent.preferences, *intent.preferences]),
+        "interest_tags": normalize_interest_preferences([*state.last_intent.interest_tags, *intent.interest_tags, *state.last_intent.preferences, *intent.preferences]),
+        "optimization_goals": normalize_goal_preferences([*state.last_intent.optimization_goals, *intent.optimization_goals, *state.last_intent.preferences, *intent.preferences]),
         "avoid_tags": normalize_avoid_tags([*state.last_intent.avoid_tags, *intent.avoid_tags]),
         "need_clarification": False,
     }
+    merged["preferences"] = normalize_preferences([*state.last_intent.preferences, *intent.preferences])
 
     if intent.city_from_message:
         merged["city"] = intent.city
@@ -113,7 +122,13 @@ def apply_query_delta(
     summary = StateChangeSummary()
 
     _apply_hard_constraint_changes(data, delta, summary)
+    added_interest = normalize_interest_preferences(delta.added_preferences)
+    removed_interest = normalize_interest_preferences(delta.removed_preferences)
+    added_goals = normalize_goal_preferences(delta.added_preferences)
+    removed_goals = normalize_goal_preferences(delta.removed_preferences)
     _apply_list_changes(data, "soft_preferences", delta.added_preferences, delta.removed_preferences, summary)
+    _apply_list_changes(data, "interest_tags", added_interest, removed_interest, summary)
+    _apply_list_changes(data, "optimization_goals", added_goals, removed_goals, summary)
     _apply_list_changes(data, "avoid_tags", delta.added_avoid_tags, delta.removed_avoid_tags, summary)
     promoted_needs = set(delta.added_must_include) & set(delta.removed_implicit_needs)
     visible_removed_implicit_needs = [value for value in delta.removed_implicit_needs if value not in promoted_needs]
@@ -136,6 +151,12 @@ def apply_query_delta(
         "duration_hours": data["duration_hours"],
         "budget_per_person": data["budget_per_person"],
     }
+    removed_legacy_preferences = set(normalize_preferences(delta.removed_preferences))
+    kept_soft_preferences = [value for value in data["soft_preferences"] if value not in removed_legacy_preferences]
+    data["soft_preferences"] = _unique([
+        *legacy_preferences_from_layers(data["interest_tags"], data["optimization_goals"]),
+        *kept_soft_preferences,
+    ])
 
     trip_state = TripState.model_validate(data)
     merged_intent = trip_state.to_intent()

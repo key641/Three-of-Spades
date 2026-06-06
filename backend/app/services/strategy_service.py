@@ -26,11 +26,11 @@ class StrategyService:
     RULES: dict[str, StrategyTagRule] = {
         "photo": StrategyTagRule(("拍照", "出片", "打卡", "好看", "网红"), {"preference": 1.55, "quality": 1.15}, {"photo_citywalk": 0.65}),
         "photo_food": StrategyTagRule(("饭店拍照", "餐厅环境", "餐厅好看", "饭店好看", "拍照吃饭"), {"preference": 1.9, "quality": 1.3, "queue": 0.92}, {"photo_food": 1.5, "food_first": 0.55}),
-        "food_first": StrategyTagRule(("吃好", "美食", "好吃", "餐厅", "吃饭", "小吃"), {"preference": 1.65, "quality": 1.18}, {"food_first": 0.9}),
+        "food_first": StrategyTagRule(("美食", "吃好", "好吃", "餐厅", "吃饭", "小吃"), {"preference": 1.65, "quality": 1.18}, {"food_first": 0.9}),
         "nature": StrategyTagRule(("自然", "风景", "自然风景", "公园", "江景", "海边", "湖边", "山", "森林"), {"preference": 1.55, "distance": 1.12}, {"nature_relax": 1.0, "photo_citywalk": 0.4}),
         "quiet": StrategyTagRule(("安静", "清净", "人少"), {"queue": 1.25, "preference": 1.25}, {"balanced": 0.25, "nature_relax": 0.35}),
         "low_walking": StrategyTagRule(("少走路", "轻松", "别太累", "不累", "老人", "长辈"), {"distance": 1.45, "queue": 1.08}, {"low_walking": 0.85}),
-        "budget": StrategyTagRule(("省钱", "便宜", "性价比", "预算低"), {"budget": 1.6, "quality": 0.95}, {"budget": 0.85}),
+        "budget": StrategyTagRule(("省钱", "便宜", "性价比", "高性价比", "预算低"), {"budget": 1.6, "quality": 0.95}, {"budget": 0.85}),
         "indoor_rainy": StrategyTagRule(("室内", "雨天", "下雨"), {"preference": 1.45, "distance": 1.12}, {"indoor_rainy": 0.95}),
         "night_view": StrategyTagRule(("晚上", "夜景", "夜游", "今晚"), {"preference": 1.5}, {"night_friendly": 0.95}),
         "local_vibe": StrategyTagRule(("本地", "市井", "地道", "老字号", "本地感"), {"preference": 1.45}, {"food_first": 0.4, "photo_citywalk": 0.35}),
@@ -42,7 +42,7 @@ class StrategyService:
     }
 
     def infer_tags(self, message: str, intent: Intent, profile: UserProfile) -> list[StrategyTag]:
-        text = " ".join([message, *intent.preferences])
+        text = " ".join([message, *intent.interest_tags, *intent.optimization_goals])
         tags: dict[str, StrategyTag] = {}
         for tag, rule in self.RULES.items():
             evidence = self._first_hit(text, rule.aliases)
@@ -59,7 +59,7 @@ class StrategyService:
                 evidence = "拍照+美食"
             tags["photo_food"] = StrategyTag(tag="photo_food", intensity=intensity, evidence=evidence)
 
-        for term in profile.tags + profile.preferences:
+        for term in profile.interest_tags + profile.optimization_goals + profile.tags + profile.preferences:
             for tag, rule in self.RULES.items():
                 if tag in tags:
                     continue
@@ -106,10 +106,10 @@ class StrategyService:
                 continue
             for objective, affinity in rule.objectives.items():
                 scores[objective] = scores.get(objective, 0) + affinity * strategy_tag.intensity * 0.8
-        profile_terms = set(profile.tags + profile.preferences)
-        if "吃好" in profile_terms:
+        profile_terms = set(profile.interest_tags + profile.optimization_goals + profile.tags + profile.preferences)
+        if "美食" in profile_terms:
             scores["food_first"] += 0.12
-        if "citywalk" in profile_terms or "网红打卡" in profile_terms:
+        if "citywalk" in profile_terms or "拍照" in profile_terms:
             scores["photo_citywalk"] += 0.12
         if "少走路" in profile_terms:
             scores["low_walking"] += 0.08

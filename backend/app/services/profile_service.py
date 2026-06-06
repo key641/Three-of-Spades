@@ -2,7 +2,8 @@ import json
 from pathlib import Path
 from typing import Any
 
-from app.agent.intent_enhancer import normalize_avoid_tags, normalize_preferences
+from app.agent.intent_enhancer import normalize_avoid_tags, normalize_goal_preferences, normalize_interest_preferences, normalize_preferences
+from app.agent.tag_taxonomy import legacy_preferences_from_layers
 from app.schemas.feedback import FeedbackRequest, FeedbackResponse
 from app.schemas.chat import ChatRequest
 from app.schemas.intent import Intent
@@ -29,11 +30,15 @@ class ProfileService:
 
     def get_profile(self, user_id: str, request: ChatRequest | None = None) -> UserProfile:
         if request and self._request_has_profile_fields(request):
-            preferences = normalize_preferences(request.preferences)
+            interest_tags = normalize_interest_preferences([*request.preferences, *request.interest_tags])
+            optimization_goals = normalize_goal_preferences([*request.preferences, *request.optimization_goals])
+            preferences = legacy_preferences_from_layers(interest_tags, optimization_goals)
             profile = UserProfile(
                 user_id=user_id,
                 tags=preferences,
                 preferences=preferences,
+                interest_tags=interest_tags,
+                optimization_goals=optimization_goals,
                 avoid_tags=normalize_avoid_tags(request.avoid_tags),
                 preference_weights=request.preference_weights or self.DEFAULT_WEIGHTS,
                 budget_sensitivity=self._optional_score(request.budget_sensitivity),
@@ -63,11 +68,15 @@ class ProfileService:
         if seed_profile is not None:
             return seed_profile
 
-        tags = ["少排队", "吃好", "citywalk"]
+        interest_tags = ["美食", "citywalk"]
+        optimization_goals = ["少排队"]
+        tags = legacy_preferences_from_layers(interest_tags, optimization_goals)
         return UserProfile(
             user_id=user_id,
             tags=tags,
             preferences=tags,
+            interest_tags=interest_tags,
+            optimization_goals=optimization_goals,
             avoid_tags=[],
             preference_weights=self.DEFAULT_WEIGHTS,
             preferred_route_roles=self._route_roles_from_terms(tags),
@@ -87,11 +96,12 @@ class ProfileService:
         weights.queue = max(weights.queue, 0.15 + (1 - profile.crowd_tolerance) * 0.2)
         weights.preference = max(weights.preference, 0.08 + profile.novelty_preference * 0.12)
         weights.quality = max(weights.quality, 0.25 + profile.comfort_preference * 0.1)
-        if "少排队" in intent.preferences:
+        intent_goals = set(intent.optimization_goals)
+        if "少排队" in intent_goals:
             weights.queue = max(weights.queue, 0.3)
-        if "更省钱" in intent.preferences:
+        if "省钱" in intent_goals:
             weights.budget = max(weights.budget, 0.3)
-        if "少走路" in intent.preferences:
+        if "少走路" in intent_goals:
             weights.distance = max(weights.distance, 0.25)
         return self.strategy_service.build_weights(weights, strategy_tags or [])
 
@@ -102,7 +112,9 @@ class ProfileService:
         runtime store; a database repository can replace that later without
         changing the orchestrator flow.
         """
-        preferences = normalize_preferences([*profile.preferences, *profile.tags, *intent.preferences])
+        interest_tags = normalize_interest_preferences([*profile.interest_tags, *intent.interest_tags, *profile.preferences, *intent.preferences])
+        optimization_goals = normalize_goal_preferences([*profile.optimization_goals, *intent.optimization_goals, *profile.preferences, *intent.preferences])
+        preferences = legacy_preferences_from_layers(interest_tags, optimization_goals)
         avoid_tags = normalize_avoid_tags([*profile.avoid_tags, *intent.avoid_tags])
         weights = self.build_strategy_weights(intent, profile).model_dump()
         merged_terms = [*preferences, *avoid_tags]
@@ -110,6 +122,8 @@ class ProfileService:
             user_id=profile.user_id,
             tags=preferences,
             preferences=preferences,
+            interest_tags=interest_tags,
+            optimization_goals=optimization_goals,
             avoid_tags=avoid_tags,
             preference_weights=weights,
             budget_sensitivity=self._updated_budget_sensitivity(profile, merged_terms),
@@ -149,7 +163,11 @@ class ProfileService:
         if scenario:
             data["scenario"] = scenario
 
-        data["preferences"] = normalize_preferences([*intent.preferences, *request.preferences])
+        interest_tags = normalize_interest_preferences([*intent.interest_tags, *request.interest_tags, *intent.preferences, *request.preferences])
+        optimization_goals = normalize_goal_preferences([*intent.optimization_goals, *request.optimization_goals, *intent.preferences, *request.preferences])
+        data["interest_tags"] = interest_tags
+        data["optimization_goals"] = optimization_goals
+        data["preferences"] = normalize_preferences([*intent.preferences, *request.preferences, *interest_tags, *optimization_goals])
         data["avoid_tags"] = normalize_avoid_tags([*intent.avoid_tags, *request.avoid_tags])
 
         budget = self.BUDGET_BY_LEVEL.get((request.budget_level or "").lower())
@@ -188,6 +206,8 @@ class ProfileService:
     def _request_has_profile_fields(self, request: ChatRequest) -> bool:
         return bool(
             request.preferences
+            or request.interest_tags
+            or request.optimization_goals
             or request.avoid_tags
             or request.preference_weights
             or request.category_preferences
@@ -256,7 +276,9 @@ class ProfileService:
             raw.get("current_trip", {})
             .get("soft_preferences", {})
         )
-        preferences = normalize_preferences(self._as_string_list(soft_preferences.get("prefer_tags")))
+        interest_tags = normalize_interest_preferences(self._as_string_list(soft_preferences.get("prefer_tags")))
+        optimization_goals = normalize_goal_preferences(self._as_string_list(soft_preferences.get("prefer_tags")))
+        preferences = legacy_preferences_from_layers(interest_tags, optimization_goals)
         avoid_tags = normalize_avoid_tags(self._as_string_list(soft_preferences.get("avoid_tags")))
         preference_profile = raw.get("preference_profile", {})
         history_behavior = raw.get("history_behavior", {})
@@ -264,6 +286,8 @@ class ProfileService:
             user_id=user_id,
             tags=preferences,
             preferences=preferences,
+            interest_tags=interest_tags,
+            optimization_goals=optimization_goals,
             avoid_tags=avoid_tags,
             preference_weights=self._weights_from_seed(raw),
             budget_sensitivity=self._to_float(preference_profile.get("budget_sensitivity"), 0.5),
@@ -323,7 +347,7 @@ class ProfileService:
         return round(max(0, min(1, value + amount)), 3)
 
     def _updated_budget_sensitivity(self, profile: UserProfile, terms: list[str]) -> float:
-        if any(term in terms for term in ["更省钱", "太贵"]):
+        if any(term in terms for term in ["省钱", "太贵"]):
             return self._bump(profile.budget_sensitivity, 0.08)
         return profile.budget_sensitivity
 
@@ -338,12 +362,12 @@ class ProfileService:
         return profile.crowd_tolerance
 
     def _updated_novelty_preference(self, profile: UserProfile, terms: list[str]) -> float:
-        if any(term in terms for term in ["小众", "文艺", "网红打卡"]):
+        if any(term in terms for term in ["小众", "文艺", "拍照"]):
             return self._bump(profile.novelty_preference, 0.05)
         return profile.novelty_preference
 
     def _updated_comfort_preference(self, profile: UserProfile, terms: list[str]) -> float:
-        if any(term in terms for term in ["室内", "安静", "亲子友好"]):
+        if any(term in terms for term in ["室内", "安静", "亲子"]):
             return self._bump(profile.comfort_preference, 0.05)
         return profile.comfort_preference
 
@@ -355,13 +379,13 @@ class ProfileService:
 
     def _categories_from_terms(self, terms: list[str]) -> list[str]:
         mapping = {
-            "吃好": ["restaurant"],
+            "美食": ["restaurant"],
             "咖啡": ["cafe"],
             "拍照": ["landmark", "night_view"],
             "citywalk": ["landmark", "market"],
             "室内": ["museum", "gallery", "shopping"],
             "雨天": ["museum", "gallery", "shopping"],
-            "亲子友好": ["park", "museum"],
+            "亲子": ["park", "museum"],
             "夜景": ["night_view"],
             "晚上": ["night_view"],
         }
@@ -369,10 +393,9 @@ class ProfileService:
 
     def _route_roles_from_terms(self, terms: list[str]) -> list[str]:
         mapping = {
-            "吃好": ["meal"],
+            "美食": ["meal"],
             "咖啡": ["coffee_break", "rest_stop"],
             "拍照": ["photo_stop"],
-            "网红打卡": ["photo_stop"],
             "citywalk": ["main_activity", "photo_stop"],
             "少走路": ["transit_anchor", "rest_stop"],
             "室内": ["main_activity", "rest_stop"],
@@ -382,14 +405,13 @@ class ProfileService:
 
     def _experience_tags_from_terms(self, terms: list[str]) -> list[str]:
         mapping = {
-            "吃好": ["本地", "老字号"],
+            "美食": ["本地", "老字号"],
             "拍照": ["拍照", "经典"],
-            "网红打卡": ["拍照", "小众"],
             "citywalk": ["文艺", "本地"],
             "室内": ["雨天", "展览"],
             "安静": ["安静", "小众"],
-            "亲子友好": ["亲子"],
-            "更省钱": ["免费", "高性价比"],
+            "亲子": ["亲子"],
+            "省钱": ["免费", "高性价比"],
         }
         return self._mapped_terms(terms, mapping)
 
@@ -404,8 +426,8 @@ class ProfileService:
     def _transport_modes_from_terms(self, terms: list[str]) -> list[str]:
         mapping = {
             "少走路": ["metro", "taxi"],
-            "更省钱": ["metro", "bus", "walk"],
-            "亲子友好": ["taxi", "metro"],
+            "省钱": ["metro", "bus", "walk"],
+            "亲子": ["taxi", "metro"],
         }
         return self._mapped_terms(terms, mapping)
 
