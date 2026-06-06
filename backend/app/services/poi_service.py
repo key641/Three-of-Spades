@@ -7,8 +7,6 @@ from typing import Any
 from app.schemas.intent import Intent
 from app.schemas.poi import POI
 from app.schemas.user import StrategyTag, UserProfile
-from app.services.coarse_rank_service import CoarseRankService
-from app.services.recall_service import RecallService
 from app.services.strategy_service import StrategyService
 
 
@@ -28,8 +26,6 @@ class POIService:
         self.data_path = data_path or Path(__file__).resolve().parents[3] / "data" / "seed" / "pois.json"
         self._candidates = self._load_candidates()
         self.strategy_service = StrategyService()
-        self.recall_service = RecallService()
-        self.coarse_rank_service = CoarseRankService(self.strategy_service)
 
     def search(self, intent: Intent, user_profile: UserProfile | None = None, limit: int = 40, strategy_tags: list[StrategyTag] | None = None) -> list[POI]:
         city_matches = [candidate for candidate in self._candidates if candidate.poi.city == intent.city]
@@ -37,34 +33,23 @@ class POIService:
             city_matches = self._fallback_candidates(intent.city)
         min_candidates = min(limit, self.MIN_DEFAULT_CANDIDATES)
 
-        target_pool_size = max(limit * 6, 240)
-        recalled_candidates = self.recall_service.recall(
-            intent=intent,
-            candidates=city_matches,
-            user_profile=user_profile,
-            strategy_tags=strategy_tags or [],
-            target_pool_size=target_pool_size,
-        )
-        if len(recalled_candidates) < min_candidates:
-            recalled_candidates = self._merge_candidates(recalled_candidates, city_matches)
-
         strict_matches = [
             candidate
-            for candidate in recalled_candidates
+            for candidate in city_matches
             if self._matches_preferences(candidate, intent)
             and not self._matches_avoid_tags(candidate, intent)
             and self._is_not_extreme_budget_mismatch(candidate.poi, intent)
         ]
         candidates = strict_matches or [
             candidate
-            for candidate in recalled_candidates
+            for candidate in city_matches
             if not self._matches_avoid_tags(candidate, intent)
             and self._is_not_extreme_budget_mismatch(candidate.poi, intent)
         ]
         if len(candidates) < min_candidates:
             relaxed_matches = [
                 candidate
-                for candidate in recalled_candidates
+                for candidate in city_matches
                 if not self._matches_avoid_tags(candidate, intent)
                 and self._is_not_extreme_budget_mismatch(candidate.poi, intent)
             ]
@@ -72,20 +57,17 @@ class POIService:
         if len(candidates) < min_candidates:
             low_risk_matches = [
                 candidate
-                for candidate in recalled_candidates
+                for candidate in city_matches
                 if not {"long_queue", "high_price"} & set(candidate.poi.risk_flags + candidate.poi.avoid_reasons)
             ]
             candidates = self._merge_candidates(candidates, low_risk_matches)
         if not candidates:
             candidates = city_matches
 
-        coarse_limit = max(limit, 60)
-        ranked = self.coarse_rank_service.rank(
+        ranked = sorted(
             candidates,
-            intent=intent,
-            user_profile=user_profile,
-            strategy_tags=strategy_tags or [],
-            limit=coarse_limit,
+            key=lambda candidate: self._rank_score(candidate, intent, user_profile, strategy_tags or []),
+            reverse=True,
         )
         ranked = self._diversify_ranked_candidates(ranked, limit)
         return [candidate.poi for candidate in ranked[:limit]]
@@ -289,7 +271,7 @@ class POIService:
         return poi.avg_price <= max(intent.budget_per_person * 2, intent.budget_per_person + 160)
 
     def _matches_preferences(self, candidate: POICandidate, intent: Intent) -> bool:
-        preferences = self._normalize_terms(intent.preferences)
+        preferences = self._normalize_terms(intent.interest_tags)
         if not preferences:
             return True
         return any(self._term_matches(term, candidate.search_text) for term in preferences)
@@ -308,7 +290,81 @@ class POIService:
         user_profile: UserProfile | None,
         strategy_tags: list[StrategyTag] | None = None,
     ) -> float:
-        return self.coarse_rank_service.score(candidate, intent, user_profile, strategy_tags or [])
+        poi = candidate.poi
+        weights = user_profile.preference_weights if user_profile else {}
+        quality_weight = self._weight(weights, "quality", 0.3)
+        queue_weight = self._weight(weights, "queue", 0.25)
+        distance_weight = self._weight(weights, "distance", 0.2)
+        budget_weight = self._weight(weights, "budget", 0.15)
+        preference_weight = self._weight(weights, "preference", 0.1)
+
+        distance_km = self._distance_from_intent(poi, intent)
+        distance_score = 1 if distance_km is None else max(0, 1 - min(distance_km, 20) / 20)
+        budget_score = max(0, 1 - min(poi.avg_price, intent.budget_per_person) / max(intent.budget_per_person, 1))
+        if poi.avg_price <= intent.budget_per_person:
+            budget_score = max(budget_score, poi.budget_friendly)
+        elif poi.avg_price <= intent.budget_per_person * 1.5:
+            budget_score = max(budget_score, 0.45)
+        elif poi.avg_price > intent.budget_per_person * 2:
+            budget_score *= 0.25
+        queue_score = max(
+            0,
+            1
+            - min(poi.queue_minutes, 90) / 120
+            - min(max(poi.live_crowd_level, poi.crowd_level), 1) * 0.25,
+        )
+        quality_score = self._quality_score(poi)
+
+        intent_terms = self._normalize_terms(intent.interest_tags)
+        intent_goal_terms = self._normalize_terms(intent.optimization_goals)
+        profile_terms = self._normalize_terms((user_profile.interest_tags + user_profile.tags) if user_profile else [])
+        profile_goal_terms = self._normalize_terms(user_profile.optimization_goals if user_profile else [])
+        preference_score = self._match_ratio(intent_terms, candidate.search_text)
+        profile_score = self._match_ratio(profile_terms, candidate.search_text)
+        profile_dimension_score = self._profile_dimension_score(candidate, user_profile)
+        scenario_score = self._scenario_score(candidate, intent)
+        time_score = self._time_score(poi, intent)
+
+        score = (
+            quality_score * quality_weight
+            + queue_score * queue_weight
+            + distance_score * distance_weight
+            + budget_score * budget_weight
+            + preference_score * preference_weight
+            + profile_score * 0.2
+            + profile_dimension_score * 0.25
+            + scenario_score * 0.1
+            + time_score * 0.12
+            + self.strategy_service.tag_score(poi, strategy_tags or []) * 0.45
+        )
+        if user_profile and poi.id in user_profile.liked_poi_ids:
+            score += 0.4
+        if user_profile and poi.id in user_profile.disliked_poi_ids:
+            score -= 0.8
+        if user_profile and poi.category in user_profile.skipped_categories:
+            score -= 0.5
+        if distance_km is not None:
+            score += distance_score * 0.45
+        goal_terms = intent_goal_terms + profile_goal_terms
+        if self._has_term(goal_terms, "少排队"):
+            score += queue_score * 0.25
+        if self._has_term(goal_terms, "省钱"):
+            score += budget_score * 0.25
+        if self._has_term(goal_terms, "高性价比"):
+            score += (budget_score * 0.45 + quality_score * 0.55) * 0.22
+        if self._has_term(intent_terms + profile_terms, "美食"):
+            score += self._meal_score(poi, ["美食"]) * 0.4
+        if self._has_term(intent_terms + profile_terms, "咖啡"):
+            score += self._meal_score(poi, ["咖啡"]) * 0.4
+        if self._has_term(intent_terms + profile_terms, "轻食") or self._has_term(intent_terms + profile_terms, "小吃"):
+            score += self._meal_score(poi, ["轻食"]) * 0.35
+        if self._has_term(intent_terms + profile_terms, "citywalk"):
+            score += self._term_bonus(candidate, ["citywalk", "拍照", "街区", "散步", "landmark"]) * 0.2
+        if self._has_term(intent_terms + profile_terms, "室内") or self._has_term(intent_terms + profile_terms, "雨天"):
+            score += (1 if poi.indoor else poi.rainy_day_score) * 0.25
+        if self._has_term(intent_terms + profile_terms, "少走路") or self._has_term(intent_terms + profile_terms, "轻松"):
+            score += self._walking_score(poi) * 0.3
+        return score
 
     def _profile_dimension_score(self, candidate: POICandidate, user_profile: UserProfile | None) -> float:
         if user_profile is None:
@@ -459,15 +515,18 @@ class POIService:
     def _term_matches(self, term: str, text: str) -> bool:
         aliases = {
             "少排队": ["少排队", "别排队", "不排队", "排队可接受", "queue"],
-            "吃好": ["吃好", "美食", "餐厅", "聚餐", "菜", "restaurant", "local_food", "fine_dining"],
-            "food_first": ["吃好", "美食", "餐厅", "聚餐", "菜", "restaurant", "local_food", "fine_dining"],
+            "美食": ["美食", "吃好", "餐厅", "聚餐", "菜", "restaurant", "local_food", "fine_dining", "food"],
+            "吃好": ["美食", "吃好", "餐厅", "聚餐", "菜", "restaurant", "local_food", "fine_dining", "food"],
+            "food_first": ["美食", "吃好", "餐厅", "聚餐", "菜", "restaurant", "local_food", "fine_dining", "food"],
             "photo_food": ["拍照", "出片", "好看", "环境", "餐厅", "美食", "restaurant", "photo"],
             "nature": ["自然", "风景", "公园", "江景", "海边", "湖", "山", "森林", "nature"],
             "nature_relax": ["自然", "风景", "公园", "江景", "海边", "湖", "山", "森林", "nature"],
             "咖啡": ["咖啡", "下午茶", "休息", "cafe"],
             "轻食": ["轻食", "小吃", "light_meal", "fast_food", "market"],
             "小吃": ["小吃", "轻食", "light_meal", "fast_food", "market"],
+            "省钱": ["省钱", "便宜", "免费", "budget"],
             "更省钱": ["省钱", "便宜", "免费", "budget"],
+            "高性价比": ["高性价比", "免费", "budget"],
             "少走路": ["少走路", "轻松", "交通", "metro", "low"],
             "low_walking": ["少走路", "轻松", "交通", "metro", "low"],
             "轻松": ["少走路", "轻松", "low", "metro"],
@@ -533,7 +592,7 @@ class POIService:
 
     def _meal_score(self, poi: POI, terms: list[str]) -> float:
         meal_type = poi.meal_type
-        if any(term in {"吃好", "餐厅", "聚餐", "美食"} for term in terms):
+        if any(term in {"美食", "吃好", "餐厅", "聚餐"} for term in terms):
             if poi.category == "restaurant" or meal_type in {"local_food", "fine_dining"}:
                 return 1
             if meal_type in {"light_meal", "cafe", "fast_food"}:

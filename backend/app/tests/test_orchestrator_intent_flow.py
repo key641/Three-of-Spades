@@ -103,7 +103,7 @@ class OrchestratorIntentFlowTest(unittest.TestCase):
             )
 
             self.assertNotIn("budget_per_person", delta.modified_hard_constraints)
-            self.assertIn("更省钱", delta.added_preferences)
+            self.assertIn("省钱", delta.added_preferences)
 
         import asyncio
 
@@ -144,7 +144,7 @@ class OrchestratorIntentFlowTest(unittest.TestCase):
             )
 
             self.assertEqual(delta.modified_hard_constraints["budget_per_person"], 150)
-            self.assertIn("更省钱", delta.added_preferences)
+            self.assertIn("省钱", delta.added_preferences)
 
         import asyncio
 
@@ -528,7 +528,7 @@ class OrchestratorIntentFlowTest(unittest.TestCase):
             state = orchestrator.memory.get_state("s1")
             self.assertEqual(state.last_intent.city, "上海")
             self.assertEqual(state.last_intent.duration_hours, 8)
-            self.assertIn("更省钱", state.last_intent.preferences)
+            self.assertIn("省钱", state.last_intent.preferences)
             self.assertIn("少排队", state.last_intent.preferences)
             self.assertIn("排队久", state.last_intent.avoid_tags)
 
@@ -672,12 +672,12 @@ class OrchestratorIntentFlowTest(unittest.TestCase):
             self.assertEqual(state.last_intent.people_count, 2)
             self.assertEqual(state.last_intent.duration_hours, 8)
             self.assertEqual(state.last_intent.scenario, "friends_citywalk")
-            self.assertEqual(state.last_intent.preferences, ["拍照", "吃好"])
+            self.assertEqual(state.last_intent.preferences, ["拍照", "美食"])
             self.assertIsNotNone(state.trip_state)
             self.assertEqual(state.trip_state.city, "上海")
             self.assertEqual(state.trip_state.people_count, 2)
             self.assertEqual(state.trip_state.duration_hours, 8)
-            self.assertEqual(state.trip_state.soft_preferences, ["拍照", "吃好"])
+            self.assertEqual(state.trip_state.soft_preferences, ["拍照", "美食"])
             self.assertIn("meal_stop", state.trip_state.must_include)
             route_step = next(step for step in response.agent_trace if step.step == "route_message")
             delta_step = next(step for step in response.agent_trace if step.step == "apply_query_delta")
@@ -742,7 +742,7 @@ class OrchestratorIntentFlowTest(unittest.TestCase):
             self.assertEqual(state.last_intent.people_count, 2)
             self.assertEqual(state.last_intent.duration_hours, 8)
             self.assertIn("朋友同行", state.last_intent.preferences)
-            self.assertNotIn("吃好", state.last_intent.preferences)
+            self.assertNotIn("美食", state.last_intent.preferences)
             self.assertNotIn("吃饭", state.last_intent.preferences)
             self.assertNotIn("meal_stop", state.trip_state.must_include)
             self.assertNotIn("meal_stop", state.trip_state.implicit_needs)
@@ -913,12 +913,11 @@ class OrchestratorIntentFlowTest(unittest.TestCase):
             state = orchestrator.memory.get_state("s1")
             self.assertEqual(state.last_intent.city, "上海")
             self.assertEqual(state.last_intent.duration_hours, 8)
-            self.assertIn("更省钱", state.last_intent.preferences)
+            self.assertIn("省钱", state.last_intent.preferences)
             self.assertIn("少排队", state.last_intent.preferences)
             self.assertIn("少走路", state.last_intent.preferences)
             self.assertIn("安静", state.last_intent.preferences)
             self.assertIn("排队久", state.last_intent.avoid_tags)
-            self.assertIn("步行多", state.last_intent.avoid_tags)
 
         import asyncio
 

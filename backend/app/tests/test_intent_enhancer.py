@@ -20,8 +20,8 @@ class IntentEnhancerTest(unittest.TestCase):
         self.assertEqual(intent.people_count, 2)
         self.assertEqual(intent.duration_hours, 8)
         self.assertEqual(intent.budget_per_person, 200)
-        self.assertIn("吃好", intent.preferences)
-        self.assertIn("少排队", intent.preferences)
+        self.assertIn("美食", intent.interest_tags)
+        self.assertIn("少排队", intent.optimization_goals)
         self.assertIn("排队久", intent.avoid_tags)
 
     def test_extracts_half_day_citywalk_and_start_time(self) -> None:
@@ -32,7 +32,7 @@ class IntentEnhancerTest(unittest.TestCase):
         self.assertEqual(intent.start_time, "19:00")
         self.assertIn("citywalk", intent.preferences)
         self.assertIn("拍照", intent.preferences)
-        self.assertIn("少走路", intent.preferences)
+        self.assertIn("少走路", intent.optimization_goals)
 
     def test_keeps_existing_llm_values_when_message_has_no_override(self) -> None:
         base = Intent(city="杭州", duration_hours=3, preferences=["室内"])
@@ -59,9 +59,10 @@ class IntentEnhancerTest(unittest.TestCase):
         intent = enhance_intent_from_message(base, "还想出片、便宜一点，也不想排队")
 
         self.assertEqual(
-            intent.preferences,
-            ["吃好", "更省钱", "拍照", "citywalk", "亲子友好", "少排队"],
+            intent.interest_tags,
+            ["美食", "拍照", "citywalk", "亲子"],
         )
+        self.assertEqual(intent.optimization_goals, ["高性价比", "少排队", "省钱"])
         self.assertEqual(intent.avoid_tags, ["人流密集", "太贵", "步行多", "排队久"])
 
 

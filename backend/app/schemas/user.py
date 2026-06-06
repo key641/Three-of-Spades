@@ -1,5 +1,13 @@
 from pydantic import BaseModel, Field
 
+from app.agent.tag_taxonomy import (
+    legacy_preferences_from_layers,
+    normalize_avoid_tags,
+    normalize_interest_tags,
+    normalize_optimization_goals,
+    split_preference_terms,
+)
+
 
 class StrategyWeights(BaseModel):
     quality: float = 0.3
@@ -20,6 +28,8 @@ class UserProfile(BaseModel):
     user_id: str
     tags: list[str] = Field(default_factory=list)
     preferences: list[str] = Field(default_factory=list)
+    interest_tags: list[str] = Field(default_factory=list)
+    optimization_goals: list[str] = Field(default_factory=list)
     avoid_tags: list[str] = Field(default_factory=list)
     preference_weights: dict[str, float] = Field(default_factory=dict)
     budget_sensitivity: float = 0.5
@@ -37,3 +47,12 @@ class UserProfile(BaseModel):
     disliked_poi_ids: list[str] = Field(default_factory=list)
     skipped_categories: list[str] = Field(default_factory=list)
     common_adjust_actions: list[str] = Field(default_factory=list)
+
+    def model_post_init(self, __context: object) -> None:
+        layers = split_preference_terms([*self.preferences, *self.tags])
+        self.interest_tags = normalize_interest_tags([*self.interest_tags, *layers.interest_tags])
+        self.optimization_goals = normalize_optimization_goals([*self.optimization_goals, *layers.optimization_goals])
+        self.avoid_tags = normalize_avoid_tags([*self.avoid_tags, *layers.avoid_tags])
+        legacy = legacy_preferences_from_layers(self.interest_tags, self.optimization_goals, layers.unknown_preferences)
+        self.preferences = legacy
+        self.tags = legacy

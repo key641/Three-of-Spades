@@ -2387,3 +2387,84 @@ cd backend
 PYTHONPATH=. .venv/bin/pytest app/tests -q
 # 115 passed
 ```
+
+---
+
+## 2026-06-04：标签体系按 Mock POI 字段重构
+
+### 本次更新
+
+- 后端新增统一标签分类层，把旧 `preferences` 拆成三类：
+  - `interest_tags`：兴趣体验，例如美食、咖啡、拍照、citywalk、艺术展、自然风景、本地感、夜景、亲子、室内、安静。
+  - `optimization_goals`：优化目标，例如少排队、省钱、少走路、高性价比、轻松、时间紧。
+  - `avoid_tags`：避雷项，例如人流密集、排队久、太贵、需要预约、商业街、拍照打卡、步行多、辣。
+- 保留旧 `preferences` 作为兼容入口：
+  - 前端继续传 `preferences=["拍照","更省钱"]` 时，后端会拆成 `interest_tags=["拍照"]`、`optimization_goals=["省钱"]`。
+  - 后端主逻辑逐步改用新字段，旧字段只做兼容和兜底。
+- 预算、排队、步行不再主要依赖文本标签：
+  - “人均 100 以内”只改 `budget_per_person=100`。
+  - “更省钱/便宜点”进入 `optimization_goals=["省钱"]`。
+  - “少排队/少走路”进入优化目标，参与评分权重和排序。
+- 修复中文否定窗口：
+  - “不想拍照”进入 `avoid_tags=["拍照打卡"]`。
+  - “不要太累，安静一点”不会误删“安静”。
+- Agent 思考过程和前端类型补充新字段中文展示。
+
+### 涉及文件
+
+- `backend/app/agent/tag_taxonomy.py`
+- `backend/app/agent/intent_enhancer.py`
+- `backend/app/agent/intent_context.py`
+- `backend/app/agent/orchestrator.py`
+- `backend/app/schemas/intent.py`
+- `backend/app/schemas/user.py`
+- `backend/app/schemas/chat.py`
+- `backend/app/services/profile_service.py`
+- `backend/app/services/poi_service.py`
+- `backend/app/services/strategy_service.py`
+- `backend/app/services/route_service.py`
+- `backend/app/services/scoring_service.py`
+- `backend/app/services/predictive_route_service.py`
+- `backend/app/services/replan_service.py`
+- `frontend/src/api/types.ts`
+- `frontend/src/components/AgentTrace.tsx`
+
+### 协作影响
+
+| 角色 | 影响 | 需要关注 |
+| --- | --- | --- |
+| 星爻：后端 / Agent | 意图、画像、POI 召回和路线评分开始使用标签分层，避免“少排队/更省钱”被当作兴趣召回词。 | 后续新增标签时先补 `tag_taxonomy.py` 和 Mock POI 支撑字段，不要继续往 `preferences` 里堆。 |
+| B 同学：POI / 路线策略 | POI 召回主要看兴趣标签，优化目标主要影响排序和权重。 | 预算优先看 `avg_price/budget_friendly`，排队看 `queue_minutes/risk_flags`，步行看 `walking_intensity`。 |
+| 前端 / 交互 | 可继续传旧 `preferences`，也可以逐步展示 `interest_tags/optimization_goals/avoid_tags`。 | Agent 思考过程新增“兴趣”“优化目标”字段，展示时优先读新字段。 |
+
+### 验证结果
+
+```powershell
+cd backend
+.\.venv\Scripts\python.exe -m unittest app.tests.test_tag_taxonomy app.tests.test_intent_enhancer app.tests.test_profile_request_sync
+# 22 passed
+```
+
+```powershell
+cd backend
+.\.venv\Scripts\python.exe -m unittest app.tests.test_intent_context app.tests.test_query_delta app.tests.test_tag_taxonomy app.tests.test_intent_enhancer app.tests.test_profile_request_sync
+# 33 passed
+```
+
+```powershell
+cd backend
+.\.venv\Scripts\python.exe -m unittest app.tests.test_orchestrator_intent_flow
+# 22 passed
+```
+
+```powershell
+cd backend
+# 手动执行 test_poi_service 和 test_route_plan 中的关键函数式用例
+# POI 召回、少排队、省钱、少走路、餐饮、拍照、室内、多城市路线关键用例通过
+```
+
+```powershell
+cd frontend
+npx.cmd tsc --noEmit
+# passed
+```
