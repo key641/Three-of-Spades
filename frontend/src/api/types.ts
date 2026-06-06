@@ -5,6 +5,19 @@ export interface AgentTraceStep {
   details?: Record<string, unknown>;
 }
 
+export interface ClarificationOption {
+  id: string;
+  label: string;
+  value?: Record<string, unknown>;
+}
+
+export interface ClarificationGroup {
+  id: string;
+  title: string;
+  required: boolean;
+  options: ClarificationOption[];
+}
+
 export interface RouteStop {
   poi_id: string;
   name: string;
@@ -104,6 +117,9 @@ export interface ChatResponse {
   message: string;
   need_clarification: boolean;
   clarifying_question?: string | null;
+  clarification_type?: string | null;
+  clarification_groups?: ClarificationGroup[];
+  inferred_context?: Record<string, unknown>;
   intent?: Record<string, unknown> | null;
   user_profile?: UserProfile | null;
   routes: Route[];

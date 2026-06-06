@@ -29,6 +29,12 @@ class IntentConfidenceCalibrator:
 
         confidence = self._clamp(confidence)
 
+        if route.intent_type == MessageIntentType.GENERAL_CHAT and self._mentions_route_goal(message):
+            route = self._recover_route_related_general_chat(route, state)
+            confidence = max(confidence, 0.65)
+            confidence_source = "后端校准"
+            reasons.append("用户原话命中路线推荐信号，修正 general_chat 误判")
+
         explicit_mode = self._explicit_planning_mode(message)
         if explicit_mode is not None:
             route = self._apply_explicit_mode(route, explicit_mode)
@@ -90,8 +96,63 @@ class IntentConfidenceCalibrator:
         return False
 
     def _mentions_route_goal(self, message: str) -> bool:
-        terms = ["游", "玩", "路线", "行程", "规划", "citywalk", "餐厅", "景点"]
+        terms = [
+            "路线",
+            "行程",
+            "规划",
+            "推荐",
+            "有推荐",
+            "去哪",
+            "哪里玩",
+            "怎么玩",
+            "游玩",
+            "旅游",
+            "旅行",
+            "适合",
+            "户外",
+            "漫步",
+            "散步",
+            "城市漫步",
+            "citywalk",
+            "餐厅",
+            "景点",
+            "咖啡",
+            "游",
+            "玩",
+            "鎺ㄨ崘",
+            "鏈夋帹鑽?",
+            "閫傚悎",
+            "鎴峰",
+            "婕",
+            "鏁ｆ",
+            "璺嚎",
+            "琛岀▼",
+            "瑙勫垝",
+            "椁愬巺",
+            "鏅偣",
+        ]
         return any(term in message for term in terms)
+
+    def _recover_route_related_general_chat(self, route: MessageRoute, state: SessionState) -> MessageRoute:
+        if state.last_intent:
+            return route.model_copy(
+                update={
+                    "intent_type": MessageIntentType.MODIFY_PLAN,
+                    "turn_type": TurnType.MODIFY_CONSTRAINT,
+                    "planning_mode": PlanningMode.FULL_REPLAN,
+                    "inherit_previous": True,
+                    "references_previous_route": True,
+                }
+            )
+        return route.model_copy(
+            update={
+                "intent_type": MessageIntentType.NEW_PLAN,
+                "turn_type": TurnType.NEW_PLAN,
+                "planning_mode": PlanningMode.NEW_PLAN,
+                "inherit_previous": False,
+                "references_previous_route": False,
+            }
+        )
 
     def _explicit_planning_mode(self, message: str) -> PlanningMode | None:
         text = message.strip().lower()
@@ -99,11 +160,14 @@ class IntentConfidenceCalibrator:
             "重新生成路线",
             "重新生成",
             "重新规划",
-            "重新给",
+            "重新来",
             "换一条路线",
             "换个路线",
             "整体重来",
             "全部重来",
+            "閲嶆柊鐢熸垚璺嚎",
+            "閲嶆柊鐢熸垚",
+            "閲嶆柊瑙勫垝",
         ]
         partial_replan_terms = [
             "只替换这个地点",
@@ -115,6 +179,8 @@ class IntentConfidenceCalibrator:
             "替换这个",
             "第二站换",
             "第三站换",
+            "鍙浛鎹㈣繖涓湴鐐?",
+            "鍙崲杩欎釜鍦扮偣",
         ]
         if any(term in text for term in partial_replan_terms):
             return PlanningMode.PARTIAL_REPLAN

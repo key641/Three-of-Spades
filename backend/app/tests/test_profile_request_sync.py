@@ -206,6 +206,22 @@ class ProfileRequestSyncTest(unittest.TestCase):
         self.assertIn("poi_012", profile.disliked_poi_ids)
         self.assertIn("less_walking", profile.common_adjust_actions)
 
+    def test_clarification_time_answer_merges_into_intent(self) -> None:
+        request = ChatRequest(
+            message="14:00 出发，玩 4 小时",
+            event_type="clarification_answer",
+            start_time="14:00",
+            duration_hours=4,
+            people_count=1,
+        )
+        parsed_intent = Intent(start_time="09:00", duration_hours=8, people_count=2)
+
+        merged = ProfileService().merge_request_into_intent(parsed_intent, request)
+
+        self.assertEqual(merged.start_time, "14:00")
+        self.assertEqual(merged.duration_hours, 4)
+        self.assertEqual(merged.people_count, 1)
+
 
 if __name__ == "__main__":
     unittest.main()

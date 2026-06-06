@@ -152,6 +152,12 @@ class ProfileService:
             data["city"] = request.city
         if request.start_location_name:
             data["start_location_name"] = request.start_location_name
+        if request.start_time:
+            data["start_time"] = request.start_time
+        if request.duration_hours is not None:
+            data["duration_hours"] = request.duration_hours
+        if request.people_count is not None:
+            data["people_count"] = request.people_count
         if request.start_lat is not None and request.start_lng is not None:
             data["start_lat"] = request.start_lat
             data["start_lng"] = request.start_lng

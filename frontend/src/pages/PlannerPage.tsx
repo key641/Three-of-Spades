@@ -172,7 +172,9 @@ export function PlannerPage({ profile, onResetProfile }: PlannerPageProps) {
               loading={loading}
               error={error}
               clarifyingQuestion={response?.need_clarification ? (response.clarifying_question ?? null) : null}
-              onClarify={(answer) => send(answer)}
+              clarificationGroups={response?.clarification_groups ?? []}
+              inferredContext={response?.inferred_context}
+              onClarify={(answer, options) => send(answer, options)}
             />
             {loading && <AgentTrace steps={liveTrace} loading />}
           </div>

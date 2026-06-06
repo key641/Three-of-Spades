@@ -19,8 +19,11 @@ class ChatRequest(BaseModel):
     interest_tags: list[str] = Field(default_factory=list)
     optimization_goals: list[str] = Field(default_factory=list)
     avoid_tags: list[str] = Field(default_factory=list)
+    people_count: int | None = None
     budget_level: str | None = None
     preference_weights: dict[str, float] | None = None
+    start_time: str | None = None
+    duration_hours: int | None = None
     start_location_name: str | None = None
     start_lat: float | None = None
     start_lng: float | None = None
@@ -53,11 +56,27 @@ class AgentTraceStep(BaseModel):
     details: dict[str, object] = Field(default_factory=dict)
 
 
+class ClarificationOption(BaseModel):
+    id: str
+    label: str
+    value: dict[str, Any] = Field(default_factory=dict)
+
+
+class ClarificationGroup(BaseModel):
+    id: str
+    title: str
+    required: bool = False
+    options: list[ClarificationOption] = Field(default_factory=list)
+
+
 class ChatResponse(BaseModel):
     session_id: str
     message: str
     need_clarification: bool
     clarifying_question: str | None = None
+    clarification_type: str | None = None
+    clarification_groups: list[ClarificationGroup] = Field(default_factory=list)
+    inferred_context: dict[str, Any] = Field(default_factory=dict)
     intent: Intent | None = None
     user_profile: UserProfile | None = None
     routes: list[Route]
