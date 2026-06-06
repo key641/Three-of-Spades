@@ -48,7 +48,7 @@ class RouteService:
         "night_friendly": "夜间友好候选路线",
     }
 
-    CANDIDATES_PER_OBJECTIVE = 4
+    CANDIDATES_PER_OBJECTIVE = 10
     INTERNAL_CANDIDATES_PER_OBJECTIVE = 10
     TARGET_ROUTE_COUNT = 3
     DEFAULT_MIN_ROUTE_STOPS = 3
@@ -91,7 +91,7 @@ class RouteService:
         candidates = self.generate_routes_for_objectives(
             request,
             objectives,
-            routes_per_objective=3,
+            routes_per_objective=self.CANDIDATES_PER_OBJECTIVE,
             min_stops_floor=floor,
         ).routes
         selected = self._select_final_routes(candidates, objectives, self.TARGET_ROUTE_COUNT, floor)
@@ -104,7 +104,7 @@ class RouteService:
             relaxed_candidates = self.generate_routes_for_objectives(
                 request,
                 objectives,
-                routes_per_objective=3,
+                routes_per_objective=self.CANDIDATES_PER_OBJECTIVE,
                 min_stops_floor=self.RELAXED_MIN_ROUTE_STOPS,
             ).routes
             selected = self._select_final_routes(
@@ -162,6 +162,7 @@ class RouteService:
     def _select_final_routes(self, candidates: list[Route], objectives: list[str], target_count: int, min_stops: int) -> list[Route]:
         selected: list[Route] = []
         used_signatures: set[tuple[str, ...]] = set()
+        used_poi_ids: set[str] = set()
         objective_order = {objective: index for index, objective in enumerate(objectives)}
         valid = [
             route
@@ -180,23 +181,33 @@ class RouteService:
             if len(selected) >= target_count:
                 break
             for route in [candidate for candidate in valid if candidate.objective == objective]:
-                if self._try_append_final_route(selected, used_signatures, route):
+                if self._try_append_final_route(selected, used_signatures, used_poi_ids, route):
                     break
 
         if len(selected) < target_count:
             for route in sorted(valid, key=lambda candidate: candidate.score, reverse=True):
                 if len(selected) >= target_count:
                     break
-                self._try_append_final_route(selected, used_signatures, route)
+                self._try_append_final_route(selected, used_signatures, used_poi_ids, route)
 
         return selected
 
-    def _try_append_final_route(self, selected: list[Route], used_signatures: set[tuple[str, ...]], route: Route) -> bool:
+    def _try_append_final_route(
+        self,
+        selected: list[Route],
+        used_signatures: set[tuple[str, ...]],
+        used_poi_ids: set[str],
+        route: Route,
+    ) -> bool:
         signature = self._route_signature(route)
         if not signature or signature in used_signatures:
             return False
+        route_poi_ids = set(signature)
+        if route_poi_ids & used_poi_ids:
+            return False
         selected.append(route)
         used_signatures.add(signature)
+        used_poi_ids.update(route_poi_ids)
         return True
 
     def _route_signature(self, route: Route) -> tuple[str, ...]:

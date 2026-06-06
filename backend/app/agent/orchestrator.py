@@ -347,6 +347,7 @@ class AgentOrchestrator:
             "route_titles": [route.title for route in routes[:5]],
             "objectives": [route.objective for route in routes[:5]],
             "cross_route_dedup": True,
+            "cross_route_poi_dedup": True,
             "expanded_recall": expanded_recall,
             "final_candidate_poi_count": len(final_pois),
             "relaxed_min_stops_to_2": relaxed_min_stops,

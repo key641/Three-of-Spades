@@ -33,6 +33,7 @@ class SessionMemory:
         user_profile: UserProfile,
         routes: list[Route],
         trip_state: TripState | None = None,
+        clarification_count: int | None = None,
     ) -> None:
         state = self.get_state(session_id)
         state.recent_messages = [
@@ -44,4 +45,6 @@ class SessionMemory:
         state.trip_state = trip_state or TripState.from_intent(intent)
         state.user_profile = user_profile
         state.current_routes = routes
+        if clarification_count is not None:
+            state.clarification_count = clarification_count
         self.save_state(state)

@@ -116,6 +116,7 @@ class SessionState(BaseModel):
     trip_state: TripState | None = None
     current_routes: list[Route] = Field(default_factory=list)
     user_profile: UserProfile | None = None
+    clarification_count: int = 0
 
 
 class AgentState(BaseModel):

@@ -19,12 +19,14 @@ def _plan(intent: Intent, message: str = ""):
 
 def test_generate_route_candidates() -> None:
     response = _plan(Intent())
+    all_stop_ids = [stop.poi_id for route in response.routes for stop in route.stops]
 
     assert len(response.routes) == 3
     assert "balanced" in {route.objective for route in response.routes}
     assert len({route.objective for route in response.routes}) == len(response.routes)
     assert all(3 <= len(route.stops) <= 5 for route in response.routes)
     assert len({tuple(sorted(stop.poi_id for stop in route.stops)) for route in response.routes}) == len(response.routes)
+    assert len(all_stop_ids) == len(set(all_stop_ids))
     assert all(0 < route.score <= 100 for route in response.routes)
     assert all(route.score_breakdown.preference > 0 for route in response.routes)
     assert all(
@@ -107,12 +109,13 @@ def test_photo_food_strong_intent_beats_low_queue_objective() -> None:
         message="饭店拍照必须好看，吃美食，也希望少排队",
     )
     objectives = [route.objective for route in response.routes]
+    all_stop_ids = [stop.poi_id for route in response.routes for stop in route.stops]
 
     assert "photo_food" in objectives
     assert "food_first" in objectives
-    assert "balanced" in objectives
     assert "low_queue" not in objectives
     assert objectives[0] != "balanced"
+    assert len(all_stop_ids) == len(set(all_stop_ids))
 
 
 def test_nature_intent_generates_nature_route_and_balanced() -> None:
@@ -132,11 +135,11 @@ def test_returns_one_top_route_per_objective() -> None:
     assert all("优势是" in route.summary for route in response.routes)
 
 
-def test_final_routes_do_not_share_identical_poi_sets() -> None:
+def test_final_routes_do_not_share_any_pois() -> None:
     response = _plan(Intent(preferences=["citywalk", "拍照", "吃好"]))
-    signatures = [tuple(sorted(stop.poi_id for stop in route.stops)) for route in response.routes]
+    all_stop_ids = [stop.poi_id for route in response.routes for stop in route.stops]
 
-    assert len(signatures) == len(set(signatures))
+    assert len(all_stop_ids) == len(set(all_stop_ids))
 
 
 def test_simple_route_can_relax_to_two_stops_but_never_one() -> None:

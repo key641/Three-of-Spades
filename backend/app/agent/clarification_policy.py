@@ -172,6 +172,53 @@ class ClarificationPolicy:
 
     # ── 地点信息充足性判断 ───────────────────────────────────────
 
+    def _is_missing_city(
+        self,
+        request: ChatRequest,
+        intent: Intent,
+        message_route: MessageRoute,
+        session_state: SessionState,
+    ) -> bool:
+        """
+        判断是否仍然缺少足够明确的城市/区域信息。
+
+        只要消息里已经包含具体地点、已有明确出发地，或者改写/重规划时能继承上一轮地点，
+        就不应再把城市信息视为缺失。
+        """
+        if not self._needs_route_generation(message_route):
+            return False
+
+        if message_route.planning_mode != PlanningMode.NEW_PLAN:
+            last = session_state.last_intent
+            if last and (last.start_location_name or last.start_lat or last.city):
+                return False
+
+        if self._message_mentions_specific_location(request.message):
+            return False
+
+        if request.start_location_name and self._is_specific_location(request.start_location_name):
+            return False
+        if intent.start_location_name and self._is_specific_location(intent.start_location_name):
+            return False
+
+        if (request.city and self._is_specific_location(request.city)) or (
+            intent.city and intent.city_from_message and self._is_specific_location(intent.city)
+        ):
+            return False
+
+        has_city_only = (
+            (request.city and request.city.strip())
+            or self._message_mentions_city(request.message)
+            or (intent.city_from_message and intent.city)
+            or (
+                session_state.last_intent
+                and session_state.last_intent.city
+                and message_route.planning_mode != PlanningMode.NEW_PLAN
+            )
+        )
+
+        return not has_city_only
+
     def _is_missing_location(
         self,
         request: ChatRequest,
