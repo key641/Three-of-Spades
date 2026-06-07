@@ -19,13 +19,7 @@ class ClarificationDecision(BaseModel):
 
 
 class ClarificationPolicy:
-    """
-    Decides when to ask a lightweight clarification before planning.
-
-    规则：
-    - 每次会话最多追问 1 次（clarification_count >= 1 时跳过所有追问）
-    - 单次追问最多合并 3 个问题，用换行分隔
-    """
+    """Decides when to ask lightweight clarification before planning."""
 
     ROUTING_CONFIDENCE_THRESHOLD = 0.5
     MAX_CLARIFICATION_ROUNDS = 1   # 最多追问 1 次
@@ -49,20 +43,9 @@ class ClarificationPolicy:
         if not self._needs_route_generation(message_route):
             return ClarificationDecision()
 
-        # ── 收集所有缺失字段对应的问题（最多 MAX_QUESTIONS_PER_ROUND 个）──
-        questions: list[str] = []
-        missing_fields: list[str] = []
-
-        location_missing, location_question = self._is_missing_location(
-            request, intent, message_route, session_state
-        )
-        if location_missing:
-            questions.append(location_question)
-            missing_fields.append("location")
-
-        if self._is_too_generic_new_plan(request.message, intent, message_route):
-            questions.append("你这次主要想玩景点、吃美食，还是轻松 citywalk？")
-            missing_fields.append("trip_goal")
+        new_plan_decision = self._new_plan_clarification_decision(request, intent, message_route, session_state)
+        if new_plan_decision.need_clarification:
+            return new_plan_decision
 
         # 人数/时长/预算等软约束（仅作为补充问题）
         if len(questions) < self.MAX_QUESTIONS_PER_ROUND:
@@ -302,9 +285,20 @@ class ClarificationPolicy:
 
     def _message_mentions_city(self, message: str) -> bool:
         known_cities = [
-            "上海", "北京", "杭州", "成都", "广州", "深圳",
-            "南京", "苏州", "重庆", "武汉", "西安", "长沙",
-            "厦门", "天津", "青岛", "大连", "沈阳", "郑州",
+            "上海",
+            "北京",
+            "杭州",
+            "成都",
+            "广州",
+            "深圳",
+            "南京",
+            "苏州",
+            "重庆",
+            "武汉",
+            "西安",
+            "长沙",
+            "厦门",
+            "天津",
         ]
         return any(city in message for city in known_cities)
 
