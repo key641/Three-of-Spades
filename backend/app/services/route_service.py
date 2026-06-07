@@ -48,8 +48,8 @@ class RouteService:
         "night_friendly": "夜间友好候选路线",
     }
 
-    CANDIDATES_PER_OBJECTIVE = 10
-    INTERNAL_CANDIDATES_PER_OBJECTIVE = 10
+    CANDIDATES_PER_OBJECTIVE = 16
+    INTERNAL_CANDIDATES_PER_OBJECTIVE = 16
     TARGET_ROUTE_COUNT = 3
     DEFAULT_MIN_ROUTE_STOPS = 3
     RELAXED_MIN_ROUTE_STOPS = 2
@@ -64,7 +64,7 @@ class RouteService:
         request: RoutePlanRequest,
         on_route: Callable[[Route], None] | None = None,
         min_stops_floor: int | None = None,
-        allow_min_stops_fallback: bool = True,
+        allow_min_stops_fallback: bool = False,
     ) -> RoutePlanResponse:
         if not request.candidate_pois:
             return RoutePlanResponse(routes=[])
@@ -95,11 +95,14 @@ class RouteService:
             min_stops_floor=floor,
         ).routes
         selected = self._select_final_routes(request, candidates, objectives, self.TARGET_ROUTE_COUNT, floor)
+        if len(selected) < self.TARGET_ROUTE_COUNT:
+            selected = self._fill_disjoint_routes(request, objectives, selected, self.TARGET_ROUTE_COUNT, floor)
 
         if (
             len(selected) < self.TARGET_ROUTE_COUNT
             and floor > self.RELAXED_MIN_ROUTE_STOPS
-            and (allow_min_stops_fallback or self._allows_simple_route(request))
+            and allow_min_stops_fallback
+            and self._allows_simple_route(request)
         ):
             relaxed_candidates = self.generate_routes_for_objectives(
                 request,
@@ -114,6 +117,17 @@ class RouteService:
                 self.TARGET_ROUTE_COUNT,
                 self.RELAXED_MIN_ROUTE_STOPS,
             )
+            if len(selected) < self.TARGET_ROUTE_COUNT:
+                selected = self._fill_disjoint_routes(
+                    request,
+                    objectives,
+                    selected,
+                    self.TARGET_ROUTE_COUNT,
+                    self.RELAXED_MIN_ROUTE_STOPS,
+                )
+
+        if len(selected) < self.TARGET_ROUTE_COUNT:
+            return RoutePlanResponse(routes=[])
 
         for route in selected:
             if on_route is not None:
@@ -128,6 +142,7 @@ class RouteService:
         min_stops_floor: int | None = None,
         routes_per_objective: int = 1,
         on_route: Callable[[Route], None] | None = None,
+        enforce_constraints: bool = False,
     ) -> RoutePlanResponse:
         if not request.candidate_pois:
             return RoutePlanResponse(routes=[])
@@ -153,6 +168,13 @@ class RouteService:
                 routes.append(finalized)
                 if on_route is not None:
                     on_route(finalized)
+
+        if enforce_constraints:
+            floor = min_stops_floor or (self.RELAXED_MIN_ROUTE_STOPS if self._allows_simple_route(request) else self.DEFAULT_MIN_ROUTE_STOPS)
+            selected = self._select_final_routes(request, routes, objectives, self.TARGET_ROUTE_COUNT, floor)
+            if len(selected) < self.TARGET_ROUTE_COUNT:
+                selected = self._fill_disjoint_routes(request, objectives, selected, self.TARGET_ROUTE_COUNT, floor)
+            return RoutePlanResponse(routes=selected if len(selected) >= self.TARGET_ROUTE_COUNT else [])
 
         return RoutePlanResponse(routes=routes)
 
@@ -220,6 +242,79 @@ class RouteService:
         used_poi_ids.update(route_poi_ids)
         return True
 
+    def _fill_disjoint_routes(
+        self,
+        request: RoutePlanRequest,
+        objectives: list[str],
+        selected: list[Route],
+        target_count: int,
+        min_stops: int,
+    ) -> list[Route]:
+        result = list(selected)
+        used_signatures = {self._route_signature(route) for route in result}
+        used_poi_ids = {stop.poi_id for route in result for stop in route.stops}
+        time_limit = max(60, request.intent.duration_hours * 60, min_stops * 100)
+        _, max_stops = self._stop_bounds(request, min_stops_floor=min_stops)
+        poi_by_id = {poi.id: poi for poi in request.candidate_pois}
+
+        for objective in objectives:
+            if len(result) >= target_count:
+                break
+            for seed in self._start_candidates(request.candidate_pois, objective, request):
+                if seed.id in used_poi_ids:
+                    continue
+                route = self._build_candidate(
+                    seed,
+                    request.candidate_pois,
+                    objective,
+                    request,
+                    time_limit,
+                    min_stops,
+                    max_stops,
+                    unavailable_ids=used_poi_ids,
+                )
+                if (
+                    len(route.stops) < min_stops
+                    or not self._route_has_complete_transport(route)
+                    or not self._route_has_category_diversity(route, min_stops, request)
+                ):
+                    continue
+                route.score_breakdown = self.scoring_service.score(route.stops, objective, request, poi_by_id)
+                route.score = self.scoring_service.overall_score(route.score_breakdown, objective, route.stops, request, poi_by_id)
+                finalized = self._finalize_route(route, objective, len(result))
+                if self._try_append_final_route(result, used_signatures, used_poi_ids, finalized):
+                    break
+
+        if len(result) < target_count:
+            for objective in objectives:
+                if len(result) >= target_count:
+                    break
+                for seed in self._start_candidates(request.candidate_pois, objective, request):
+                    if seed.id in used_poi_ids:
+                        continue
+                    route = self._build_candidate(
+                        seed,
+                        request.candidate_pois,
+                        objective,
+                        request,
+                        time_limit,
+                        min_stops,
+                        max_stops,
+                        unavailable_ids=used_poi_ids,
+                    )
+                    if (
+                        len(route.stops) < min_stops
+                        or not self._route_has_complete_transport(route)
+                        or not self._route_has_category_diversity(route, min_stops, request)
+                    ):
+                        continue
+                    route.score_breakdown = self.scoring_service.score(route.stops, objective, request, poi_by_id)
+                    route.score = self.scoring_service.overall_score(route.score_breakdown, objective, route.stops, request, poi_by_id)
+                    finalized = self._finalize_route(route, objective, len(result))
+                    if self._try_append_final_route(result, used_signatures, used_poi_ids, finalized):
+                        break
+        return result
+
     def _route_signature(self, route: Route) -> tuple[str, ...]:
         return tuple(sorted(stop.poi_id for stop in route.stops))
 
@@ -286,11 +381,12 @@ class RouteService:
             scored.append(route)
         return sorted(scored, key=lambda route: self._route_rank_key(route, objective, request, poi_by_id), reverse=True)
 
-    def _route_rank_key(self, route: Route, objective: str, request: RoutePlanRequest, poi_by_id: dict[str, POI]) -> tuple[float, float, float, float, float, float]:
+    def _route_rank_key(self, route: Route, objective: str, request: RoutePlanRequest, poi_by_id: dict[str, POI]) -> tuple[float, float, float, float, float, float, float]:
         ideal_stops = sum(self._stop_bounds(request)) / 2
         stop_fit = -abs(len(route.stops) - ideal_stops)
         time_fit = -abs(route.total_duration_minutes - request.intent.duration_hours * 60 * 0.85)
         preference_fit = self.scoring_service.preference_match_ratio(route.stops, request, poi_by_id)
+        public_transit_fit = sum(1 for stop in route.stops if stop.transport_mode_from_previous in {"metro", "bus"})
         objective_fit = {
             "budget": -route.total_cost_per_person,
             "low_walking": -route.total_distance_km,
@@ -301,7 +397,7 @@ class RouteService:
             "indoor_rainy": route.score_breakdown.preference,
             "night_friendly": route.score_breakdown.preference,
         }.get(objective, route.score_breakdown.preference)
-        return (route.score, objective_fit, stop_fit, time_fit, -route.total_distance_km, preference_fit)
+        return (route.score, public_transit_fit, objective_fit, stop_fit, time_fit, -route.total_distance_km, preference_fit)
 
     def _request_terms(self, request: RoutePlanRequest) -> list[str]:
         return self._unique(
@@ -373,8 +469,8 @@ class RouteService:
         max_stops_override: int | None = None,
         min_stops_floor: int | None = None,
     ) -> list[Route]:
-        time_limit = max(60, request.intent.duration_hours * 60)
         min_stops, max_stops = self._stop_bounds(request, min_stops_floor=min_stops_floor)
+        time_limit = max(60, request.intent.duration_hours * 60, min_stops * 100)
         if max_stops_override is not None:
             max_stops = min(max_stops, max(1, max_stops_override))
         min_stops = min(min_stops, max_stops)
@@ -383,19 +479,24 @@ class RouteService:
         diverse_ids = {poi.id for poi in diverse_start_pool}
         start_pool = diverse_start_pool + [poi for poi in ranked_start_pool if poi.id not in diverse_ids]
         routes: list[Route] = []
+        signatures: set[tuple[str, ...]] = set()
 
         for seed in start_pool[: self.INTERNAL_CANDIDATES_PER_OBJECTIVE * 2]:
             route = self._build_candidate(seed, pois, objective, request, time_limit, min_stops, max_stops)
-            if route.stops and len(route.stops) >= min_stops:
+            signature = self._route_signature(route)
+            if route.stops and len(route.stops) >= min_stops and signature not in signatures:
                 routes.append(route)
+                signatures.add(signature)
             if len(routes) >= self.INTERNAL_CANDIDATES_PER_OBJECTIVE:
                 break
 
         if len(routes) < self.INTERNAL_CANDIDATES_PER_OBJECTIVE:
             for seed in start_pool[self.INTERNAL_CANDIDATES_PER_OBJECTIVE * 2 :]:
                 route = self._build_candidate(seed, pois, objective, request, time_limit, min_stops, max_stops)
-                if route.stops and len(route.stops) >= min_stops:
+                signature = self._route_signature(route)
+                if route.stops and len(route.stops) >= min_stops and signature not in signatures:
                     routes.append(route)
+                    signatures.add(signature)
                 if len(routes) >= self.INTERNAL_CANDIDATES_PER_OBJECTIVE:
                     break
 
@@ -438,7 +539,11 @@ class RouteService:
         time_limit: int,
         min_stops: int,
         max_stops: int,
+        unavailable_ids: set[str] | None = None,
     ) -> Route:
+        unavailable_ids = unavailable_ids or set()
+        if seed.id in unavailable_ids:
+            return self._route_from_stops([], objective, request)
         state = RouteBuildState(
             current_minutes=self._parse_time(request.intent.start_time),
             elapsed_minutes=0,
@@ -457,7 +562,17 @@ class RouteService:
 
         required_food = self._route_wants_food(objective, request)
         while len(stops) < max_stops:
-            next_poi = self._next_poi(pois, selected_ids, objective, request, state, time_limit, required_food, len(stops) < min_stops)
+            next_poi = self._next_poi(
+                pois,
+                selected_ids,
+                objective,
+                request,
+                state,
+                time_limit,
+                required_food,
+                max(0, min_stops - len(stops)),
+                unavailable_ids,
+            )
             if next_poi is None:
                 break
             appended = self._append_if_feasible(next_poi, state, time_limit, objective, request)
@@ -642,9 +757,11 @@ class RouteService:
         state: RouteBuildState,
         time_limit: int,
         required_food: bool,
-        must_extend: bool,
+        remaining_required_stops: int,
+        unavailable_ids: set[str] | None = None,
     ) -> POI | None:
-        candidates = [poi for poi in pois if poi.id not in selected_ids]
+        unavailable_ids = unavailable_ids or set()
+        candidates = [poi for poi in pois if poi.id not in selected_ids and poi.id not in unavailable_ids]
         candidates = [
             poi
             for poi in candidates
@@ -672,7 +789,16 @@ class RouteService:
             - self._diversity_penalty(selected_ids, poi, pois, objective, request)
             + self._missing_role_bonus(selected_ids, poi, pois, objective, request)
             + self._missing_category_bonus(selected_ids, poi, pois, request)
-            + (0.12 if must_extend else 0),
+            - (
+                (
+                    self._leg_minutes(state.current_lat, state.current_lng, poi)
+                    + poi.queue_minutes
+                    + poi.visit_duration_minutes
+                )
+                * 0.05
+                if remaining_required_stops > 0
+                else 0
+            ),
         )
 
     def _stop_bounds(self, request: RoutePlanRequest, min_stops_floor: int | None = None) -> tuple[int, int]:

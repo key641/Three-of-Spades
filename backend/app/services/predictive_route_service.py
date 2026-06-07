@@ -64,41 +64,39 @@ class PredictiveRouteService:
         intent = self._intent_for_request(request, planning_profile if has_profile else None, weather_preferences)
         strategy_tags = self.strategy_service.infer_tags(" ".join(intent.interest_tags + intent.optimization_goals + intent.preferences), intent, planning_profile)
         strategy_weights = self.profile_service.build_strategy_weights(intent, planning_profile, strategy_tags)
-        pois = self.poi_service.search(intent, user_profile=planning_profile, strategy_tags=strategy_tags, limit=48)
-        objectives = self._profile_objectives(planning_profile, weather_preferences, pois) if has_profile else self.ALL_OBJECTIVES
-        poi_relevance_scores, poi_fine_rank_details = self.fine_rank_service.score_map(
-            pois,
-            intent,
-            planning_profile,
-            strategy_tags=strategy_tags,
-            objective=objectives[0] if objectives else "balanced",
-        )
-        plan_request = RoutePlanRequest(
-            intent=intent,
-            user_profile=planning_profile,
-            strategy_weights=strategy_weights,
-            strategy_tags=strategy_tags,
-            candidate_pois=pois,
-            poi_relevance_scores=poi_relevance_scores,
-            poi_fine_rank_details=poi_fine_rank_details,
-        )
+        if not self.poi_service.has_city_data(intent.city):
+            return RoutePlanResponse(routes=[])
 
-        if has_profile:
-            candidates = self.route_service.generate_routes_for_objectives(
-                plan_request,
-                objectives,
-                max_stops=self._max_stops(intent, weather, planning_profile),
-                routes_per_objective=3,
-            ).routes
-            return RoutePlanResponse(routes=self._select_profile_routes(candidates, objectives))
+        for limit, relax_preferences in [(60, False), (90, True), (120, True)]:
+            pois = self.poi_service.search(
+                intent,
+                user_profile=planning_profile,
+                strategy_tags=strategy_tags,
+                limit=limit,
+                relax_preferences=relax_preferences,
+            )
+            objectives = self._profile_objectives(planning_profile, weather_preferences, pois) if has_profile else self.ALL_OBJECTIVES
+            poi_relevance_scores, poi_fine_rank_details = self.fine_rank_service.score_map(
+                pois,
+                intent,
+                planning_profile,
+                strategy_tags=strategy_tags,
+                objective=objectives[0] if objectives else "balanced",
+            )
+            plan_request = RoutePlanRequest(
+                intent=intent,
+                user_profile=planning_profile,
+                strategy_weights=strategy_weights,
+                strategy_tags=strategy_tags,
+                candidate_pois=pois,
+                poi_relevance_scores=poi_relevance_scores,
+                poi_fine_rank_details=poi_fine_rank_details,
+            )
+            response = self.route_service.generate_routes(plan_request)
+            if len(response.routes) >= 3:
+                return response
 
-        candidates = self.route_service.generate_routes_for_objectives(
-            plan_request,
-            objectives,
-            max_stops=self._max_stops(intent, weather, planning_profile),
-            routes_per_objective=3,
-        ).routes
-        return RoutePlanResponse(routes=self._select_top_diverse_routes(candidates))
+        return RoutePlanResponse(routes=[])
 
     def weather_for(self, city: str, scenario: str | None = None) -> dict[str, Any]:
         city_weather = self.weather_payload.get("cities", {}).get(city) or self.weather_payload.get("cities", {}).get("上海", {})

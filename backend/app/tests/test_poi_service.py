@@ -365,21 +365,21 @@ def test_key_city_searches_do_not_return_empty_results() -> None:
     for city in ["上海", "北京"]:
         pois = service.search(Intent(city=city))
 
-        assert len(pois) == 40
+        assert len(pois) == 60
         assert all(poi.city == city for poi in pois)
 
 
-def test_default_search_returns_forty_pois() -> None:
+def test_default_search_returns_sixty_pois() -> None:
     service = POIService()
 
-    assert len(service.search(Intent(city="上海"))) == 40
-    assert len(service.search(Intent(city="北京"))) == 40
+    assert len(service.search(Intent(city="上海"))) == 60
+    assert len(service.search(Intent(city="北京"))) == 60
 
 
-def test_strong_filters_still_fill_to_forty_when_possible() -> None:
+def test_strong_filters_still_fill_to_sixty_when_possible() -> None:
     pois = POIService().search(Intent(city="上海", preferences=["少排队", "拍照"], avoid_tags=["人流密集"]))
 
-    assert len(pois) == 40
+    assert len(pois) == 60
     assert all(poi.city == "上海" for poi in pois)
 
 

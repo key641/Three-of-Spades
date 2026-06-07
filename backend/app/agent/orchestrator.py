@@ -265,27 +265,86 @@ class AgentOrchestrator:
             strategy_weights.model_dump(),
         )
 
-        pois = self.poi_service.search(intent, user_profile=user_profile, strategy_tags=strategy_tags)
-        trace.append(
-            AgentTraceStep(
-                step="search_pois",
-                label=f"召回 {len(pois)} 个候选 POI",
-                status="done",
-                details={
-                    "count": len(pois),
-                    "city": intent.city,
-                    "names": [poi.name for poi in pois[:5]],
-                    "strategy_tags": [tag.model_dump() for tag in strategy_tags],
-                },
+        pois: list[POI] = []
+        routes: list[Route] = []
+        recall_attempts: list[dict[str, object]] = []
+
+        async def build_routes(candidate_pois: list[POI]) -> list[Route]:
+            scores, fine_rank_details = self.fine_rank_service.score_map(
+                candidate_pois,
+                intent,
+                user_profile,
+                strategy_tags=strategy_tags,
+                objective="balanced",
             )
-        )
-        await emit_pending_trace()
-        logger.info(
-            "step done session_id=%s step=search_pois count=%s pois=%s",
-            request.session_id,
-            len(pois),
-            [poi.name for poi in pois],
-        )
+            route_request = RoutePlanRequest(
+                intent=intent,
+                user_profile=user_profile,
+                strategy_weights=strategy_weights,
+                strategy_tags=strategy_tags,
+                candidate_pois=candidate_pois,
+                poi_relevance_scores=scores,
+                poi_fine_rank_details=fine_rank_details,
+            )
+            response = await asyncio.to_thread(self.route_service.generate_routes, route_request)
+            return response.routes
+
+        for recall_limit, relax_preferences in [(60, False), (90, True), (120, True)]:
+            pois = self.poi_service.search(
+                intent,
+                user_profile=user_profile,
+                strategy_tags=strategy_tags,
+                limit=recall_limit,
+                relax_preferences=relax_preferences,
+            )
+            trace.append(
+                AgentTraceStep(
+                    step="search_pois",
+                    label=f"召回 {len(pois)} 个候选 POI",
+                    status="done",
+                    details={
+                        "count": len(pois),
+                        "city": intent.city,
+                        "target_district": intent.target_district,
+                        "target_business_area": intent.target_business_area,
+                        "limit": recall_limit,
+                        "relax_preferences": relax_preferences,
+                        "names": [poi.name for poi in pois[:5]],
+                        "strategy_tags": [tag.model_dump() for tag in strategy_tags],
+                    },
+                )
+            )
+            await emit_pending_trace()
+            logger.info(
+                "step done session_id=%s step=search_pois limit=%s relax=%s count=%s pois=%s",
+                request.session_id,
+                recall_limit,
+                relax_preferences,
+                len(pois),
+                [poi.name for poi in pois],
+            )
+            if not pois:
+                recall_attempts.append(
+                    {
+                        "limit": recall_limit,
+                        "relax_preferences": relax_preferences,
+                        "poi_count": 0,
+                        "route_count": 0,
+                    }
+                )
+                break
+            routes = await build_routes(pois)
+            recall_attempts.append(
+                {
+                    "limit": recall_limit,
+                    "relax_preferences": relax_preferences,
+                    "poi_count": len(pois),
+                    "route_count": len(routes),
+                }
+            )
+            if len(routes) >= 3:
+                break
+
         if not pois:
             message = self._no_poi_data_message(intent)
             trace.append(
@@ -297,6 +356,8 @@ class AgentOrchestrator:
                         "city": intent.city,
                         "target_district": intent.target_district,
                         "target_business_area": intent.target_business_area,
+                        "recommended_cities": ["北京", "上海"],
+                        "recall_attempts": recall_attempts,
                     },
                 )
             )
@@ -320,71 +381,54 @@ class AgentOrchestrator:
                 routes=[],
                 agent_trace=trace,
             )
-        expanded_recall = False
-        relaxed_min_stops = False
-        final_pois = pois
-
-        async def build_routes(candidate_pois, allow_min_stops_fallback: bool) -> list[Route]:
-            scores, fine_rank_details = self.fine_rank_service.score_map(
-                candidate_pois,
-                intent,
-                user_profile,
-                strategy_tags=strategy_tags,
-                objective="balanced",
-            )
-            route_request = RoutePlanRequest(
-                intent=intent,
-                user_profile=user_profile,
-                strategy_weights=strategy_weights,
-                strategy_tags=strategy_tags,
-                candidate_pois=candidate_pois,
-                poi_relevance_scores=scores,
-                poi_fine_rank_details=fine_rank_details,
-            )
-            response = await asyncio.to_thread(
-                self.route_service.generate_routes,
-                route_request,
-                None,
-                None,
-                allow_min_stops_fallback,
-            )
-            return response.routes
-
-        routes = await build_routes(pois, allow_min_stops_fallback=False)
-        for recall_limit in [64, 80]:
-            if len(routes) >= 3:
-                break
-            expanded_recall = True
-            expanded_pois = self.poi_service.search(
-                intent,
-                user_profile=user_profile,
-                strategy_tags=strategy_tags,
-                limit=recall_limit,
-                relax_preferences=True,
-            )
-            expanded_routes = await build_routes(expanded_pois, allow_min_stops_fallback=False)
-            if len(expanded_routes) > len(routes):
-                routes = expanded_routes
-                final_pois = expanded_pois
 
         if len(routes) < 3:
-            relaxed_routes = await build_routes(final_pois, allow_min_stops_fallback=True)
-            if len(relaxed_routes) > len(routes):
-                routes = relaxed_routes
-                relaxed_min_stops = any(len(route.stops) == 2 for route in routes)
+            message = "当前候选不足以生成 3 条互不重复且可执行的路线，可以换北京/上海其他区域或减少约束。"
+            trace.append(
+                AgentTraceStep(
+                    step="generate_routes",
+                    label="生成多目标路线失败",
+                    status="done",
+                    details={
+                        "count": len(routes),
+                        "required_count": 3,
+                        "recall_attempts": recall_attempts,
+                        "reason": "insufficient_non_overlapping_routes",
+                    },
+                )
+            )
+            await emit_pending_trace()
+            message = self._prepend_visible_state_change(message, trip_state, state_summary)
+            self.memory.save_turn_result(
+                session_id=request.session_id,
+                user_message=request.message,
+                assistant_message=message,
+                intent=intent,
+                user_profile=user_profile,
+                routes=[],
+                trip_state=trip_state,
+            )
+            return ChatResponse(
+                session_id=request.session_id,
+                message=message,
+                need_clarification=False,
+                clarifying_question=None,
+                intent=intent,
+                user_profile=user_profile,
+                routes=[],
+                agent_trace=trace,
+            )
 
-        if routes:
-            await emit_routes(routes)
+        await emit_routes(routes)
         trace.append(AgentTraceStep(step="generate_routes", label="生成多目标路线", status="done"))
         trace[-1].details = {
             "count": len(routes),
             "route_titles": [route.title for route in routes[:5]],
             "objectives": [route.objective for route in routes[:5]],
             "cross_route_dedup": True,
-            "cross_route_poi_dedup": True,
-            "expanded_recall": expanded_recall,
-            "final_candidate_poi_count": len(final_pois),
-            "relaxed_min_stops_to_2": relaxed_min_stops,
+            "cross_route_poi_dedup": "zero_overlap",
+            "recall_attempts": recall_attempts,
+            "final_candidate_poi_count": len(pois),
             "min_stop_counts": [len(route.stops) for route in routes[:5]],
         }
         await emit_pending_trace()

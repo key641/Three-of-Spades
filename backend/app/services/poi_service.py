@@ -22,7 +22,7 @@ class POICandidate:
 class POIService:
     """B-owned module: filters POI candidates by intent and strategy tags."""
 
-    MIN_DEFAULT_CANDIDATES = 40
+    MIN_DEFAULT_CANDIDATES = 60
 
     def __init__(self, data_path: Path | None = None) -> None:
         self.data_path = data_path or Path(__file__).resolve().parents[3] / "data" / "seed" / "pois.json"
@@ -35,7 +35,7 @@ class POIService:
         self,
         intent: Intent,
         user_profile: UserProfile | None = None,
-        limit: int = 40,
+        limit: int = 60,
         strategy_tags: list[StrategyTag] | None = None,
         relax_preferences: bool = False,
     ) -> list[POI]:
@@ -56,7 +56,7 @@ class POIService:
         strict_matches = [
             candidate
             for candidate in city_matches
-            if self._matches_preferences(candidate, intent)
+            if (relax_preferences or self._matches_preferences(candidate, intent))
             and not self._matches_avoid_tags(candidate, intent)
             and self._is_not_extreme_budget_mismatch(candidate.poi, intent)
         ]
@@ -69,23 +69,23 @@ class POIService:
         candidates = relaxed_matches if relax_preferences else strict_matches or relaxed_matches
         if len(candidates) < min_candidates:
             candidates = self._merge_candidates(candidates, relaxed_matches)
-        if len(candidates) < min_candidates:
-            low_risk_matches = [
-                candidate
-                for candidate in city_matches
-                if not {"long_queue", "high_price"} & set(candidate.poi.risk_flags + candidate.poi.avoid_reasons)
-            ]
-            candidates = self._merge_candidates(candidates, low_risk_matches)
         if not candidates:
-            candidates = city_matches
+            return []
 
-        ranked = sorted(
+        recalled = self.recall_service.recall(
+            intent,
             candidates,
-            key=lambda candidate: self._rank_score(candidate, intent, user_profile, strategy_tags or []),
-            reverse=True,
+            user_profile=user_profile,
+            strategy_tags=strategy_tags or [],
+            target_pool_size=max(limit * 4, 240),
         )
+        ranked = self.coarse_rank_service.rank(recalled, intent, user_profile, strategy_tags or [], limit=limit)
         ranked = self._diversify_ranked_candidates(ranked, limit)
+        ranked = self._promote_low_walking_matches(ranked, intent)
         return [candidate.poi for candidate in ranked[:limit]]
+
+    def has_city_data(self, city: str) -> bool:
+        return any(candidate.poi.city == city for candidate in self._candidates)
 
     def all_pois(self, city: str | None = None) -> list[POI]:
         pois = [candidate.poi for candidate in self._candidates]
@@ -222,35 +222,6 @@ class POIService:
             risk_text=" ".join(str(part) for part in risk_parts if part),
         )
 
-    def _fallback_candidates(self, requested_city: str) -> list[POICandidate]:
-        fallback_pool = [candidate for candidate in self._candidates if candidate.poi.city == "上海"] or self._candidates
-        selected: list[POICandidate] = []
-        by_category: dict[str, list[POICandidate]] = {}
-        for candidate in fallback_pool:
-            by_category.setdefault(candidate.poi.category, []).append(candidate)
-        while len(selected) < max(self.MIN_DEFAULT_CANDIDATES, 20):
-            added = False
-            for candidates in by_category.values():
-                if candidates:
-                    selected.append(candidates.pop(0))
-                    added = True
-                    if len(selected) >= max(self.MIN_DEFAULT_CANDIDATES, 20):
-                        break
-            if not added:
-                break
-        return [self._clone_candidate_for_city(candidate, requested_city) for candidate in selected]
-
-    def _clone_candidate_for_city(self, candidate: POICandidate, city: str) -> POICandidate:
-        safe_city = city or "未知城市"
-        poi = candidate.poi.model_copy(
-            update={
-                "id": f"mock_{safe_city}_{candidate.poi.id}",
-                "city": safe_city,
-                "source_provider": "mock_fallback",
-            }
-        )
-        return POICandidate(poi=poi, search_text=candidate.search_text, risk_text=candidate.risk_text)
-
     def _region_terms(self, intent: Intent, city_matches: list[POICandidate]) -> list[str]:
         known_regions = {
             *[candidate.poi.district for candidate in city_matches if candidate.poi.district],
@@ -319,6 +290,20 @@ class POIService:
         selected_ids = {candidate.poi.id for candidate in selected}
         selected.extend(candidate for candidate in ranked if candidate.poi.id not in selected_ids)
         return selected
+
+    def _promote_low_walking_matches(self, ranked: list[POICandidate], intent: Intent) -> list[POICandidate]:
+        terms = self._normalize_terms([*intent.preferences, *intent.interest_tags, *intent.optimization_goals])
+        if not self._has_term(terms, "少走路"):
+            return ranked
+        return sorted(
+            ranked,
+            key=lambda candidate: (
+                candidate.poi.walking_intensity == "low",
+                "transit_anchor" in candidate.poi.route_roles,
+                self.coarse_rank_service.score(candidate, intent, None, []),
+            ),
+            reverse=True,
+        )
 
     def _matches_budget(self, poi: POI, intent: Intent) -> bool:
         return poi.avg_price <= intent.budget_per_person
