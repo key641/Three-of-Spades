@@ -55,12 +55,16 @@ class StateChangeSummary(BaseModel):
 class TripState(BaseModel):
     city: str = "上海"
     people_count: int = 2
+    target_district: str | None = None
+    target_business_area: str | None = None
     start_time: str = "14:00"
     duration_hours: int = 6
     budget_per_person: int = 300
     scenario: str = "friends_citywalk"
     hard_constraints: dict[str, object] = Field(default_factory=dict)
     soft_preferences: list[str] = Field(default_factory=list)
+    interest_tags: list[str] = Field(default_factory=list)
+    optimization_goals: list[str] = Field(default_factory=list)
     avoid_tags: list[str] = Field(default_factory=list)
     implicit_needs: list[str] = Field(default_factory=list)
     must_include: list[str] = Field(default_factory=list)
@@ -73,6 +77,8 @@ class TripState(BaseModel):
         hard_constraints = {
             "city": intent.city,
             "people_count": intent.people_count,
+            "target_district": intent.target_district,
+            "target_business_area": intent.target_business_area,
             "start_time": intent.start_time,
             "duration_hours": intent.duration_hours,
             "budget_per_person": intent.budget_per_person,
@@ -80,12 +86,16 @@ class TripState(BaseModel):
         return cls(
             city=intent.city,
             people_count=intent.people_count,
+            target_district=intent.target_district,
+            target_business_area=intent.target_business_area,
             start_time=intent.start_time,
             duration_hours=intent.duration_hours,
             budget_per_person=intent.budget_per_person,
             scenario=intent.scenario,
             hard_constraints=hard_constraints,
             soft_preferences=list(intent.preferences),
+            interest_tags=list(intent.interest_tags),
+            optimization_goals=list(intent.optimization_goals),
             avoid_tags=list(intent.avoid_tags),
             implicit_needs=_default_implicit_needs(intent.duration_hours),
         )
@@ -94,10 +104,14 @@ class TripState(BaseModel):
         return Intent(
             city=self.city,
             people_count=self.people_count,
+            target_district=self.target_district,
+            target_business_area=self.target_business_area,
             start_time=self.start_time,
             duration_hours=self.duration_hours,
             budget_per_person=self.budget_per_person,
             preferences=list(self.soft_preferences),
+            interest_tags=list(self.interest_tags),
+            optimization_goals=list(self.optimization_goals),
             avoid_tags=list(self.avoid_tags),
             scenario=self.scenario,
         )
@@ -110,6 +124,8 @@ class SessionState(BaseModel):
     trip_state: TripState | None = None
     current_routes: list[Route] = Field(default_factory=list)
     user_profile: UserProfile | None = None
+    # 本会话已追问次数：最多追问 1 次，之后直接规划
+    clarification_count: int = 0
 
 
 class AgentState(BaseModel):

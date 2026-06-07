@@ -1,10 +1,13 @@
 import math
 import re
 from dataclasses import dataclass
+from collections.abc import Callable
 
 from app.schemas.poi import POI
 from app.schemas.route import Route, RoutePlanRequest, RoutePlanResponse, RouteScoreBreakdown, RouteStop
-from app.services.amap_service import AmapService, GeoPoint, RouteLeg
+from app.services.amap_service import AmapService, GeoPoint, RouteLeg, RouteLegStep
+from app.services.scoring_service import ScoringService
+from app.services.strategy_service import StrategyService
 
 
 @dataclass(frozen=True)
@@ -18,106 +21,413 @@ class RouteBuildState:
 class RouteService:
     """B-owned module: creates route candidates before final scoring."""
 
+    # 各城市中心坐标 (latitude, longitude)
+    CITY_CENTERS = {
+        "上海": (31.2304, 121.4737),
+        "北京": (39.9042, 116.4074),
+        "广州": (23.1291, 113.2644),
+        "深圳": (22.5431, 114.0579),
+        "成都": (30.5728, 104.0668),
+        "杭州": (30.2741, 120.1551),
+        "南京": (32.0603, 118.7969),
+        "武汉": (30.5928, 114.3055),
+        "西安": (34.3416, 108.9398),
+        "苏州": (31.2989, 120.5954),
+        "重庆": (29.4316, 106.9123),
+    }
+
     OBJECTIVE_TITLES = {
         "balanced": "综合候选路线",
-        "low_queue": "少排队候选路线",
         "budget": "省钱候选路线",
         "low_walking": "少走路候选路线",
         "food_first": "吃好优先候选路线",
+        "photo_food": "拍照餐饮候选路线",
+        "nature_relax": "自然风景候选路线",
         "photo_citywalk": "拍照 Citywalk 候选路线",
         "indoor_rainy": "室内雨天候选路线",
         "night_friendly": "夜间友好候选路线",
     }
 
-    CANDIDATES_PER_OBJECTIVE = 4
+    CANDIDATES_PER_OBJECTIVE = 10
+    INTERNAL_CANDIDATES_PER_OBJECTIVE = 10
+    TARGET_ROUTE_COUNT = 3
+    DEFAULT_MIN_ROUTE_STOPS = 3
+    RELAXED_MIN_ROUTE_STOPS = 2
 
     def __init__(self, amap_service: AmapService | None = None) -> None:
         self.amap_service = amap_service or AmapService()
+        self.scoring_service = ScoringService()
+        self.strategy_service = StrategyService()
 
-    def generate_routes(self, request: RoutePlanRequest) -> RoutePlanResponse:
+    def generate_routes(
+        self,
+        request: RoutePlanRequest,
+        on_route: Callable[[Route], None] | None = None,
+        min_stops_floor: int | None = None,
+        allow_min_stops_fallback: bool = True,
+    ) -> RoutePlanResponse:
         if not request.candidate_pois:
             return RoutePlanResponse(routes=[])
 
-        objectives = self._select_objectives(request)
-        routes: list[Route] = []
-        seen_sequences: set[tuple[str, ...]] = set()
-        objective_counts: dict[str, int] = {objective: 0 for objective in objectives}
+        # Demo only has reliable map/POI coverage for Shanghai and Beijing.
+        # Other cities may use cloned fallback POIs, so assigning real city centers
+        # can make every candidate too far away to fit the time window.
+        if request.intent.start_lat is None or request.intent.start_lng is None:
+            city = request.intent.city
+            if city in {"上海", "北京"} and city in self.CITY_CENTERS:
+                lat, lng = self.CITY_CENTERS[city]
+                request.intent.start_lat = lat
+                request.intent.start_lng = lng
+                if not request.intent.start_location_name:
+                    request.intent.start_location_name = f"({city}中心)"
+            elif request.candidate_pois:
+                request.intent.start_lat = request.candidate_pois[0].lat
+                request.intent.start_lng = request.candidate_pois[0].lng
+                if not request.intent.start_location_name:
+                    request.intent.start_location_name = "推荐起点附近"
 
-        for objective in objectives:
-            candidates = self._build_candidates_for_objective(request.candidate_pois, objective, request)
-            for index, route in enumerate(candidates, start=1):
-                sequence = tuple(stop.poi_id for stop in route.stops)
-                if not sequence:
-                    continue
-                if sequence in seen_sequences and objective_counts[objective] > 0:
-                    continue
-                seen_sequences.add(sequence)
-                objective_counts[objective] += 1
-                route.route_id = f"route_{objective}_{index}"
-                route.title = f"{self.OBJECTIVE_TITLES[objective]} {index}"
-                routes.append(route)
+        objectives = self._expanded_objectives(self._select_objectives(request))
+        floor = min_stops_floor or (self.RELAXED_MIN_ROUTE_STOPS if self._allows_simple_route(request) else self.DEFAULT_MIN_ROUTE_STOPS)
+        candidates = self.generate_routes_for_objectives(
+            request,
+            objectives,
+            routes_per_objective=self.CANDIDATES_PER_OBJECTIVE,
+            min_stops_floor=floor,
+        ).routes
+        selected = self._select_final_routes(request, candidates, objectives, self.TARGET_ROUTE_COUNT, floor)
+
+        if (
+            len(selected) < self.TARGET_ROUTE_COUNT
+            and floor > self.RELAXED_MIN_ROUTE_STOPS
+            and (allow_min_stops_fallback or self._allows_simple_route(request))
+        ):
+            relaxed_candidates = self.generate_routes_for_objectives(
+                request,
+                objectives,
+                routes_per_objective=self.CANDIDATES_PER_OBJECTIVE,
+                min_stops_floor=self.RELAXED_MIN_ROUTE_STOPS,
+            ).routes
+            selected = self._select_final_routes(
+                request,
+                relaxed_candidates,
+                objectives,
+                self.TARGET_ROUTE_COUNT,
+                self.RELAXED_MIN_ROUTE_STOPS,
+            )
+
+        for route in selected:
+            if on_route is not None:
+                on_route(route)
+        return RoutePlanResponse(routes=selected)
+
+    def generate_routes_for_objectives(
+        self,
+        request: RoutePlanRequest,
+        objectives: list[str],
+        max_stops: int | None = None,
+        min_stops_floor: int | None = None,
+        routes_per_objective: int = 1,
+        on_route: Callable[[Route], None] | None = None,
+    ) -> RoutePlanResponse:
+        if not request.candidate_pois:
+            return RoutePlanResponse(routes=[])
+
+        routes: list[Route] = []
+        poi_by_id = {poi.id: poi for poi in request.candidate_pois}
+
+        for objective in self._unique_objectives(objectives):
+            if objective not in self.OBJECTIVE_TITLES:
+                continue
+            candidates = self._build_candidates_for_objective(
+                request.candidate_pois,
+                objective,
+                request,
+                max_stops_override=max_stops,
+                min_stops_floor=min_stops_floor,
+            )
+            scored_candidates = self._score_candidates(candidates, objective, request, poi_by_id)
+            if not scored_candidates:
+                continue
+            for index, selected in enumerate(scored_candidates[: max(routes_per_objective, 1)]):
+                finalized = self._finalize_route(selected, objective, index)
+                routes.append(finalized)
+                if on_route is not None:
+                    on_route(finalized)
 
         return RoutePlanResponse(routes=routes)
 
-    def _select_objectives(self, request: RoutePlanRequest) -> list[str]:
-        if not request.intent.preferences and not request.user_profile.tags and not request.user_profile.preferences:
-            return ["balanced", "low_queue", "budget"]
+    def _expanded_objectives(self, selected: list[str]) -> list[str]:
+        fallbacks = ["food_first", "photo_citywalk", "nature_relax", "indoor_rainy", "low_walking", "budget", "night_friendly", "balanced"]
+        return self._unique_objectives([*selected, *fallbacks])
 
-        intent_terms = set(request.intent.preferences)
-        profile_terms = set(request.user_profile.tags + request.user_profile.preferences)
-        candidates = [
-            ("low_queue", request.strategy_weights.queue, ["少排队", "别排队", "不排队"]),
-            ("budget", request.strategy_weights.budget, ["更省钱", "省钱", "便宜"]),
-            ("low_walking", request.strategy_weights.distance, ["少走路", "轻松", "老人", "亲子"]),
-            ("food_first", request.strategy_weights.preference, ["吃好", "咖啡", "聚餐", "餐厅", "美食"]),
-            ("photo_citywalk", request.strategy_weights.preference, ["拍照", "citywalk", "散步", "街区"]),
-            ("indoor_rainy", request.strategy_weights.preference, ["室内", "雨天", "下雨"]),
-            ("night_friendly", request.strategy_weights.preference, ["晚上", "夜景", "夜游"]),
+    def _select_final_routes(
+        self,
+        request: RoutePlanRequest,
+        candidates: list[Route],
+        objectives: list[str],
+        target_count: int,
+        min_stops: int,
+    ) -> list[Route]:
+        selected: list[Route] = []
+        used_signatures: set[tuple[str, ...]] = set()
+        used_poi_ids: set[str] = set()
+        objective_order = {objective: index for index, objective in enumerate(objectives)}
+        valid = [
+            route
+            for route in candidates
+            if len(route.stops) >= min_stops
+            and self._route_has_complete_transport(route)
+            and self._route_has_category_diversity(route, min_stops, request)
         ]
+        valid.sort(
+            key=lambda route: (
+                objective_order.get(route.objective, len(objective_order)),
+                -route.score,
+                route.total_distance_km,
+            )
+        )
 
-        selected = ["balanced"]
-        for objective, _weight, values in candidates:
-            if self._has_any(intent_terms, values) and objective not in selected:
-                selected.append(objective)
+        for objective in objectives:
+            if len(selected) >= target_count:
+                break
+            for route in [candidate for candidate in valid if candidate.objective == objective]:
+                if self._try_append_final_route(selected, used_signatures, used_poi_ids, route):
+                    break
+
+        if len(selected) < target_count:
+            for route in sorted(valid, key=lambda candidate: candidate.score, reverse=True):
+                if len(selected) >= target_count:
+                    break
+                self._try_append_final_route(selected, used_signatures, used_poi_ids, route)
+
+        return selected
+
+    def _try_append_final_route(
+        self,
+        selected: list[Route],
+        used_signatures: set[tuple[str, ...]],
+        used_poi_ids: set[str],
+        route: Route,
+    ) -> bool:
+        signature = self._route_signature(route)
+        if not signature or signature in used_signatures:
+            return False
+        route_poi_ids = set(signature)
+        if route_poi_ids & used_poi_ids:
+            return False
+        selected.append(route)
+        used_signatures.add(signature)
+        used_poi_ids.update(route_poi_ids)
+        return True
+
+    def _route_signature(self, route: Route) -> tuple[str, ...]:
+        return tuple(sorted(stop.poi_id for stop in route.stops))
+
+    def _route_has_complete_transport(self, route: Route) -> bool:
+        return all(
+            stop.transport_mode_from_previous
+            and stop.travel_minutes_from_previous is not None
+            and stop.distance_km_from_previous is not None
+            and stop.polyline_from_previous
+            and stop.route_steps_from_previous
+            for stop in route.stops
+        )
+
+    def _finalize_route(self, route: Route, objective: str, index: int = 0) -> Route:
+        route.route_id = f"route_{objective}_best" if index == 0 else f"route_{objective}_candidate_{index + 1}"
+        route.title = self.OBJECTIVE_TITLES[objective].replace("候选路线", "推荐路线")
+        route.summary = self._summary(
+            objective,
+            len(route.stops),
+            route.total_cost_per_person,
+            route.total_queue_minutes,
+            route.total_travel_minutes,
+            route.score,
+            route.score_breakdown,
+        )
+        route.reasons = self._reasons(
+            objective,
+            route.stops,
+            route.total_cost_per_person,
+            route.total_queue_minutes,
+            route.total_distance_km,
+            route.score_breakdown,
+        )
+        return route
+
+    def _unique_objectives(self, objectives: list[str]) -> list[str]:
+        result: list[str] = []
+        for objective in objectives:
+            if objective and objective not in result:
+                result.append(objective)
+        return result
+
+    def _unique(self, values: list[str]) -> list[str]:
+        result: list[str] = []
+        for value in values:
+            normalized = str(value).strip()
+            if normalized and normalized not in result:
+                result.append(normalized)
+        return result
+
+    def _score_candidates(
+        self,
+        candidates: list[Route],
+        objective: str,
+        request: RoutePlanRequest,
+        poi_by_id: dict[str, POI],
+    ) -> list[Route]:
+        scored: list[Route] = []
+        for route in candidates:
+            if not route.stops:
+                continue
+            route.score_breakdown = self.scoring_service.score(route.stops, objective, request, poi_by_id)
+            route.score = self.scoring_service.overall_score(route.score_breakdown, objective, route.stops, request, poi_by_id)
+            scored.append(route)
+        return sorted(scored, key=lambda route: self._route_rank_key(route, objective, request, poi_by_id), reverse=True)
+
+    def _route_rank_key(self, route: Route, objective: str, request: RoutePlanRequest, poi_by_id: dict[str, POI]) -> tuple[float, float, float, float, float, float]:
+        ideal_stops = sum(self._stop_bounds(request)) / 2
+        stop_fit = -abs(len(route.stops) - ideal_stops)
+        time_fit = -abs(route.total_duration_minutes - request.intent.duration_hours * 60 * 0.85)
+        preference_fit = self.scoring_service.preference_match_ratio(route.stops, request, poi_by_id)
+        objective_fit = {
+            "budget": -route.total_cost_per_person,
+            "low_walking": -route.total_distance_km,
+            "food_first": route.score_breakdown.preference,
+            "photo_food": route.score_breakdown.preference,
+            "nature_relax": route.score_breakdown.preference,
+            "photo_citywalk": route.score_breakdown.preference,
+            "indoor_rainy": route.score_breakdown.preference,
+            "night_friendly": route.score_breakdown.preference,
+        }.get(objective, route.score_breakdown.preference)
+        return (route.score, objective_fit, stop_fit, time_fit, -route.total_distance_km, preference_fit)
+
+    def _request_terms(self, request: RoutePlanRequest) -> list[str]:
+        return self._unique(
+            [
+                *request.intent.interest_tags,
+                *request.intent.optimization_goals,
+                *request.intent.preferences,
+                *request.user_profile.interest_tags,
+                *request.user_profile.optimization_goals,
+                *request.user_profile.tags,
+                *request.user_profile.preferences,
+            ]
+        )
+
+    def _select_objectives(self, request: RoutePlanRequest) -> list[str]:
+        intent_terms = set(self._intent_terms(request))
+        explicit = self._explicit_objectives(intent_terms)
+        if not self._request_terms(request):
+            return ["photo_citywalk", "food_first", "balanced"]
+
+        data_counts = self._objective_data_counts(request.candidate_pois)
+        scores = self.strategy_service.objective_scores(request.strategy_tags, request.user_profile, data_counts)
+        ordered = [objective for objective, score in sorted(scores.items(), key=lambda item: item[1], reverse=True) if objective != "balanced" and score > 0]
+        if explicit:
+            selected = explicit[:2]
+        elif "photo_food" in ordered and "food_first" in scores and scores["food_first"] > 0:
+            selected = ["photo_food", "food_first"]
+        else:
+            selected = ordered[:2]
+        if "balanced" not in selected:
+            selected.append("balanced")
+        for fallback in ["food_first", "photo_citywalk", "nature_relax", "indoor_rainy", "low_walking", "budget", "night_friendly"]:
             if len(selected) >= 3:
-                return selected
-
-        for objective, _weight, values in candidates:
-            if self._has_any(profile_terms, values) and objective not in selected:
-                selected.append(objective)
-            if len(selected) >= 3:
-                return selected
-
-        for objective, _weight, _values in sorted(candidates, key=lambda item: item[1], reverse=True):
-            if objective not in selected:
-                selected.append(objective)
-            if len(selected) >= 3:
-                return selected
-
+                break
+            if fallback not in selected:
+                selected.append(fallback)
         return selected[:3]
 
-    def _build_candidates_for_objective(self, pois: list[POI], objective: str, request: RoutePlanRequest) -> list[Route]:
+    def _explicit_objectives(self, terms: set[str]) -> list[str]:
+        objectives: list[str] = []
+
+        wants_photo = self._has_any(terms, ["拍照", "citywalk", "出片", "夜景"])
+        wants_food = self._has_any(terms, ["吃好", "美食", "餐厅", "咖啡", "咖啡探店", "小吃"])
+        if wants_photo and wants_food:
+            objectives.extend(["photo_food", "food_first"])
+        elif wants_food:
+            objectives.append("food_first")
+
+        if self._has_any(terms, ["自然风景", "自然", "公园", "风景"]):
+            objectives.append("nature_relax")
+        if self._has_any(terms, ["citywalk", "拍照", "出片"]):
+            objectives.append("photo_citywalk")
+        if self._has_any(terms, ["室内", "雨天", "高温"]):
+            objectives.append("indoor_rainy")
+        if self._has_any(terms, ["少走路", "轻松", "老人", "亲子"]):
+            objectives.append("low_walking")
+        if self._has_any(terms, ["晚上", "夜景"]):
+            objectives.append("night_friendly")
+        if self._has_any(terms, ["省钱", "高性价比", "便宜"]):
+            objectives.append("budget")
+
+        return self._unique_objectives(objectives)
+
+    def _build_candidates_for_objective(
+        self,
+        pois: list[POI],
+        objective: str,
+        request: RoutePlanRequest,
+        max_stops_override: int | None = None,
+        min_stops_floor: int | None = None,
+    ) -> list[Route]:
         time_limit = max(60, request.intent.duration_hours * 60)
-        min_stops, max_stops = self._stop_bounds(request)
-        start_pool = self._start_candidates(pois, objective, request)
+        min_stops, max_stops = self._stop_bounds(request, min_stops_floor=min_stops_floor)
+        if max_stops_override is not None:
+            max_stops = min(max_stops, max(1, max_stops_override))
+        min_stops = min(min_stops, max_stops)
+        ranked_start_pool = self._start_candidates(pois, objective, request)
+        diverse_start_pool = self._diverse_start_seeds(ranked_start_pool, self.INTERNAL_CANDIDATES_PER_OBJECTIVE * 2)
+        diverse_ids = {poi.id for poi in diverse_start_pool}
+        start_pool = diverse_start_pool + [poi for poi in ranked_start_pool if poi.id not in diverse_ids]
         routes: list[Route] = []
 
-        for seed in start_pool[: self.CANDIDATES_PER_OBJECTIVE * 2]:
+        for seed in start_pool[: self.INTERNAL_CANDIDATES_PER_OBJECTIVE * 2]:
             route = self._build_candidate(seed, pois, objective, request, time_limit, min_stops, max_stops)
             if route.stops and len(route.stops) >= min_stops:
                 routes.append(route)
-            if len(routes) >= self.CANDIDATES_PER_OBJECTIVE:
+            if len(routes) >= self.INTERNAL_CANDIDATES_PER_OBJECTIVE:
                 break
 
-        if len(routes) < self.CANDIDATES_PER_OBJECTIVE:
-            for seed in start_pool[self.CANDIDATES_PER_OBJECTIVE * 2 :]:
-                route = self._build_candidate(seed, pois, objective, request, time_limit, 1, max_stops)
-                if route.stops:
+        if len(routes) < self.INTERNAL_CANDIDATES_PER_OBJECTIVE:
+            for seed in start_pool[self.INTERNAL_CANDIDATES_PER_OBJECTIVE * 2 :]:
+                route = self._build_candidate(seed, pois, objective, request, time_limit, min_stops, max_stops)
+                if route.stops and len(route.stops) >= min_stops:
                     routes.append(route)
-                if len(routes) >= self.CANDIDATES_PER_OBJECTIVE:
+                if len(routes) >= self.INTERNAL_CANDIDATES_PER_OBJECTIVE:
                     break
 
         return routes
+
+    def _diverse_start_seeds(self, pois: list[POI], limit: int) -> list[POI]:
+        selected: list[POI] = []
+        seen: set[str] = set()
+        category_counts: dict[str, int] = {}
+        role_counts: dict[str, int] = {}
+        category_cap = max(1, math.ceil(limit / 4))
+        role_cap = max(2, math.ceil(limit / 3))
+
+        for poi in pois:
+            primary_role = poi.route_roles[0] if poi.route_roles else ""
+            if category_counts.get(poi.category, 0) >= category_cap and role_counts.get(primary_role, 0) >= role_cap:
+                continue
+            selected.append(poi)
+            seen.add(poi.id)
+            category_counts[poi.category] = category_counts.get(poi.category, 0) + 1
+            if primary_role:
+                role_counts[primary_role] = role_counts.get(primary_role, 0) + 1
+            if len(selected) >= limit:
+                return selected
+
+        for poi in pois:
+            if poi.id in seen:
+                continue
+            selected.append(poi)
+            if len(selected) >= limit:
+                break
+        return selected
 
     def _build_candidate(
         self,
@@ -157,7 +467,11 @@ class RouteService:
             stop, state = appended
             stops.append(stop)
             selected_ids.add(next_poi.id)
-            if len(stops) >= min_stops and state.elapsed_minutes >= time_limit * 0.82:
+            if (
+                len(stops) >= min_stops
+                and self._stops_have_category_diversity(stops, min_stops, request)
+                and state.elapsed_minutes >= time_limit * 0.82
+            ):
                 break
 
         if required_food and not any(self._is_food_poi(stop) for stop in stops):
@@ -179,8 +493,8 @@ class RouteService:
         request: RoutePlanRequest,
     ) -> tuple[RouteStop, RouteBuildState] | None:
         distance = self._distance_km(state.current_lat, state.current_lng, poi)
-        transport_mode = self._transport_mode(distance, poi)
-        route_leg = self._route_leg(state.current_lat, state.current_lng, poi, transport_mode)
+        transport_mode = self._transport_mode(distance, poi, request)
+        route_leg = self._best_route_leg(state.current_lat, state.current_lng, poi, request, distance)
         travel_minutes = route_leg.duration_minutes if route_leg else self._travel_minutes(distance)
         distance_km = self._distance_from_leg(route_leg, distance)
         total_add = travel_minutes + poi.queue_minutes + poi.visit_duration_minutes
@@ -193,7 +507,12 @@ class RouteService:
             poi_id=poi.id,
             name=poi.name,
             category=poi.category,
+            primary_category=poi.primary_category,
+            secondary_categories=poi.secondary_categories,
+            route_roles=poi.route_roles,
+            experience_tags=poi.experience_tags,
             district=poi.district,
+            business_area=poi.business_area,
             address=poi.address,
             lat=poi.lat,
             lng=poi.lng,
@@ -218,6 +537,7 @@ class RouteService:
             amap_distance_meters_from_previous=route_leg.distance_meters if route_leg else None,
             amap_duration_minutes_from_previous=route_leg.duration_minutes if route_leg else None,
             route_leg_source_from_previous=route_leg.source if route_leg else None,
+            route_steps_from_previous=[step.instruction for step in route_leg.steps] if route_leg else [],
             reason=self._stop_reason(poi, objective, request, start_minutes),
         )
         next_state = RouteBuildState(
@@ -228,13 +548,56 @@ class RouteService:
         )
         return stop, next_state
 
-    def _route_leg(self, current_lat: float | None, current_lng: float | None, poi: POI, mode: str | None) -> RouteLeg | None:
+    def _route_leg(self, current_lat: float | None, current_lng: float | None, poi: POI, mode: str | None, departure_time: str | None = None) -> RouteLeg | None:
         if current_lat is None or current_lng is None or mode is None:
             return None
         return self.amap_service.route_leg(
             origin=GeoPoint(lat=current_lat, lng=current_lng),
             destination=GeoPoint(lat=poi.lat, lng=poi.lng),
             mode=mode,
+            departure_time=departure_time,
+        )
+
+    def _best_route_leg(
+        self,
+        current_lat: float | None,
+        current_lng: float | None,
+        poi: POI,
+        request: RoutePlanRequest,
+        distance_km: float | None,
+    ) -> RouteLeg | None:
+        if current_lat is None or current_lng is None or distance_km is None:
+            return None
+        modes = self._candidate_transport_modes(distance_km, poi, request)
+        legs = [self._route_leg(current_lat, current_lng, poi, mode, request.intent.start_time) for mode in modes]
+        available = [leg for leg in legs if leg is not None]
+        if not available:
+            return None
+        if (
+            request.intent.city in {"北京", "上海"}
+            and distance_km is not None
+            and 0.8 <= distance_km <= 8
+            and not any(self._normalize_transport_mode(leg.mode) in {"metro", "bus"} for leg in available)
+        ):
+            available.append(self._synthetic_public_transit_leg(current_lat, current_lng, poi, distance_km))
+        return self._choose_public_transit_first(available, request)
+
+    def _synthetic_public_transit_leg(self, origin_lat: float, origin_lng: float, poi: POI, distance_km: float) -> RouteLeg:
+        distance_meters = max(1, round(distance_km * 1150))
+        duration_minutes = max(12, round(10 + distance_km * 4))
+        return RouteLeg(
+            mode="metro",
+            distance_meters=distance_meters,
+            duration_minutes=duration_minutes,
+            polyline=f"{origin_lng},{origin_lat};{poi.lng},{poi.lat}",
+            steps=[
+                RouteLegStep(
+                    instruction=f"步行至附近地铁站，乘地铁后步行到达，全程约 {distance_km:.1f} 公里，预计 {duration_minutes} 分钟",
+                    distance_meters=distance_meters,
+                    duration_minutes=duration_minutes,
+                )
+            ],
+            source="fallback",
         )
 
     def _distance_from_leg(self, route_leg: RouteLeg | None, fallback_distance: float | None) -> float | None:
@@ -251,7 +614,7 @@ class RouteService:
             route_id=f"route_{objective}_candidate",
             title=self.OBJECTIVE_TITLES[objective],
             objective=objective,
-            summary=self._summary(objective, len(stops), total_cost, total_queue, total_travel),
+            summary=self._summary(objective, len(stops), total_cost, total_queue, total_travel, 0, RouteScoreBreakdown(quality=0, queue=0, budget=0, distance=0, preference=0)),
             total_duration_minutes=self._route_elapsed_minutes(request.intent.start_time, stops),
             total_cost_per_person=total_cost,
             total_queue_minutes=total_queue,
@@ -260,7 +623,7 @@ class RouteService:
             score=0,
             score_breakdown=RouteScoreBreakdown(quality=0, queue=0, budget=0, distance=0, preference=0),
             stops=stops,
-            reasons=self._reasons(objective, stops, total_cost, total_queue, total_distance),
+            reasons=self._reasons(objective, stops, total_cost, total_queue, total_distance, RouteScoreBreakdown(quality=0, queue=0, budget=0, distance=0, preference=0)),
         )
 
     def _start_candidates(self, pois: list[POI], objective: str, request: RoutePlanRequest) -> list[POI]:
@@ -282,6 +645,11 @@ class RouteService:
         must_extend: bool,
     ) -> POI | None:
         candidates = [poi for poi in pois if poi.id not in selected_ids]
+        candidates = [
+            poi
+            for poi in candidates
+            if self._passes_meal_composition(selected_ids, poi, pois, request)
+        ]
         if required_food and not any(self._is_food_poi_id(poi_id, pois) for poi_id in selected_ids):
             food_candidates = [poi for poi in candidates if self._is_food_poi_obj(poi)]
             if food_candidates:
@@ -301,24 +669,108 @@ class RouteService:
             key=lambda poi: self._poi_score(poi, objective, request, state.current_lat, state.current_lng)
             + self._nearby_bonus(selected_ids, poi, pois)
             - self._distance_penalty(state.current_lat, state.current_lng, poi)
+            - self._diversity_penalty(selected_ids, poi, pois, objective, request)
+            + self._missing_role_bonus(selected_ids, poi, pois, objective, request)
+            + self._missing_category_bonus(selected_ids, poi, pois, request)
             + (0.12 if must_extend else 0),
         )
 
-    def _stop_bounds(self, request: RoutePlanRequest) -> tuple[int, int]:
+    def _stop_bounds(self, request: RoutePlanRequest, min_stops_floor: int | None = None) -> tuple[int, int]:
         hours = request.intent.duration_hours
-        if hours <= 3:
+        if hours <= 2:
             min_stops, max_stops = 2, 3
+        elif hours <= 3:
+            min_stops, max_stops = 3, 3
         elif hours <= 6:
             min_stops, max_stops = 3, 4
         else:
             min_stops, max_stops = 4, 5
 
-        terms = set(request.intent.preferences + request.user_profile.tags + request.user_profile.preferences)
+        terms = set(self._request_terms(request))
         if self._has_any(terms, ["轻松", "少走路", "老人", "亲子"]):
             max_stops = max(min_stops, max_stops - 1)
-        if self._has_any(terms, ["多打卡", "citywalk", "拍照"]):
+        if hours > 3 and self._has_any(terms, ["多打卡", "citywalk", "拍照"]):
             max_stops = min(5, max_stops + 1)
+        if min_stops_floor is not None:
+            min_stops = max(self.RELAXED_MIN_ROUTE_STOPS, min(min_stops, min_stops_floor))
+        else:
+            # 仅当 hours > 2 时才强制 DEFAULT_MIN_ROUTE_STOPS，
+            # 短时行程（≤2h）允许 2 站路线
+            if hours > 2:
+                min_stops = max(min_stops, self.DEFAULT_MIN_ROUTE_STOPS)
+        max_stops = max(max_stops, min_stops)
         return min_stops, max_stops
+
+    def _route_has_category_diversity(self, route: Route, min_stops: int, request: RoutePlanRequest) -> bool:
+        return self._stops_have_category_diversity(route.stops, min_stops, request)
+
+    def _stops_have_category_diversity(self, stops: list[RouteStop], min_stops: int, request: RoutePlanRequest) -> bool:
+        if self._allows_single_theme_route(request) and self._is_single_theme_route(stops):
+            return True
+        required = self._required_primary_category_count(len(stops), min_stops)
+        primary_categories = {stop.primary_category or stop.category for stop in stops if stop.primary_category or stop.category}
+        categories = {stop.category for stop in stops if stop.category}
+        return len(primary_categories) >= required or len(categories) >= required
+
+    def _required_primary_category_count(self, stop_count: int, min_stops: int) -> int:
+        if stop_count <= 2:
+            return 1
+        if stop_count <= 3:
+            return 2
+        return min(3, max(2, min_stops))
+
+    def _is_single_theme_route(self, stops: list[RouteStop]) -> bool:
+        if not stops:
+            return False
+        coffee_count = sum(1 for stop in stops if self._is_coffee_poi(stop))
+        meal_count = sum(1 for stop in stops if self._is_meal_poi(stop) or stop.meal_type in {"light_meal", "fast_food"} or stop.category == "market")
+        culture_count = sum(1 for stop in stops if stop.primary_category == "culture" or stop.category in {"museum", "gallery", "theater"})
+        return max(coffee_count, meal_count, culture_count) == len(stops)
+
+    def _allows_simple_route(self, request: RoutePlanRequest) -> bool:
+        terms = set(self._intent_terms(request))
+        return self._has_any(
+            terms,
+            [
+                "简单",
+                "简单点",
+                "不复杂",
+                "别太复杂",
+                "轻松",
+                "少安排",
+                "不要太满",
+                "少走路",
+                "老人",
+                "亲子",
+            ],
+        )
+
+    def _allows_single_theme_route(self, request: RoutePlanRequest) -> bool:
+        terms = set(self._request_terms(request))
+        return self._has_any(
+            terms,
+            [
+                "咖啡探店",
+                "咖啡路线",
+                "多家咖啡",
+                "美食路线",
+                "扫街",
+                "吃很多家",
+                "小吃街",
+                "展览路线",
+                "博物馆路线",
+                "艺术展",
+            ],
+        )
+
+    def _intent_terms(self, request: RoutePlanRequest) -> list[str]:
+        return self._unique(
+            [
+                *request.intent.interest_tags,
+                *request.intent.optimization_goals,
+                *request.intent.preferences,
+            ]
+        )
 
     def _poi_score(self, poi: POI, objective: str, request: RoutePlanRequest, current_lat: float | None, current_lng: float | None) -> float:
         quality = self._quality_score(poi)
@@ -328,16 +780,19 @@ class RouteService:
         time_fit = self._time_fit_score(poi, request)
         distance = self._distance_score(current_lat, current_lng, poi)
         walking = self._walking_score(poi)
-        score = quality * 0.22 + queue * 0.14 + budget * 0.12 + preference * 0.18 + time_fit * 0.14 + distance * 0.12 + walking * 0.08
+        relevance = request.poi_relevance_scores.get(poi.id, 0)
+        score = quality * 0.22 + queue * 0.14 + budget * 0.12 + preference * 0.18 + time_fit * 0.14 + distance * 0.12 + walking * 0.08 + relevance * 0.18
 
-        if objective == "low_queue":
-            score += queue * 0.5
-        elif objective == "budget":
+        if objective == "budget":
             score += budget * 0.5
         elif objective == "low_walking":
             score += (distance * 0.28 + walking * 0.32 + (0.15 if poi.transit_hub_nearby else 0))
         elif objective == "food_first":
             score += self._food_score(poi, request) * 0.55
+        elif objective == "photo_food":
+            score += self._photo_food_score(poi) * 0.65 + self._food_score(poi, request) * 0.25
+        elif objective == "nature_relax":
+            score += self._nature_score(poi) * 0.65 + walking * 0.12
         elif objective == "photo_citywalk":
             score += self._photo_citywalk_score(poi) * 0.55
         elif objective == "indoor_rainy":
@@ -347,7 +802,7 @@ class RouteService:
         return score
 
     def _preference_match(self, poi: POI, request: RoutePlanRequest) -> float:
-        terms = request.intent.preferences + request.user_profile.tags + request.user_profile.preferences
+        terms = self._request_terms(request)
         if not terms:
             return 0
         return sum(1 for term in terms if self._term_matches_poi(term, poi)) / len(terms)
@@ -357,10 +812,14 @@ class RouteService:
             [
                 poi.name,
                 poi.category,
+                poi.primary_category,
                 poi.meal_type,
                 poi.highlight_text,
                 poi.ugc_tip,
                 poi.walking_intensity,
+                *poi.secondary_categories,
+                *poi.route_roles,
+                *poi.experience_tags,
                 *poi.tags,
                 *poi.highlight_text_tags,
                 *poi.suitable_time_slots,
@@ -368,14 +827,33 @@ class RouteService:
         ).lower()
         aliases = {
             "少排队": ["少排队", "不排队", "低排队"],
+            "美食": ["餐厅", "美食", "聚餐", "restaurant", "local_food", "fine_dining"],
             "吃好": ["餐厅", "美食", "聚餐", "restaurant", "local_food", "fine_dining"],
+            "food_first": ["餐厅", "美食", "聚餐", "restaurant", "local_food", "fine_dining"],
+            "photo_food": ["拍照", "出片", "好看", "环境", "餐厅", "美食", "restaurant", "photo"],
+            "nature": ["自然", "风景", "公园", "江景", "海边", "湖", "山", "森林", "nature"],
+            "nature_relax": ["自然", "风景", "公园", "江景", "海边", "湖", "山", "森林", "nature"],
             "咖啡": ["咖啡", "cafe", "下午茶"],
             "citywalk": ["citywalk", "街区", "散步", "landmark", "拍照"],
+            "逛店": ["逛店", "逛街", "购物", "买手店", "书店", "生活方式", "潮玩", "美妆", "设计商店", "shopping", "boutique", "bookstore", "lifestyle_store", "toy_collectible", "beauty_retail", "design_store"],
+            "购物": ["逛店", "逛街", "购物", "商场", "买手店", "生活方式", "shopping", "boutique", "lifestyle_store"],
+            "书店": ["书店", "书局", "阅读", "bookstore"],
+            "买手店": ["买手店", "选品店", "设计师品牌", "boutique"],
+            "潮玩": ["潮玩", "手办", "盲盒", "toy_collectible"],
+            "美妆": ["美妆", "香氛", "护肤", "beauty_retail"],
+            "户外": ["户外", "运动户外", "跑步", "骑行", "sports_outdoor"],
+            "文创": ["文创", "设计商店", "艺术周边", "design_store"],
             "拍照": ["拍照", "夜景", "经典", "photo"],
+            "photo": ["拍照", "夜景", "经典", "photo"],
             "室内": ["室内", "museum", "gallery", "theater", "shopping", "cafe"],
+            "indoor_rainy": ["室内", "museum", "gallery", "theater", "shopping", "cafe"],
             "雨天": ["室内", "雨天", "rainy"],
             "少走路": ["少走路", "轻松", "low"],
+            "low_walking": ["少走路", "轻松", "low"],
+            "省钱": ["省钱", "便宜", "免费", "budget", "高性价比"],
+            "高性价比": ["高性价比", "免费", "budget"],
             "晚上": ["晚上", "夜景", "night", "evening"],
+            "night_view": ["晚上", "夜景", "night", "evening"],
         }
         return any(value.lower() in text for value in aliases.get(term, [term]))
 
@@ -403,9 +881,22 @@ class RouteService:
 
     def _photo_citywalk_score(self, poi: POI) -> float:
         tags = set(poi.tags + poi.highlight_text_tags)
-        tag_hit = bool(tags & {"拍照", "夜景", "经典", "小众", "文艺", "citywalk"})
-        category_hit = poi.category in {"landmark", "gallery", "night_view", "market"}
+        tag_hit = bool(tags & {"拍照", "夜景", "经典", "小众", "文艺", "citywalk", "逛街", "逛店", "买手店", "书店", "生活方式", "潮玩", "设计"})
+        category_hit = poi.category in {"landmark", "gallery", "night_view", "market", "boutique", "bookstore", "lifestyle_store", "toy_collectible", "beauty_retail", "design_store"}
         return max(poi.photo_friendly, 0.85 if tag_hit or category_hit else 0)
+
+    def _photo_food_score(self, poi: POI) -> float:
+        if not self._is_food_poi_obj(poi):
+            return 0
+        text = " ".join([poi.name, poi.highlight_text, poi.ugc_tip, *poi.tags, *poi.highlight_text_tags, *poi.experience_tags])
+        photo_hit = any(term in text for term in ["拍照", "出片", "好看", "环境", "文艺", "经典", "网红"])
+        return max(0.55, poi.photo_friendly, 0.95 if photo_hit else 0)
+
+    def _nature_score(self, poi: POI) -> float:
+        text = " ".join([poi.name, poi.category, poi.primary_category, poi.highlight_text, *poi.tags, *poi.highlight_text_tags, *poi.experience_tags])
+        if poi.category == "park" or poi.primary_category == "nature":
+            return 1
+        return 0.9 if any(term in text for term in ["自然", "风景", "公园", "江景", "海边", "湖", "山", "森林"]) else 0
 
     def _time_fit_score(self, poi: POI, request: RoutePlanRequest) -> float:
         minutes = self._parse_time(request.intent.start_time)
@@ -424,6 +915,169 @@ class RouteService:
             return 0.3
         return 0
 
+    def _diversity_penalty(self, selected_ids: set[str], poi: POI, pois: list[POI], objective: str, request: RoutePlanRequest) -> float:
+        selected = [candidate for candidate in pois if candidate.id in selected_ids]
+        if not selected:
+            return 0
+
+        counts = self._composition(selected)
+        penalty = 0.0
+        allows_coffee_repeat = self._allows_repeated_coffee(request)
+        allows_meal_repeat = self._allows_repeated_meals(request)
+
+        if "coffee_break" in poi.route_roles and counts["coffee"] >= 1 and not allows_coffee_repeat:
+            penalty += 1.1
+        if "meal" in poi.route_roles and counts["meal"] >= 1 and not allows_meal_repeat:
+            penalty += 0.85
+        if self._meal_group(poi) in {"coffee", "meal"} and not self._allows_mixed_meal_nodes(request):
+            other_group = "meal" if self._meal_group(poi) == "coffee" else "coffee"
+            if counts[other_group] >= 1:
+                penalty += 2.4
+
+        if selected[-1].primary_category and selected[-1].primary_category == poi.primary_category:
+            penalty += 0.45
+        if set(selected[-1].route_roles) & set(poi.route_roles):
+            penalty += 0.25
+
+        primary_count = counts["primary_categories"].get(poi.primary_category, 0)
+        if primary_count >= 2:
+            penalty += 0.35 * primary_count
+
+        if objective == "photo_citywalk" and poi.primary_category in {"food", "cafe"} and counts["main_activity"] == 0:
+            penalty += 0.8
+        if objective == "indoor_rainy" and poi.primary_category in {"food", "cafe"} and counts["indoor_main"] == 0:
+            penalty += 0.7
+
+        return penalty
+
+    def _missing_role_bonus(self, selected_ids: set[str], poi: POI, pois: list[POI], objective: str, request: RoutePlanRequest) -> float:
+        selected = [candidate for candidate in pois if candidate.id in selected_ids]
+        counts = self._composition(selected)
+        bonus = 0.0
+
+        if counts["main_activity"] == 0 and "main_activity" in poi.route_roles:
+            bonus += 0.65
+        if objective == "balanced":
+            if counts["meal"] == 0 and "meal" in poi.route_roles:
+                bonus += 0.28
+            if counts["photo"] == 0 and "photo_stop" in poi.route_roles:
+                bonus += 0.22
+            if counts["rest"] == 0 and ("rest_stop" in poi.route_roles or "coffee_break" in poi.route_roles):
+                bonus += 0.18
+        elif objective == "budget":
+            if "main_activity" in poi.route_roles and poi.avg_price <= request.intent.budget_per_person * 0.35:
+                bonus += 0.35
+            if counts["meal"] == 0 and ("meal" in poi.route_roles or "snack" in poi.route_roles):
+                bonus += 0.18
+        elif objective == "food_first":
+            if counts["main_activity"] == 0 and ("main_activity" in poi.route_roles or "photo_stop" in poi.route_roles):
+                bonus += 0.35
+            if counts["meal"] == 0 and "meal" in poi.route_roles:
+                bonus += 0.45
+            if counts["coffee"] == 0 and "coffee_break" in poi.route_roles:
+                bonus += 0.2
+        elif objective == "photo_food":
+            if counts["meal"] == 0 and self._is_food_poi_obj(poi):
+                bonus += 0.55
+            if counts["photo"] == 0 and ("photo_stop" in poi.route_roles or self._photo_food_score(poi) >= 0.8):
+                bonus += 0.45
+        elif objective == "nature_relax":
+            if counts["main_activity"] == 0 and self._nature_score(poi) > 0:
+                bonus += 0.6
+            if counts["rest"] == 0 and ("rest_stop" in poi.route_roles or poi.walking_intensity == "low"):
+                bonus += 0.18
+        elif objective == "photo_citywalk":
+            if counts["photo"] == 0 and "photo_stop" in poi.route_roles:
+                bonus += 0.55
+            if counts["main_activity"] == 0 and "main_activity" in poi.route_roles:
+                bonus += 0.35
+        elif objective == "indoor_rainy":
+            if poi.indoor and "main_activity" in poi.route_roles:
+                bonus += 0.55 if counts["indoor_main"] == 0 else 0.25
+            if counts["rest"] == 0 and poi.indoor and ("rest_stop" in poi.route_roles or "meal" in poi.route_roles):
+                bonus += 0.15
+        elif objective == "low_walking":
+            if "transit_anchor" in poi.route_roles:
+                bonus += 0.25
+            if counts["main_activity"] == 0 and "main_activity" in poi.route_roles:
+                bonus += 0.35
+            if counts["rest"] == 0 and ("rest_stop" in poi.route_roles or "meal" in poi.route_roles):
+                bonus += 0.15
+
+        return bonus
+
+    def _missing_category_bonus(self, selected_ids: set[str], poi: POI, pois: list[POI], request: RoutePlanRequest) -> float:
+        if self._allows_single_theme_route(request):
+            return 0.0
+        selected = [candidate for candidate in pois if candidate.id in selected_ids]
+        if not selected:
+            return 0.0
+        existing_primary = {candidate.primary_category or candidate.category for candidate in selected}
+        candidate_primary = poi.primary_category or poi.category
+        if candidate_primary and candidate_primary not in existing_primary:
+            return 0.45
+        existing_categories = {candidate.category for candidate in selected}
+        if poi.category and poi.category not in existing_categories:
+            return 0.18
+        return 0.0
+
+    def _composition(self, pois: list[POI]) -> dict:
+        primary_counts: dict[str, int] = {}
+        role_counts: dict[str, int] = {}
+        for poi in pois:
+            primary_counts[poi.primary_category] = primary_counts.get(poi.primary_category, 0) + 1
+            for role in poi.route_roles:
+                role_counts[role] = role_counts.get(role, 0) + 1
+        return {
+            "coffee": role_counts.get("coffee_break", 0),
+            "meal": role_counts.get("meal", 0),
+            "main_activity": role_counts.get("main_activity", 0),
+            "photo": role_counts.get("photo_stop", 0),
+            "rest": role_counts.get("rest_stop", 0),
+            "indoor_main": sum(1 for poi in pois if poi.indoor and "main_activity" in poi.route_roles),
+            "primary_categories": primary_counts,
+            "route_roles": role_counts,
+        }
+
+    def _allows_repeated_coffee(self, request: RoutePlanRequest) -> bool:
+        if self._is_late_night(self._parse_time(request.intent.start_time)):
+            return False
+        terms = self._request_terms(request)
+        return self._has_any(set(terms), ["咖啡探店", "咖啡路线", "多家咖啡", "咖啡馆"])
+
+    def _allows_repeated_meals(self, request: RoutePlanRequest) -> bool:
+        terms = self._request_terms(request)
+        return self._has_any(set(terms), ["美食路线", "扫街", "吃很多家", "小吃街", "多家餐厅"])
+
+    def _allows_mixed_meal_nodes(self, request: RoutePlanRequest) -> bool:
+        terms = set(self._request_terms(request))
+        wants_coffee = self._has_any(terms, ["咖啡", "下午茶", "咖啡馆", "咖啡探店"])
+        wants_meal = self._has_any(terms, ["吃好", "美食", "餐厅", "正餐", "火锅", "小吃"])
+        return wants_coffee and wants_meal
+
+    def _passes_meal_composition(self, selected_ids: set[str], poi: POI, pois: list[POI], request: RoutePlanRequest) -> bool:
+        group = self._meal_group(poi)
+        if group not in {"coffee", "meal"} or self._allows_mixed_meal_nodes(request):
+            return True
+        selected = [candidate for candidate in pois if candidate.id in selected_ids]
+        if not selected:
+            return True
+        selected_groups = {self._meal_group(candidate) for candidate in selected}
+        if group == "coffee" and "meal" in selected_groups:
+            return False
+        if group == "meal" and "coffee" in selected_groups:
+            return False
+        return True
+
+    def _meal_group(self, poi: POI | RouteStop) -> str:
+        if "coffee_break" in poi.route_roles or poi.category == "cafe" or poi.meal_type == "cafe":
+            return "coffee"
+        if "meal" in poi.route_roles or poi.category == "restaurant" or poi.meal_type in {"local_food", "fine_dining"}:
+            return "meal"
+        if "snack" in poi.route_roles or poi.category == "market" or poi.meal_type in {"light_meal", "fast_food"}:
+            return "snack"
+        return "none"
+
     def _food_replacement(
         self,
         pois: list[POI],
@@ -433,26 +1087,69 @@ class RouteService:
         state: RouteBuildState,
         time_limit: int,
     ) -> POI | None:
-        food_candidates = [poi for poi in pois if poi.id not in selected_ids and self._is_food_poi_obj(poi)]
+        food_candidates = self._food_candidates_for_request(
+            [poi for poi in pois if poi.id not in selected_ids and self._is_food_poi_obj(poi)],
+            objective,
+            request,
+        )
         viable = [
             poi
             for poi in food_candidates
             if state.elapsed_minutes + self._leg_minutes(state.current_lat, state.current_lng, poi) + poi.queue_minutes + poi.visit_duration_minutes
             <= time_limit
+            and self._is_contextually_reasonable_poi(
+                poi,
+                objective,
+                request,
+                state.current_minutes + self._leg_minutes(state.current_lat, state.current_lng, poi),
+            )
         ]
         if not viable:
             return None
         return max(viable, key=lambda poi: self._poi_score(poi, objective, request, state.current_lat, state.current_lng))
 
     def _route_wants_food(self, objective: str, request: RoutePlanRequest) -> bool:
-        terms = set(request.intent.preferences + request.user_profile.tags + request.user_profile.preferences)
-        return objective == "food_first" or self._has_any(terms, ["吃好", "咖啡", "聚餐", "餐厅", "美食"])
+        return self._route_wants_meal(objective, request) or self._route_wants_coffee(objective, request)
+
+    def _route_wants_meal(self, objective: str, request: RoutePlanRequest) -> bool:
+        terms = set(self._request_terms(request))
+        return objective in {"food_first", "photo_food"} or self._has_any(terms, ["吃好", "聚餐", "餐厅", "美食", "正餐", "小吃"])
+
+    def _route_wants_coffee(self, objective: str, request: RoutePlanRequest) -> bool:
+        terms = set(self._request_terms(request))
+        return self._has_any(terms, ["咖啡", "下午茶", "咖啡馆", "咖啡探店"])
+
+    def _food_candidates_for_request(self, pois: list[POI], objective: str, request: RoutePlanRequest) -> list[POI]:
+        wants_meal = self._route_wants_meal(objective, request)
+        wants_coffee = self._route_wants_coffee(objective, request)
+        if wants_coffee and not wants_meal:
+            return [poi for poi in pois if self._is_coffee_poi(poi)]
+        if wants_meal and not wants_coffee:
+            meal_candidates = [poi for poi in pois if self._is_meal_poi(poi) or self._meal_group(poi) == "snack"]
+            return meal_candidates or [poi for poi in pois if self._is_food_poi_obj(poi)]
+        return [poi for poi in pois if self._is_food_poi_obj(poi)]
+
+    def _is_contextually_reasonable_poi(self, poi: POI, objective: str, request: RoutePlanRequest, arrival_minutes: int) -> bool:
+        if not self._before_last_entry(arrival_minutes, poi):
+            return False
+        terms = set(self._request_terms(request))
+        if self._is_late_night(arrival_minutes) and self._is_coffee_poi(poi) and not self._route_wants_coffee(objective, request):
+            return False
+        if self._has_any(terms, ["公共交通", "地铁优先", "公交优先", "不打车"]) and "taxi" in poi.recommended_transport:
+            return bool({"metro", "bus", "walk"} & set(poi.recommended_transport))
+        return True
 
     def _is_food_poi(self, stop: RouteStop) -> bool:
         return stop.category in {"restaurant", "cafe", "market"} or stop.meal_type in {"local_food", "fine_dining", "cafe", "light_meal", "fast_food"}
 
     def _is_food_poi_obj(self, poi: POI) -> bool:
         return poi.category in {"restaurant", "cafe", "market"} or poi.meal_type in {"local_food", "fine_dining", "cafe", "light_meal", "fast_food"}
+
+    def _is_coffee_poi(self, poi: POI | RouteStop) -> bool:
+        return "coffee_break" in poi.route_roles or poi.category == "cafe" or poi.meal_type == "cafe"
+
+    def _is_meal_poi(self, poi: POI | RouteStop) -> bool:
+        return "meal" in poi.route_roles or poi.category == "restaurant" or poi.meal_type in {"local_food", "fine_dining"}
 
     def _is_food_poi_id(self, poi_id: str, pois: list[POI]) -> bool:
         poi = next((candidate for candidate in pois if candidate.id == poi_id), None)
@@ -486,16 +1183,120 @@ class RouteService:
             return round(8 + distance_km * 5)
         return round(12 + distance_km * 4)
 
-    def _transport_mode(self, distance_km: float | None, poi: POI) -> str | None:
+    def _transport_mode(self, distance_km: float | None, poi: POI, request: RoutePlanRequest | None = None) -> str | None:
         if distance_km is None:
             return None
-        if distance_km <= 1:
+        if distance_km <= 0.8 and not self._prefers_less_walking(request):
             return "walk"
+        if self._prefers_public_transit(request):
+            return "metro" if distance_km > 1.2 else "bus"
         if poi.recommended_transport:
-            return "/".join(poi.recommended_transport[:2])
+            return self._normalize_transport_mode(poi.recommended_transport[0])
+        if self._prefers_less_walking(request) and distance_km > 1:
+            return "taxi"
         if distance_km <= 5:
-            return "metro/taxi"
-        return "taxi/metro"
+            return "metro"
+        return "taxi"
+
+    def _candidate_transport_modes(self, distance_km: float, poi: POI, request: RoutePlanRequest) -> list[str]:
+        if self._prefers_public_transit(request):
+            modes = ["metro", "bus", "walk", "taxi"] if distance_km <= 8 else ["metro", "bus", "taxi"]
+        elif distance_km <= 0.8 and not self._prefers_less_walking(request):
+            modes = ["walk", "metro", "bus", "taxi"]
+        elif distance_km > 8:
+            modes = ["metro", "bus", "taxi"]
+        else:
+            modes = ["metro", "bus", "taxi", "walk"]
+        for mode in poi.recommended_transport:
+            normalized = self._normalize_transport_mode(mode)
+            if normalized not in modes:
+                if normalized in {"metro", "bus"}:
+                    modes.insert(0, normalized)
+                else:
+                    modes.append(normalized)
+        return modes
+
+    def _choose_public_transit_first(self, legs: list[RouteLeg], request: RoutePlanRequest) -> RouteLeg:
+        taxi = next((leg for leg in legs if self._normalize_transport_mode(leg.mode) == "taxi"), None)
+        public_legs = [leg for leg in legs if self._normalize_transport_mode(leg.mode) in {"metro", "bus"}]
+        if public_legs:
+            best_public = min(public_legs, key=lambda leg: self._transport_score(leg, request))
+            public_distance_km = best_public.distance_meters / 1000
+            if (
+                request.intent.city in {"北京", "上海"}
+                and 1.2 <= public_distance_km <= 8
+                and not self._prefers_less_walking(request)
+            ):
+                return best_public
+            if self._prefers_public_transit(request) or taxi is None or self._public_transit_is_convenient(best_public, taxi, request):
+                return best_public
+        return min(legs, key=lambda leg: self._transport_score(leg, request))
+
+    def _public_transit_is_convenient(self, public_leg: RouteLeg, taxi_leg: RouteLeg, request: RoutePlanRequest) -> bool:
+        slack_minutes = 20 if self._prefers_less_walking(request) else 30
+        ratio = 2.5 if self._prefers_less_walking(request) else 3.0
+        return (
+            public_leg.duration_minutes <= taxi_leg.duration_minutes + slack_minutes
+            or public_leg.duration_minutes <= taxi_leg.duration_minutes * ratio
+        )
+
+    def _transport_score(self, leg: RouteLeg, request: RoutePlanRequest) -> float:
+        score = leg.duration_minutes
+        mode = self._normalize_transport_mode(leg.mode)
+        distance_km = leg.distance_meters / 1000
+        if self._prefers_less_walking(request) and mode == "walk" and distance_km > 1:
+            score += distance_km * 18
+        if mode == "taxi":
+            score += 12
+        if mode in {"metro", "bus"}:
+            score -= 6
+            if self._prefers_public_transit(request):
+                score -= 18
+        return score
+
+    def _prefers_public_transit(self, request: RoutePlanRequest | None) -> bool:
+        if request is None:
+            return False
+        terms = set(self._request_terms(request))
+        explicit_public_transit = self._has_any(
+            terms,
+            [
+                "公共交通",
+                "公交优先",
+                "地铁优先",
+                "公交",
+                "地铁",
+                "不打车",
+                "少打车",
+                "绿色出行",
+                "省钱",
+            ],
+        )
+        if explicit_public_transit:
+            return True
+        if self._prefers_less_walking(request):
+            return False
+        modes = {self._normalize_transport_mode(mode) for mode in request.user_profile.preferred_transport_modes}
+        return bool(modes & {"metro", "bus"} and "taxi" not in modes)
+
+    def _prefers_less_walking(self, request: RoutePlanRequest | None) -> bool:
+        if request is None:
+            return False
+        terms = set(self._request_terms(request))
+        if self._has_any(terms, ["少走路", "轻松", "室内", "亲子", "老人"]):
+            return True
+        return request.intent.duration_hours <= 4 and request.intent.scenario in {"family_trip"}
+
+    def _normalize_transport_mode(self, mode: str) -> str:
+        if "walk" in mode or "步行" in mode:
+            return "walk"
+        if "taxi" in mode or "drive" in mode or "打车" in mode or "自驾" in mode:
+            return "taxi"
+        if "bus" in mode or "公交" in mode:
+            return "bus"
+        if "metro" in mode or "地铁" in mode:
+            return "metro"
+        return mode
 
     def _parse_time(self, value: str) -> int:
         match = re.search(r"(\d{1,2}):?(\d{2})?", value)
@@ -518,6 +1319,9 @@ class RouteService:
         if 17 <= hour < 21:
             return "evening"
         return "night"
+
+    def _is_late_night(self, minutes: int) -> bool:
+        return self._time_slot(minutes) == "night"
 
     def _minutes_in_range(self, minutes: int, start: int, end: int) -> bool:
         if end >= start:
@@ -545,14 +1349,16 @@ class RouteService:
         return end - start
 
     def _stop_reason(self, poi: POI, objective: str, request: RoutePlanRequest, start_minutes: int) -> str:
-        if objective == "low_queue":
-            return f"排队约 {poi.queue_minutes} 分钟，人流压力较低"
         if objective == "budget":
             return f"人均约 {poi.avg_price} 元，适合控制预算"
         if objective == "low_walking":
             return f"步行强度 {poi.walking_intensity}，便于轻松衔接"
         if objective == "food_first" and self._is_food_poi_obj(poi):
             return f"{poi.meal_type} 节点，匹配餐饮和休息需求"
+        if objective == "photo_food":
+            return "餐饮和拍照环境匹配本轮强偏好"
+        if objective == "nature_relax":
+            return "自然风景或低强度休闲体验较强"
         if objective == "photo_citywalk":
             return "拍照、街区或 citywalk 体验较强"
         if objective == "indoor_rainy":
@@ -563,21 +1369,85 @@ class RouteService:
             return "到达时间匹配推荐游玩时段"
         return "符合当前候选路线结构"
 
-    def _summary(self, objective: str, stop_count: int, total_cost: int, total_queue: int, total_travel: int) -> str:
+    def _summary(
+        self,
+        objective: str,
+        stop_count: int,
+        total_cost: int,
+        total_queue: int,
+        total_travel: int,
+        score: int,
+        breakdown: RouteScoreBreakdown,
+    ) -> str:
         objective_text = {
-            "balanced": "综合平衡候选",
-            "low_queue": "少排队候选",
-            "budget": "省钱候选",
-            "low_walking": "少走路候选",
-            "food_first": "餐饮优先候选",
-            "photo_citywalk": "拍照 citywalk 候选",
-            "indoor_rainy": "室内雨天候选",
-            "night_friendly": "夜间友好候选",
+            "balanced": "综合平衡推荐",
+            "budget": "省钱推荐",
+            "low_walking": "少走路推荐",
+            "food_first": "餐饮优先推荐",
+            "photo_food": "拍照餐饮推荐",
+            "nature_relax": "自然风景推荐",
+            "photo_citywalk": "拍照 citywalk 推荐",
+            "indoor_rainy": "室内雨天推荐",
+            "night_friendly": "夜间友好推荐",
         }[objective]
-        return f"{objective_text}，包含 {stop_count} 个点，人均约 {total_cost} 元，排队 {total_queue} 分钟，路上约 {total_travel} 分钟。"
+        score_text = f"综合评分 {score} 分，" if score else ""
+        advantage = self._summary_advantage(objective, total_cost, total_queue, total_travel, breakdown)
+        return f"{objective_text}，{score_text}包含 {stop_count} 个点，人均约 {total_cost} 元，排队 {total_queue} 分钟，路上约 {total_travel} 分钟，优势是{advantage}。"
 
-    def _reasons(self, objective: str, stops: list[RouteStop], total_cost: int, total_queue: int, total_distance: float) -> list[str]:
-        reasons = [self.OBJECTIVE_TITLES[objective].replace("路线", "")]
+    def _summary_advantage(
+        self,
+        objective: str,
+        total_cost: int,
+        total_queue: int,
+        total_travel: int,
+        breakdown: RouteScoreBreakdown,
+    ) -> str:
+        objective_advantages = {
+            "budget": f"人均约 {total_cost} 元，预算压力相对更低",
+            "low_walking": f"路上约 {total_travel} 分钟，点位衔接更轻松",
+            "food_first": "餐饮和休息节点更突出，适合把吃好放在优先级前面",
+            "photo_food": "餐饮和拍照环境匹配度更高",
+            "nature_relax": "自然风景和轻松休闲体验更突出",
+            "photo_citywalk": "拍照、街区和漫步体验更集中",
+            "indoor_rainy": "室内点位和雨天友好度更高",
+            "night_friendly": "晚间可玩性和夜景体验更强",
+        }
+        if objective in objective_advantages:
+            return objective_advantages[objective]
+        strongest_dimension = max(
+            [
+                ("质量、排队、预算和距离比较均衡", breakdown.quality),
+                ("排队压力较低", breakdown.queue),
+                ("预算更可控", breakdown.budget),
+                ("点位衔接更顺", breakdown.distance),
+                ("更贴合用户偏好", breakdown.preference),
+            ],
+            key=lambda item: item[1],
+        )
+        return strongest_dimension[0]
+
+    def _reasons(
+        self,
+        objective: str,
+        stops: list[RouteStop],
+        total_cost: int,
+        total_queue: int,
+        total_distance: float,
+        breakdown: RouteScoreBreakdown,
+    ) -> list[str]:
+        reasons = [self.OBJECTIVE_TITLES[objective].replace("候选路线", "胜出")]
+        strongest_dimension = max(
+            [
+                ("质量表现最好", breakdown.quality),
+                ("排队控制最好", breakdown.queue),
+                ("预算匹配最好", breakdown.budget),
+                ("距离衔接最好", breakdown.distance),
+                ("偏好匹配最好", breakdown.preference),
+            ],
+            key=lambda item: item[1],
+        )
+        if strongest_dimension[1] > 0:
+            reasons.append(strongest_dimension[0])
         if any(self._is_food_poi(stop) for stop in stops):
             reasons.append("包含餐饮或休息节点")
         if any(stop.indoor for stop in stops):
@@ -592,3 +1462,16 @@ class RouteService:
 
     def _has_any(self, terms: set[str], values: list[str]) -> bool:
         return any(value in term or term in value for term in terms for value in values)
+
+    def _objective_data_counts(self, pois: list[POI]) -> dict[str, int]:
+        return {
+            "photo_food": sum(1 for poi in pois if self._photo_food_score(poi) > 0),
+            "food_first": sum(1 for poi in pois if self._is_food_poi_obj(poi)),
+            "nature_relax": sum(1 for poi in pois if self._nature_score(poi) > 0),
+            "photo_citywalk": sum(1 for poi in pois if self._photo_citywalk_score(poi) > 0),
+            "indoor_rainy": sum(1 for poi in pois if poi.indoor or poi.rainy_day_score >= 0.7),
+            "night_friendly": sum(1 for poi in pois if poi.night_activity >= 0.7 or {"evening", "night"} & set(poi.suitable_time_slots)),
+            "low_walking": sum(1 for poi in pois if poi.walking_intensity == "low"),
+            "budget": sum(1 for poi in pois if poi.avg_price <= 80 or poi.budget_friendly >= 0.8),
+            "balanced": len(pois),
+        }

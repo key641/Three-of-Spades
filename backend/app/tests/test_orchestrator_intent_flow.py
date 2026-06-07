@@ -1,12 +1,16 @@
 import unittest
+import asyncio
 import json
-from unittest.mock import AsyncMock
+from unittest.mock import AsyncMock, MagicMock
 
 from app.agent.intent_enhancer import enhance_intent_from_message
-from app.agent.message_router import MessageIntentType, MessageRoute, TurnType
+from app.agent.message_router import MessageIntentType, MessageRoute, PlanningMode, TurnType
 from app.agent.orchestrator import AgentOrchestrator
+from app.agent.schemas import IntentDelta, QueryUnderstanding, TripState
 from app.schemas.chat import ChatRequest
-from app.schemas.route import Route, RouteScoreBreakdown, RouteStop
+from app.schemas.intent import Intent
+from app.schemas.route import Route, RoutePlanResponse, RouteScoreBreakdown, RouteStop
+from app.schemas.user import UserProfile
 
 
 def stub_route_planning_router(orchestrator: AgentOrchestrator) -> None:
@@ -65,6 +69,133 @@ def build_route() -> Route:
 
 
 class OrchestratorIntentFlowTest(unittest.TestCase):
+    def test_relative_budget_request_does_not_raise_previous_budget_to_default(self) -> None:
+        async def run_case() -> None:
+            orchestrator = AgentOrchestrator()
+            state = orchestrator.memory.get_state("s1")
+            previous_intent = Intent(city="上海", budget_per_person=200, preferences=["拍照"])
+            state.last_intent = previous_intent
+            state.trip_state = TripState.from_intent(previous_intent)
+            orchestrator.memory.save_state(state)
+            orchestrator.llm_client.complete = AsyncMock(
+                return_value={
+                    "choices": [
+                        {
+                            "message": {
+                                "content": (
+                                    '{"understanding":{"turn_type":"modify_constraint",'
+                                    '"inherit_previous":true,"preserve_scenario":true,'
+                                    '"confidence":0.86,"reason":"用户要求降低人均消费"},'
+                                    '"delta":{"modified_hard_constraints":{"budget_per_person":300},'
+                                    '"added_preferences":["更省钱"],"removed_preferences":[]}}'
+                                )
+                            }
+                        }
+                    ]
+                }
+            )
+
+            _understanding, delta, _source = await orchestrator._parse_query_delta(
+                "重新规划，降低人均消费",
+                state,
+                QueryUnderstanding(turn_type="modify_constraint", inherit_previous=True),
+                IntentDelta(),
+                [],
+            )
+
+            self.assertNotIn("budget_per_person", delta.modified_hard_constraints)
+            self.assertIn("省钱", delta.added_preferences)
+
+        import asyncio
+
+        asyncio.run(run_case())
+
+    def test_city_region_without_poi_data_returns_visible_no_data_message(self) -> None:
+        async def run_case() -> None:
+            orchestrator = AgentOrchestrator()
+            stub_route_planning_router(orchestrator)
+            orchestrator.llm_client.complete = AsyncMock(
+                return_value={
+                    "choices": [
+                        {
+                            "message": {
+                                "content": json.dumps(
+                                    {
+                                        "city": "上海",
+                                        "people_count": 2,
+                                        "start_time": "14:00",
+                                        "duration_hours": 4,
+                                        "budget_per_person": 300,
+                                        "target_district": "不存在区",
+                                        "target_business_area": None,
+                                        "start_location_name": None,
+                                        "start_lat": None,
+                                        "start_lng": None,
+                                        "preferences": ["citywalk"],
+                                        "interest_tags": ["citywalk"],
+                                        "optimization_goals": [],
+                                        "avoid_tags": [],
+                                        "scenario": "friends_citywalk",
+                                        "need_clarification": False,
+                                    },
+                                    ensure_ascii=False,
+                                )
+                            }
+                        }
+                    ]
+                }
+            )
+
+            response = await orchestrator.handle_message(ChatRequest(session_id="s1", message="上海不存在区 citywalk"))
+
+            self.assertEqual(response.routes, [])
+            self.assertIn("没有可用 POI 数据", response.message)
+            self.assertIn("换一个城市", response.message)
+            self.assertTrue(any(step.step == "no_poi_data" for step in response.agent_trace))
+
+        asyncio.run(run_case())
+
+    def test_explicit_budget_amount_can_change_previous_budget(self) -> None:
+        async def run_case() -> None:
+            orchestrator = AgentOrchestrator()
+            state = orchestrator.memory.get_state("s1")
+            previous_intent = Intent(city="上海", budget_per_person=200, preferences=["拍照"])
+            state.last_intent = previous_intent
+            state.trip_state = TripState.from_intent(previous_intent)
+            orchestrator.memory.save_state(state)
+            orchestrator.llm_client.complete = AsyncMock(
+                return_value={
+                    "choices": [
+                        {
+                            "message": {
+                                "content": (
+                                    '{"understanding":{"turn_type":"modify_constraint",'
+                                    '"inherit_previous":true,"preserve_scenario":true,'
+                                    '"confidence":0.9,"reason":"用户明确给出新的人均预算"},'
+                                    '"delta":{"modified_hard_constraints":{"budget_per_person":150},'
+                                    '"added_preferences":["更省钱"],"removed_preferences":[]}}'
+                                )
+                            }
+                        }
+                    ]
+                }
+            )
+
+            _understanding, delta, _source = await orchestrator._parse_query_delta(
+                "重新规划，人均150以内",
+                state,
+                QueryUnderstanding(turn_type="modify_constraint", inherit_previous=True),
+                IntentDelta(),
+                [],
+            )
+
+            self.assertEqual(delta.modified_hard_constraints["budget_per_person"], 150)
+            self.assertIn("省钱", delta.added_preferences)
+
+        import asyncio
+
+        asyncio.run(run_case())
+
     def test_fallback_intent_is_enhanced_by_message(self) -> None:
         orchestrator = AgentOrchestrator()
         fallback_intent = orchestrator._mock_parse_intent("想要在北京一日游")
@@ -98,12 +229,32 @@ class OrchestratorIntentFlowTest(unittest.TestCase):
             state = orchestrator.memory.get_state("s1")
             self.assertEqual(state.last_intent.city, "上海")
             self.assertEqual(state.last_intent.duration_hours, 8)
+            self.assertEqual(state.last_intent.start_location_name, "静安寺站")
+            self.assertEqual(state.last_intent.start_lat, 31.2231)
+            self.assertEqual(state.last_intent.start_lng, 121.4466)
             self.assertEqual(state.recent_messages[0].role, "user")
             self.assertEqual(state.recent_messages[-1].content, "已生成上海一日游路线。")
 
         import asyncio
 
         asyncio.run(run_case())
+
+    def test_default_city_start_is_added_for_beijing_without_overriding_explicit_start(self) -> None:
+        orchestrator = AgentOrchestrator()
+
+        beijing, default_start = orchestrator._apply_default_city_start(Intent(city="北京"))
+        explicit, explicit_default = orchestrator._apply_default_city_start(
+            Intent(city="北京", start_location_name="故宫", start_lat=39.9163, start_lng=116.3972)
+        )
+
+        self.assertEqual(default_start["name"], "西单站")
+        self.assertEqual(beijing.start_location_name, "西单站")
+        self.assertEqual(beijing.start_lat, 39.9072)
+        self.assertEqual(beijing.start_lng, 116.3740)
+        self.assertIsNone(explicit_default)
+        self.assertEqual(explicit.start_location_name, "故宫")
+        self.assertEqual(explicit.start_lat, 39.9163)
+        self.assertEqual(explicit.start_lng, 116.3972)
 
     def test_route_detail_question_uses_saved_routes_without_replanning(self) -> None:
         async def run_case() -> None:
@@ -128,6 +279,150 @@ class OrchestratorIntentFlowTest(unittest.TestCase):
             self.assertIn("静安雕塑公园", response.message)
             self.assertIn("外滩观景平台", response.message)
             self.assertIn("地铁或骑行", response.message)
+            orchestrator.route_service.generate_routes.assert_not_called()
+
+        import asyncio
+
+        asyncio.run(run_case())
+
+    def test_structured_replace_poi_uses_local_replan_without_strategy_regeneration(self) -> None:
+        async def run_case() -> None:
+            orchestrator = AgentOrchestrator()
+            route = build_route()
+            updated = route.model_copy(deep=True)
+            updated.changed_stops = []
+            orchestrator.replan_service.replan = MagicMock(return_value=RoutePlanResponse(routes=[updated]))
+            orchestrator.route_service.generate_routes = MagicMock()
+            state = orchestrator.memory.get_state("s1")
+            state.current_routes = [route]
+            state.last_intent = Intent(city="上海", preferences=["拍照"])
+            state.user_profile = UserProfile(user_id="user_001")
+            orchestrator.memory.save_state(state)
+
+            response = await orchestrator.handle_message(
+                ChatRequest(
+                    session_id="s1",
+                    user_id="user_001",
+                    message="帮我换一家",
+                    event_type="replace_poi",
+                    selected_route_id=route.route_id,
+                    event_payload={"force_replace": True},
+                )
+            )
+
+            orchestrator.replan_service.replan.assert_called_once()
+            orchestrator.route_service.generate_routes.assert_not_called()
+            self.assertEqual(response.agent_trace[0].step, "local_replan")
+            self.assertEqual(response.agent_trace[0].label, "局部替换 POI")
+
+        import asyncio
+
+        asyncio.run(run_case())
+
+    def test_partial_replan_uses_replan_service_without_full_regeneration(self) -> None:
+        async def run_case() -> None:
+            orchestrator = AgentOrchestrator()
+            orchestrator.message_router.classify = AsyncMock(
+                return_value=MessageRoute(
+                    intent_type=MessageIntentType.REPLAN,
+                    turn_type=TurnType.MODIFY_CONSTRAINT,
+                    planning_mode=PlanningMode.PARTIAL_REPLAN,
+                    confidence=1,
+                    references_previous_route=True,
+                    inherit_previous=True,
+                    preserve_scenario=True,
+                )
+            )
+            original_route = build_route()
+            updated_route = original_route.model_copy(update={"replan_reason": "已局部替换受影响点位。"})
+            orchestrator.replan_service.replan = unittest.mock.Mock(return_value=RoutePlanResponse(routes=[updated_route]))
+            orchestrator.route_service.generate_routes = unittest.mock.Mock()
+            state = orchestrator.memory.get_state("s1")
+            state.last_intent = enhance_intent_from_message(orchestrator._mock_parse_intent("上海一日游"), "上海一日游")
+            state.user_profile = UserProfile(user_id="user_001", preferences=["拍照"])
+            state.current_routes = [original_route]
+            orchestrator.memory.save_state(state)
+
+            response = await orchestrator.handle_message(
+                ChatRequest(session_id="s1", user_id="user_001", message="不喜欢这家店，换一家")
+            )
+
+            orchestrator.replan_service.replan.assert_called_once()
+            orchestrator.route_service.generate_routes.assert_not_called()
+            self.assertEqual(response.routes[0].replan_reason, "已局部替换受影响点位。")
+            self.assertIn("局部", response.message)
+            self.assertEqual(orchestrator.memory.get_state("s1").current_routes[0].replan_reason, "已局部替换受影响点位。")
+
+        import asyncio
+
+        asyncio.run(run_case())
+
+    def test_missing_required_city_returns_clarification_without_planning(self) -> None:
+        async def run_case() -> None:
+            orchestrator = AgentOrchestrator()
+            orchestrator.message_router.classify = AsyncMock(
+                return_value=MessageRoute(
+                    intent_type=MessageIntentType.NEW_PLAN,
+                    turn_type=TurnType.NEW_PLAN,
+                    planning_mode=PlanningMode.NEW_PLAN,
+                    confidence=0.9,
+                )
+            )
+            orchestrator.llm_client.complete = AsyncMock(
+                return_value={
+                    "choices": [
+                        {
+                            "message": {
+                                "content": '{"city":"上海","people_count":1,"start_time":"09:00","duration_hours":8,"budget_per_person":300,"preferences":["一日游"],"avoid_tags":[],"scenario":"city_day_trip","need_clarification":false,"city_from_message":false}'
+                            }
+                        }
+                    ]
+                }
+            )
+            orchestrator.route_service.generate_routes = unittest.mock.Mock()
+
+            response = await orchestrator.handle_message(
+                ChatRequest(session_id="s_missing_city", user_id="user_001", message="周末帮我安排一日游")
+            )
+
+            self.assertTrue(response.need_clarification)
+            self.assertIn("城市", response.message)
+            orchestrator.route_service.generate_routes.assert_not_called()
+            self.assertTrue(any(step.step == "clarify_intent" for step in response.agent_trace))
+
+        import asyncio
+
+        asyncio.run(run_case())
+
+    def test_low_confidence_between_replan_modes_asks_before_parsing_or_planning(self) -> None:
+        async def run_case() -> None:
+            orchestrator = AgentOrchestrator()
+            orchestrator.message_router.classify = AsyncMock(
+                return_value=MessageRoute(
+                    intent_type=MessageIntentType.MODIFY_PLAN,
+                    turn_type=TurnType.MODIFY_CONSTRAINT,
+                    planning_mode=PlanningMode.FULL_REPLAN,
+                    confidence=0.35,
+                    references_previous_route=True,
+                    inherit_previous=True,
+                    candidate_planning_modes=[PlanningMode.FULL_REPLAN, PlanningMode.PARTIAL_REPLAN],
+                )
+            )
+            orchestrator.llm_client.complete = AsyncMock()
+            orchestrator.route_service.generate_routes = unittest.mock.Mock()
+            state = orchestrator.memory.get_state("s_ambiguous")
+            state.last_intent = enhance_intent_from_message(orchestrator._mock_parse_intent("上海一日游"), "上海一日游")
+            state.current_routes = [build_route()]
+            orchestrator.memory.save_state(state)
+
+            response = await orchestrator.handle_message(
+                ChatRequest(session_id="s_ambiguous", user_id="user_001", message="换个便宜点的")
+            )
+
+            self.assertTrue(response.need_clarification)
+            self.assertIn("重新生成", response.message)
+            self.assertIn("换掉", response.message)
+            orchestrator.llm_client.complete.assert_not_called()
             orchestrator.route_service.generate_routes.assert_not_called()
 
         import asyncio
@@ -248,6 +543,19 @@ class OrchestratorIntentFlowTest(unittest.TestCase):
         async def run_case() -> None:
             orchestrator = AgentOrchestrator()
             stub_route_planning_router(orchestrator)
+            orchestrator.message_router.classify = AsyncMock(
+                side_effect=[
+                    MessageRoute(intent_type=MessageIntentType.NEW_PLAN, planning_mode=PlanningMode.NEW_PLAN, confidence=1),
+                    MessageRoute(
+                        intent_type=MessageIntentType.NEW_PLAN,
+                        turn_type=TurnType.MODIFY_CONSTRAINT,
+                        planning_mode=PlanningMode.NEW_PLAN,
+                        inherit_previous=True,
+                        preserve_scenario=True,
+                        confidence=1,
+                    ),
+                ]
+            )
             orchestrator.llm_client.complete = AsyncMock(
                 side_effect=[
                     {
@@ -279,7 +587,7 @@ class OrchestratorIntentFlowTest(unittest.TestCase):
             state = orchestrator.memory.get_state("s1")
             self.assertEqual(state.last_intent.city, "上海")
             self.assertEqual(state.last_intent.duration_hours, 8)
-            self.assertIn("更省钱", state.last_intent.preferences)
+            self.assertIn("省钱", state.last_intent.preferences)
             self.assertIn("少排队", state.last_intent.preferences)
             self.assertIn("排队久", state.last_intent.avoid_tags)
 
@@ -291,6 +599,19 @@ class OrchestratorIntentFlowTest(unittest.TestCase):
         async def run_case() -> None:
             orchestrator = AgentOrchestrator()
             stub_route_planning_router(orchestrator)
+            orchestrator.message_router.classify = AsyncMock(
+                side_effect=[
+                    MessageRoute(intent_type=MessageIntentType.NEW_PLAN, planning_mode=PlanningMode.NEW_PLAN, confidence=1),
+                    MessageRoute(
+                        intent_type=MessageIntentType.NEW_PLAN,
+                        turn_type=TurnType.MODIFY_CONSTRAINT,
+                        planning_mode=PlanningMode.NEW_PLAN,
+                        inherit_previous=True,
+                        preserve_scenario=True,
+                        confidence=1,
+                    ),
+                ]
+            )
             orchestrator.llm_client.complete = AsyncMock(
                 side_effect=[
                     {
@@ -423,12 +744,12 @@ class OrchestratorIntentFlowTest(unittest.TestCase):
             self.assertEqual(state.last_intent.people_count, 2)
             self.assertEqual(state.last_intent.duration_hours, 8)
             self.assertEqual(state.last_intent.scenario, "friends_citywalk")
-            self.assertEqual(state.last_intent.preferences, ["拍照", "吃好"])
+            self.assertEqual(state.last_intent.preferences, ["拍照", "美食"])
             self.assertIsNotNone(state.trip_state)
             self.assertEqual(state.trip_state.city, "上海")
             self.assertEqual(state.trip_state.people_count, 2)
             self.assertEqual(state.trip_state.duration_hours, 8)
-            self.assertEqual(state.trip_state.soft_preferences, ["拍照", "吃好"])
+            self.assertEqual(state.trip_state.soft_preferences, ["拍照", "美食"])
             self.assertIn("meal_stop", state.trip_state.must_include)
             route_step = next(step for step in response.agent_trace if step.step == "route_message")
             delta_step = next(step for step in response.agent_trace if step.step == "apply_query_delta")
@@ -493,7 +814,7 @@ class OrchestratorIntentFlowTest(unittest.TestCase):
             self.assertEqual(state.last_intent.people_count, 2)
             self.assertEqual(state.last_intent.duration_hours, 8)
             self.assertIn("朋友同行", state.last_intent.preferences)
-            self.assertNotIn("吃好", state.last_intent.preferences)
+            self.assertNotIn("美食", state.last_intent.preferences)
             self.assertNotIn("吃饭", state.last_intent.preferences)
             self.assertNotIn("meal_stop", state.trip_state.must_include)
             self.assertNotIn("meal_stop", state.trip_state.implicit_needs)
@@ -622,6 +943,27 @@ class OrchestratorIntentFlowTest(unittest.TestCase):
         async def run_case() -> None:
             orchestrator = AgentOrchestrator()
             stub_route_planning_router(orchestrator)
+            orchestrator.message_router.classify = AsyncMock(
+                side_effect=[
+                    MessageRoute(intent_type=MessageIntentType.NEW_PLAN, planning_mode=PlanningMode.NEW_PLAN, confidence=1),
+                    MessageRoute(
+                        intent_type=MessageIntentType.NEW_PLAN,
+                        turn_type=TurnType.MODIFY_CONSTRAINT,
+                        planning_mode=PlanningMode.NEW_PLAN,
+                        inherit_previous=True,
+                        preserve_scenario=True,
+                        confidence=1,
+                    ),
+                    MessageRoute(
+                        intent_type=MessageIntentType.NEW_PLAN,
+                        turn_type=TurnType.ADD_CONSTRAINT,
+                        planning_mode=PlanningMode.NEW_PLAN,
+                        inherit_previous=True,
+                        preserve_scenario=True,
+                        confidence=1,
+                    ),
+                ]
+            )
             orchestrator.llm_client.complete = AsyncMock(
                 side_effect=[
                     {
@@ -664,12 +1006,11 @@ class OrchestratorIntentFlowTest(unittest.TestCase):
             state = orchestrator.memory.get_state("s1")
             self.assertEqual(state.last_intent.city, "上海")
             self.assertEqual(state.last_intent.duration_hours, 8)
-            self.assertIn("更省钱", state.last_intent.preferences)
+            self.assertIn("省钱", state.last_intent.preferences)
             self.assertIn("少排队", state.last_intent.preferences)
             self.assertIn("少走路", state.last_intent.preferences)
             self.assertIn("安静", state.last_intent.preferences)
             self.assertIn("排队久", state.last_intent.avoid_tags)
-            self.assertIn("步行多", state.last_intent.avoid_tags)
 
         import asyncio
 

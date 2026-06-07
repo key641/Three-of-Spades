@@ -1,6 +1,14 @@
 from app.agent.schemas import IntentDelta, QueryUnderstanding, SessionState, StateChangeSummary, TripState
 from app.agent.message_router import MessageRoute, TurnType
-from app.agent.intent_enhancer import extract_explicit_trip_fields, normalize_avoid_tags, normalize_preferences
+from app.agent.intent_enhancer import (
+    extract_explicit_trip_fields,
+    normalize_avoid_tags,
+    normalize_goal_preferences,
+    normalize_interest_preferences,
+    normalize_preferences,
+)
+from app.agent.tag_taxonomy import legacy_preferences_from_layers
+from app.agent.unit_normalizer import extract_standard_unit_fields
 from app.schemas.intent import Intent
 
 
@@ -58,28 +66,48 @@ def apply_session_context(intent: Intent, message: str, state: SessionState, rou
     base = state.last_intent.model_dump()
     current = intent.model_dump()
     merged = base | {
-        "preferences": normalize_preferences([*state.last_intent.preferences, *intent.preferences]),
+        "interest_tags": normalize_interest_preferences([*state.last_intent.interest_tags, *intent.interest_tags, *state.last_intent.preferences, *intent.preferences]),
+        "optimization_goals": normalize_goal_preferences([*state.last_intent.optimization_goals, *intent.optimization_goals, *state.last_intent.preferences, *intent.preferences]),
         "avoid_tags": normalize_avoid_tags([*state.last_intent.avoid_tags, *intent.avoid_tags]),
         "need_clarification": False,
     }
+    merged["preferences"] = normalize_preferences([*state.last_intent.preferences, *intent.preferences])
 
     if intent.city_from_message:
         merged["city"] = intent.city
         merged["city_from_message"] = True
 
     is_add_constraint = bool(route and route.turn_type == TurnType.ADD_CONSTRAINT)
-    explicit_fields = extract_explicit_trip_fields(message)
+    is_local_route_edit = _is_local_route_edit(message, route)
+    explicit_fields = extract_explicit_trip_fields(message) | extract_standard_unit_fields(message)
     for key in ("budget_per_person", "people_count", "start_time", "duration_hours"):
         if key in explicit_fields:
             merged[key] = explicit_fields[key]
-        elif not is_add_constraint and current.get(key) != Intent().model_dump().get(key):
+        elif not is_add_constraint and not is_local_route_edit and current.get(key) != Intent().model_dump().get(key):
             merged[key] = current[key]
 
-    preserve_scenario = bool(is_add_constraint and route and route.preserve_scenario)
+    preserve_scenario = bool((is_add_constraint or is_local_route_edit) and route and route.preserve_scenario)
     if not preserve_scenario and current.get("scenario") != Intent().model_dump().get("scenario"):
         merged["scenario"] = current["scenario"]
 
     return Intent.model_validate(merged)
+
+
+def _is_local_route_edit(message: str, route: MessageRoute | None) -> bool:
+    if not route or not route.inherit_previous:
+        return False
+    local_edit_terms = [
+        "换一家",
+        "替换",
+        "替代",
+        "替代方案",
+        "等待时间短",
+        "排队",
+        "当前路线",
+        "这条路线",
+        "route_",
+    ]
+    return bool(route.references_previous_route or any(term in message for term in local_edit_terms))
 
 
 def apply_query_delta(
@@ -94,7 +122,13 @@ def apply_query_delta(
     summary = StateChangeSummary()
 
     _apply_hard_constraint_changes(data, delta, summary)
+    added_interest = normalize_interest_preferences(delta.added_preferences)
+    removed_interest = normalize_interest_preferences(delta.removed_preferences)
+    added_goals = normalize_goal_preferences(delta.added_preferences)
+    removed_goals = normalize_goal_preferences(delta.removed_preferences)
     _apply_list_changes(data, "soft_preferences", delta.added_preferences, delta.removed_preferences, summary)
+    _apply_list_changes(data, "interest_tags", added_interest, removed_interest, summary)
+    _apply_list_changes(data, "optimization_goals", added_goals, removed_goals, summary)
     _apply_list_changes(data, "avoid_tags", delta.added_avoid_tags, delta.removed_avoid_tags, summary)
     promoted_needs = set(delta.added_must_include) & set(delta.removed_implicit_needs)
     visible_removed_implicit_needs = [value for value in delta.removed_implicit_needs if value not in promoted_needs]
@@ -106,7 +140,16 @@ def apply_query_delta(
             data["implicit_needs"] = [item for item in data["implicit_needs"] if item != value]
 
     if understanding.inherit_previous:
-        for key in ("city", "people_count", "start_time", "duration_hours", "budget_per_person", "scenario"):
+        for key in (
+            "city",
+            "people_count",
+            "target_district",
+            "target_business_area",
+            "start_time",
+            "duration_hours",
+            "budget_per_person",
+            "scenario",
+        ):
             if key not in summary.changed:
                 summary.kept.append(key)
 
@@ -117,6 +160,12 @@ def apply_query_delta(
         "duration_hours": data["duration_hours"],
         "budget_per_person": data["budget_per_person"],
     }
+    removed_legacy_preferences = set(normalize_preferences(delta.removed_preferences))
+    kept_soft_preferences = [value for value in data["soft_preferences"] if value not in removed_legacy_preferences]
+    data["soft_preferences"] = _unique([
+        *legacy_preferences_from_layers(data["interest_tags"], data["optimization_goals"]),
+        *kept_soft_preferences,
+    ])
 
     trip_state = TripState.model_validate(data)
     merged_intent = trip_state.to_intent()
@@ -142,7 +191,16 @@ def _apply_hard_constraint_changes(data: dict, delta: IntentDelta, summary: Stat
 
     changes = delta.added_hard_constraints | delta.modified_hard_constraints
     for key, value in changes.items():
-        if key not in {"city", "people_count", "start_time", "duration_hours", "budget_per_person", "scenario"}:
+        if key not in {
+            "city",
+            "people_count",
+            "target_district",
+            "target_business_area",
+            "start_time",
+            "duration_hours",
+            "budget_per_person",
+            "scenario",
+        }:
             data["hard_constraints"][key] = value
             continue
         previous = data.get(key)

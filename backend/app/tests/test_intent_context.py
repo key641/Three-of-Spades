@@ -27,7 +27,7 @@ class IntentContextTest(unittest.TestCase):
         self.assertEqual(intent.city, "上海")
         self.assertEqual(intent.duration_hours, 8)
         self.assertEqual(intent.start_time, "09:00")
-        self.assertEqual(intent.preferences, ["拍照", "更省钱", "少排队"])
+        self.assertEqual(intent.preferences, ["拍照", "省钱", "少排队"])
         self.assertEqual(intent.avoid_tags, ["排队久"])
 
     def test_explicit_new_city_starts_new_context(self) -> None:
@@ -68,7 +68,8 @@ class IntentContextTest(unittest.TestCase):
 
         self.assertEqual(intent.city, "上海")
         self.assertEqual(intent.duration_hours, 8)
-        self.assertEqual(intent.preferences, ["更省钱", "少排队", "少走路", "安静"])
+        self.assertEqual(intent.interest_tags, ["安静"])
+        self.assertEqual(intent.optimization_goals, ["省钱", "少排队", "少走路"])
         self.assertEqual(intent.avoid_tags, ["排队久", "步行多"])
 
     def test_add_constraint_preserves_previous_trip_shape_and_scenario(self) -> None:
@@ -98,7 +99,86 @@ class IntentContextTest(unittest.TestCase):
         self.assertEqual(intent.duration_hours, 8)
         self.assertEqual(intent.start_time, "09:00")
         self.assertEqual(intent.scenario, "friends_citywalk")
-        self.assertEqual(intent.preferences, ["拍照", "吃好"])
+        self.assertEqual(intent.preferences, ["拍照", "美食"])
+
+    def test_local_route_edit_preserves_hard_constraints_when_llm_infers_new_defaults(self) -> None:
+        state = SessionState(
+            session_id="s1",
+            last_intent=Intent(
+                city="上海",
+                people_count=1,
+                start_time="09:00",
+                duration_hours=4,
+                budget_per_person=300,
+                preferences=["网红打卡"],
+                avoid_tags=["商业街"],
+                scenario="friends_citywalk",
+            ),
+        )
+        parsed = Intent(
+            city="上海",
+            people_count=1,
+            start_time="12:00",
+            duration_hours=2,
+            budget_per_person=100,
+            preferences=["餐厅", "等待时间短", "替代方案"],
+            avoid_tags=["排队久"],
+            scenario="restaurant_alternative_short_wait",
+        )
+        route = MessageRoute(
+            intent_type=MessageIntentType.MODIFY_PLAN,
+            turn_type=TurnType.MODIFY_CONSTRAINT,
+            references_previous_route=True,
+            inherit_previous=True,
+            preserve_scenario=True,
+        )
+
+        intent = apply_session_context(parsed, "餐厅排队 90 分钟，帮我换一个等待时间短的替代方案", state, route)
+
+        self.assertEqual(intent.start_time, "09:00")
+        self.assertEqual(intent.duration_hours, 4)
+        self.assertEqual(intent.budget_per_person, 300)
+        self.assertEqual(intent.scenario, "friends_citywalk")
+        self.assertIn("拍照", intent.preferences)
+        self.assertIn("排队久", intent.avoid_tags)
+
+    def test_local_route_edit_allows_explicit_hard_constraint_changes(self) -> None:
+        state = SessionState(
+            session_id="s1",
+            last_intent=Intent(
+                city="上海",
+                people_count=1,
+                start_time="09:00",
+                duration_hours=4,
+                budget_per_person=300,
+                preferences=["网红打卡"],
+                scenario="friends_citywalk",
+            ),
+        )
+        parsed = Intent(
+            city="上海",
+            people_count=2,
+            start_time="12:00",
+            duration_hours=2,
+            budget_per_person=100,
+            preferences=["等待时间短"],
+            scenario="restaurant_alternative_short_wait",
+        )
+        route = MessageRoute(
+            intent_type=MessageIntentType.MODIFY_PLAN,
+            turn_type=TurnType.MODIFY_CONSTRAINT,
+            references_previous_route=True,
+            inherit_previous=True,
+            preserve_scenario=True,
+        )
+
+        intent = apply_session_context(parsed, "换一家，改成两个人下午两点，总预算200", state, route)
+
+        self.assertEqual(intent.people_count, 2)
+        self.assertEqual(intent.start_time, "14:00")
+        self.assertEqual(intent.budget_per_person, 100)
+        self.assertEqual(intent.duration_hours, 4)
+        self.assertEqual(intent.scenario, "friends_citywalk")
 
 
 if __name__ == "__main__":

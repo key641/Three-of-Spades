@@ -36,6 +36,30 @@ class SessionStateTest(unittest.TestCase):
         self.assertEqual(memory.get_current_routes("s1"), [])
         self.assertEqual(memory.get_state("s1").current_routes, [])
 
+    def test_session_state_tracks_clarification_rounds(self) -> None:
+        state = SessionState(session_id="s1")
+
+        self.assertEqual(state.clarification_count, 0)
+
+        state.clarification_count += 1
+
+        self.assertEqual(state.clarification_count, 1)
+
+    def test_session_memory_persists_clarification_count(self) -> None:
+        memory = SessionMemory()
+
+        memory.save_turn_result(
+            session_id="s1",
+            user_message="帮我规划路线",
+            assistant_message="我先确认一下城市。",
+            intent=Intent(city="上海"),
+            user_profile=UserProfile(user_id="u1"),
+            routes=[],
+            clarification_count=1,
+        )
+
+        self.assertEqual(memory.get_state("s1").clarification_count, 1)
+
     def test_agent_state_collects_current_turn_fields(self) -> None:
         state = AgentState(
             session_id="s1",

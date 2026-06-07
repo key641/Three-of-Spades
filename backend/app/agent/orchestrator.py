@@ -1,9 +1,12 @@
+import asyncio
 import inspect
 import json
 import logging
+import math
 import re
 from collections.abc import Awaitable, Callable
 
+from app.agent.demo_mock import build_mock_trace, build_mock_routes, build_demo_clarification, is_demo_trigger, stream_mock_trace
 from app.agent.memory import SessionMemory
 from app.agent.intent_context import apply_query_delta, apply_session_context
 from app.agent.intent_enhancer import (
@@ -13,18 +16,24 @@ from app.agent.intent_enhancer import (
     normalize_avoid_tags,
     normalize_preferences,
 )
-from app.agent.message_router import MessageIntentType, MessageRouter
+from app.agent.unit_normalizer import extract_standard_unit_fields
+from app.agent.clarification_policy import ClarificationDecision, ClarificationPolicy
+from app.agent.message_router import MessageIntentType, MessageRouter, PlanningMode
 from app.agent.prompts import SYSTEM_PROMPT
+from app.agent.replan_intent_parser import ReplanIntentParser
 from app.agent.route_detail_handler import RouteDetailHandler
 from app.agent.schemas import IntentDelta, QueryUnderstanding, StateChangeSummary, TripState
+from app.agent.unit_normalizer import normalize_delta_units
 from app.llm.provider import get_llm_client
 from app.schemas.chat import AgentTraceStep, ChatRequest, ChatResponse
 from app.schemas.intent import Intent
 from app.schemas.poi import POI
-from app.schemas.route import Route
+from app.schemas.route import ReplanRequest, Route
 from app.schemas.route import RoutePlanRequest
 from app.services.poi_service import POIService
+from app.services.fine_rank_service import FineRankService
 from app.services.profile_service import ProfileService
+from app.services.replan_service import ReplanService
 from app.services.route_service import RouteService
 
 
@@ -34,19 +43,29 @@ logger = logging.getLogger("app.agent.orchestrator")
 class AgentOrchestrator:
     """A-owned module: coordinates intent, profile, POI search, and route planning."""
 
+    DEFAULT_CITY_STARTS = {
+        "上海": {"name": "静安寺站", "lat": 31.2231, "lng": 121.4466},
+        "北京": {"name": "西单站", "lat": 39.9072, "lng": 116.3740},
+    }
+
     def __init__(self) -> None:
         self.memory = SessionMemory()
         self.llm_client = get_llm_client()
         self.message_router = MessageRouter(self.llm_client)
+        self.clarification_policy = ClarificationPolicy()
+        self.replan_intent_parser = ReplanIntentParser()
         self.route_detail_handler = RouteDetailHandler()
         self.profile_service = ProfileService()
         self.poi_service = POIService()
+        self.fine_rank_service = FineRankService()
         self.route_service = RouteService()
+        self.replan_service = ReplanService()
 
     async def handle_message(
         self,
         request: ChatRequest,
         progress_callback: Callable[[AgentTraceStep], Awaitable[None] | None] | None = None,
+        routes_callback: Callable[[list[Route]], Awaitable[None] | None] | None = None,
     ) -> ChatResponse:
         trace: list[AgentTraceStep] = []
         emitted_trace_count = 0
@@ -63,6 +82,13 @@ class AgentOrchestrator:
                 if inspect.isawaitable(result):
                     await result
 
+        async def emit_routes(routes: list[Route]) -> None:
+            if routes_callback is None:
+                return
+            result = routes_callback(routes)
+            if inspect.isawaitable(result):
+                await result
+
         logger.info(
             "chat start session_id=%s user_id=%s event_type=%s message=%s",
             request.session_id,
@@ -72,7 +98,21 @@ class AgentOrchestrator:
         )
 
         session_state = self.memory.get_state(request.session_id)
-        message_route = await self.message_router.classify(request.message, session_state)
+        if self._is_structured_replan_request(request, session_state):
+            return self._handle_structured_replan(request, session_state, trace)
+
+        # ── 并行加速：首轮新对话时，route_message 分类和 parse_intent 可以同时跑 ──────
+        # 非首轮（有 last_intent）时仍串行，因为 parse_intent 需要等 route 结果决定是否继承上下文。
+        is_first_turn = session_state.last_intent is None
+        if is_first_turn:
+            message_route, intent_prefetch = await asyncio.gather(
+                self.message_router.classify(request.message, session_state),
+                self._llm_parse_intent_safe(request.message, request),
+            )
+        else:
+            message_route = await self.message_router.classify(request.message, session_state)
+            intent_prefetch = None
+
         trace.append(
             AgentTraceStep(
                 step="route_message",
@@ -91,7 +131,13 @@ class AgentOrchestrator:
         if message_route.intent_type == MessageIntentType.GENERAL_CHAT:
             return await self._handle_direct_llm_chat(request, trace)
 
-        intent = await self._parse_intent(request.message, trace)
+        if message_route.planning_mode == PlanningMode.PARTIAL_REPLAN and session_state.current_routes:
+            partial_response = self._handle_partial_replan(request, session_state, trace)
+            if partial_response:
+                return partial_response
+
+        # 使用预取到的 intent（首轮），或重新解析（非首轮）
+        intent = await self._parse_intent(request.message, trace, request, prefetched=intent_prefetch)
         await emit_pending_trace()
         intent = enhance_intent_from_message(intent, request.message)
         contextual_intent = apply_session_context(intent, request.message, session_state, message_route)
@@ -135,29 +181,148 @@ class AgentOrchestrator:
         await emit_pending_trace()
         logger.info("chat intent session_id=%s intent=%s", request.session_id, intent.model_dump())
 
-        user_profile = self.profile_service.get_profile(request.user_id, request)
+        # ── Demo 追问拦截：第一轮命中触发词且无 target_district 时，直接返回预设追问卡片 ──
+        # 这样不依赖 clarification_policy（会被 GPS 起点绕过），保证 demo 流程必问区域
+        _demo_clarify_msg = request.message or ""
+        _demo_has_district = bool(intent.target_district or request.target_district)
+        _demo_is_new_plan = (not session_state) or (
+            not session_state.recent_messages
+        ) or message_route.planning_mode == PlanningMode.NEW_PLAN
+        _demo_clarify_city = intent.city or request.city or "北京"
+        if (
+            is_demo_trigger(_demo_clarify_msg)
+            and not _demo_has_district
+            and _demo_clarify_city == "北京"
+        ):
+            logger.info(
+                "demo_clarification session_id=%s msg=%s",
+                request.session_id,
+                _demo_clarify_msg[:30],
+            )
+            # 从 GPS 或起点名称推断当前区
+            _gps_district = "西城区"
+            if request.start_location_name and "西城" in request.start_location_name:
+                _gps_district = "西城区"
+            elif request.start_location_name and "朝阳" in request.start_location_name:
+                _gps_district = "朝阳区"
+            elif request.start_location_name and "海淀" in request.start_location_name:
+                _gps_district = "海淀区"
+            return build_demo_clarification(
+                session_id=request.session_id,
+                message=_demo_clarify_msg,
+                city=_demo_clarify_city,
+                current_district=_gps_district,
+                trace=trace,
+            )
+
+        # ── 追问判断必须在应用默认起点之前执行 ──────────────────────────────
+        # 若先执行 _apply_default_city_start，会把 intent.start_location_name 设为"西单站"等默认值，
+        # 导致 _is_missing_city 误判为"用户已提供具体地点"而跳过城市/区域追问。
+        clarification = self.clarification_policy.evaluate(
+            request=request,
+            intent=intent,
+            message_route=message_route,
+            session_state=session_state,
+        )
+        if clarification.need_clarification:
+            return self._handle_clarification(request, session_state, trace, clarification, intent)
+
+        # ── 追问通过后再应用起点：优先 GPS，兜底默认商圈 ────────────────────
+        # 优先使用前端传来的 GPS 坐标作为起点（LLM 不会输出具体坐标）
+        # 但若 GPS 距城市 POI 过远（> 8km），则 fallback 到默认商圈起点，避免时间窗口不足
+        if intent.start_lat is None and intent.start_lng is None:
+            if request.start_lat is not None and request.start_lng is not None:
+                city_pois = self.poi_service.search(Intent(city=intent.city), limit=5)
+                min_dist = self._min_distance_to_pois(request.start_lat, request.start_lng, city_pois)
+                if min_dist is not None and min_dist <= 8.0:
+                    intent = intent.model_copy(update={
+                        "start_lat": request.start_lat,
+                        "start_lng": request.start_lng,
+                        "start_location_name": intent.start_location_name or "当前位置",
+                    })
+                    trace.append(
+                        AgentTraceStep(
+                            step="apply_gps_start",
+                            label=f"使用GPS坐标作为起点：({request.start_lat:.4f}, {request.start_lng:.4f})",
+                            status="done",
+                            details={
+                                "start_lat": request.start_lat,
+                                "start_lng": request.start_lng,
+                                "min_dist_to_poi_km": round(min_dist, 1) if min_dist is not None else None,
+                                "reason": "使用前端传入的 GPS 坐标作为规划起点。",
+                            },
+                        )
+                    )
+                    await emit_pending_trace()
+                # else: GPS 距 POI 太远，走下面的默认商圈逻辑
+        intent, default_start = self._apply_default_city_start(intent)
+        if default_start:
+            trace.append(
+                AgentTraceStep(
+                    step="apply_default_start",
+                    label=f"使用{intent.city}默认起点：{default_start['name']}",
+                    status="done",
+                    details={
+                        "city": intent.city,
+                        "start_location_name": default_start["name"],
+                        "start_lat": default_start["lat"],
+                        "start_lng": default_start["lng"],
+                        "reason": "用户未提供起点坐标，使用 demo 城市商圈默认起点。",
+                    },
+                )
+            )
+            await emit_pending_trace()
+
+        user_profile = self._profile_for_turn(request, session_state, intent)
         trace.append(
             AgentTraceStep(
                 step="get_user_profile",
-                label="读取用户画像",
+                label="读取并更新用户画像",
                 status="done",
                 details={
                     "preferences": user_profile.preferences,
+                    "interest_tags": user_profile.interest_tags,
+                    "optimization_goals": user_profile.optimization_goals,
                     "avoid_tags": user_profile.avoid_tags,
                     "tags": user_profile.tags,
+                    "budget_sensitivity": user_profile.budget_sensitivity,
+                    "walking_tolerance": user_profile.walking_tolerance,
+                    "crowd_tolerance": user_profile.crowd_tolerance,
+                    "category_preferences": user_profile.category_preferences,
+                    "preferred_route_roles": user_profile.preferred_route_roles,
+                    "preferred_experience_tags": user_profile.preferred_experience_tags,
                 },
             )
         )
         await emit_pending_trace()
         logger.info("step done session_id=%s step=get_user_profile profile=%s", request.session_id, user_profile.model_dump())
 
-        strategy_weights = self.profile_service.build_strategy_weights(intent, user_profile)
+        strategy_tags = self.profile_service.strategy_service.infer_tags(request.message, intent, user_profile)
+        trace.append(
+            AgentTraceStep(
+                step="derive_strategy_tags",
+                label="生成本轮策略标签",
+                status="done",
+                details={"strategy_tags": [tag.model_dump() for tag in strategy_tags]},
+            )
+        )
+        await emit_pending_trace()
+        logger.info(
+            "step done session_id=%s step=derive_strategy_tags tags=%s",
+            request.session_id,
+            [tag.model_dump() for tag in strategy_tags],
+        )
+
+        strategy_weights = self.profile_service.build_strategy_weights(intent, user_profile, strategy_tags)
         trace.append(
             AgentTraceStep(
                 step="build_strategy_weights",
                 label="生成偏好权重",
                 status="done",
-                details={"weights": strategy_weights.model_dump()},
+                details={
+                    "weights": strategy_weights.model_dump(),
+                    "strategy_tags": [tag.model_dump() for tag in strategy_tags],
+                },
             )
         )
         await emit_pending_trace()
@@ -167,7 +332,65 @@ class AgentOrchestrator:
             strategy_weights.model_dump(),
         )
 
-        pois = self.poi_service.search(intent, user_profile=user_profile)
+        # ── Demo Mock 拦截：触发词命中时直接返回预设路线，绕过真实 POI 搜索 ─────────────────
+        # 触发条件：消息或上轮消息中含有 demo 触发词（聚餐/餐厅/吃饭等）
+        # 且 intent.city == 北京 且 intent.target_district 有值（已完成追问）
+        _demo_source_msg = request.message or ""
+        # 从 recent_messages 找上一轮用户消息（角色为 user 的最后一条，不含当前轮）
+        _last_msg = next(
+            (m.content for m in reversed(session_state.recent_messages) if m.role == "user"),
+            "",
+        ) if session_state and session_state.recent_messages else ""
+        _demo_district = intent.target_district or request.target_district
+        _demo_city = intent.city or request.city or "北京"
+        if (
+            (is_demo_trigger(_demo_source_msg) or is_demo_trigger(_last_msg))
+            and _demo_city == "北京"
+            and _demo_district
+        ):
+            logger.info("demo_mock session_id=%s district=%s", request.session_id, _demo_district)
+            mock_routes = build_mock_routes(_demo_district)
+            full_trace = build_mock_trace(
+                _demo_source_msg or _last_msg,
+                district=_demo_district,
+                city=_demo_city,
+                people_count=intent.people_count or 6,
+            )
+            # 流式逐步推送 trace（带延迟，约 10s 完成），路线在 generate_routes 步骤后推送
+            await stream_mock_trace(
+                steps=full_trace,
+                emit=progress_callback,
+                routes_at_step="generate_routes",
+                routes=mock_routes,
+                emit_routes=routes_callback,
+            )
+            reply = (
+                f"好的！根据你在**{_demo_city}{_demo_district}**附近的需求，"
+                f"我为你规划了 {len(mock_routes)} 条适合 {intent.people_count or 6} 人聚餐的路线，"
+                f"从轻松老字号到精致宴请都有覆盖，你看哪条更符合心意？"
+            )
+            self.memory.save_turn_result(
+                session_id=request.session_id,
+                user_message=request.message,
+                assistant_message=reply,
+                intent=intent,
+                user_profile=user_profile,
+                routes=mock_routes,
+                trip_state=trip_state,
+            )
+            return ChatResponse(
+                session_id=request.session_id,
+                message=reply,
+                need_clarification=False,
+                clarifying_question=None,
+                intent=intent,
+                user_profile=user_profile,
+                routes=mock_routes,
+                agent_trace=full_trace,
+            )
+        # ── Demo Mock 拦截结束 ──────────────────────────────────────────────────────
+
+        pois = self.poi_service.search(intent, user_profile=user_profile, strategy_tags=strategy_tags)
         trace.append(
             AgentTraceStep(
                 step="search_pois",
@@ -177,6 +400,7 @@ class AgentOrchestrator:
                     "count": len(pois),
                     "city": intent.city,
                     "names": [poi.name for poi in pois[:5]],
+                    "strategy_tags": [tag.model_dump() for tag in strategy_tags],
                 },
             )
         )
@@ -187,15 +411,106 @@ class AgentOrchestrator:
             len(pois),
             [poi.name for poi in pois],
         )
+        if not pois:
+            message = self._no_poi_data_message(intent)
+            trace.append(
+                AgentTraceStep(
+                    step="no_poi_data",
+                    label="当前城市或区域没有可用 POI 数据",
+                    status="fallback",
+                    details={
+                        "city": intent.city,
+                        "target_district": intent.target_district,
+                        "target_business_area": intent.target_business_area,
+                    },
+                )
+            )
+            await emit_pending_trace()
+            self.memory.save_turn_result(
+                session_id=request.session_id,
+                user_message=request.message,
+                assistant_message=message,
+                intent=intent,
+                user_profile=user_profile,
+                routes=[],
+                trip_state=trip_state,
+            )
+            return ChatResponse(
+                session_id=request.session_id,
+                message=message,
+                need_clarification=False,
+                clarifying_question=None,
+                intent=intent,
+                user_profile=user_profile,
+                routes=[],
+                agent_trace=trace,
+            )
+        expanded_recall = False
+        relaxed_min_stops = False
+        final_pois = pois
 
-        routes = self.route_service.generate_routes(
-            RoutePlanRequest(intent=intent, user_profile=user_profile, strategy_weights=strategy_weights, candidate_pois=pois)
-        ).routes
+        async def build_routes(candidate_pois, allow_min_stops_fallback: bool) -> list[Route]:
+            scores, fine_rank_details = self.fine_rank_service.score_map(
+                candidate_pois,
+                intent,
+                user_profile,
+                strategy_tags=strategy_tags,
+                objective="balanced",
+            )
+            route_request = RoutePlanRequest(
+                intent=intent,
+                user_profile=user_profile,
+                strategy_weights=strategy_weights,
+                strategy_tags=strategy_tags,
+                candidate_pois=candidate_pois,
+                poi_relevance_scores=scores,
+                poi_fine_rank_details=fine_rank_details,
+            )
+            response = await asyncio.to_thread(
+                self.route_service.generate_routes,
+                route_request,
+                None,
+                None,
+                allow_min_stops_fallback,
+            )
+            return response.routes
+
+        routes = await build_routes(pois, allow_min_stops_fallback=False)
+        for recall_limit in [64, 80]:
+            if len(routes) >= 3:
+                break
+            expanded_recall = True
+            expanded_pois = self.poi_service.search(
+                intent,
+                user_profile=user_profile,
+                strategy_tags=strategy_tags,
+                limit=recall_limit,
+                relax_preferences=True,
+            )
+            expanded_routes = await build_routes(expanded_pois, allow_min_stops_fallback=False)
+            if len(expanded_routes) > len(routes):
+                routes = expanded_routes
+                final_pois = expanded_pois
+
+        if len(routes) < 3:
+            relaxed_routes = await build_routes(final_pois, allow_min_stops_fallback=True)
+            if len(relaxed_routes) > len(routes):
+                routes = relaxed_routes
+                relaxed_min_stops = any(len(route.stops) == 2 for route in routes)
+
+        if routes:
+            await emit_routes(routes)
         trace.append(AgentTraceStep(step="generate_routes", label="生成多目标路线", status="done"))
         trace[-1].details = {
             "count": len(routes),
             "route_titles": [route.title for route in routes[:5]],
             "objectives": [route.objective for route in routes[:5]],
+            "cross_route_dedup": True,
+            "cross_route_poi_dedup": True,
+            "expanded_recall": expanded_recall,
+            "final_candidate_poi_count": len(final_pois),
+            "relaxed_min_stops_to_2": relaxed_min_stops,
+            "min_stop_counts": [len(route.stops) for route in routes[:5]],
         }
         await emit_pending_trace()
         logger.info(
@@ -231,6 +546,129 @@ class AgentOrchestrator:
             agent_trace=trace,
         )
 
+    def _min_distance_to_pois(self, lat: float, lng: float, pois: list[POI]) -> float | None:
+        """计算给定坐标到 POI 列表中最近一个的距离（km），无 POI 时返回 None。"""
+        if not pois:
+            return None
+        min_dist = float("inf")
+        for poi in pois:
+            dlat = math.radians(poi.lat - lat)
+            dlng = math.radians(poi.lng - lng)
+            a = (
+                math.sin(dlat / 2) ** 2
+                + math.cos(math.radians(lat)) * math.cos(math.radians(poi.lat)) * math.sin(dlng / 2) ** 2
+            )
+            dist = 6371 * 2 * math.atan2(math.sqrt(a), math.sqrt(1 - a))
+            if dist < min_dist:
+                min_dist = dist
+        return min_dist if min_dist != float("inf") else None
+
+    def _apply_default_city_start(self, intent: Intent) -> tuple[Intent, dict[str, object] | None]:
+        if intent.start_lat is not None and intent.start_lng is not None:
+            return intent, None
+        default_start = self.DEFAULT_CITY_STARTS.get(intent.city)
+        if default_start is None:
+            return intent, None
+        updated = intent.model_copy(
+            update={
+                "start_location_name": intent.start_location_name or default_start["name"],
+                "start_lat": default_start["lat"],
+                "start_lng": default_start["lng"],
+            }
+        )
+        return updated, default_start
+
+    def _is_structured_replan_request(self, request: ChatRequest, session_state) -> bool:
+        return bool(
+            session_state.current_routes
+            and request.event_type in {"replace_poi", "avoid_poi", "queue_spike", "traffic_jam", "user_tired", "weather_change"}
+        )
+
+    def _handle_structured_replan(self, request: ChatRequest, session_state, trace: list[AgentTraceStep]) -> ChatResponse:
+        selected_route_id = request.selected_route_id or self._default_route_id(session_state.current_routes)
+        affected_poi_id = request.target_poi_id or self._default_replacement_target(session_state.current_routes, selected_route_id)
+        event_payload = dict(request.event_payload)
+        if affected_poi_id:
+            event_payload.setdefault("affected_poi_id", affected_poi_id)
+        if request.event_type == "replace_poi":
+            event_payload.setdefault("force_replace", True)
+
+        trace.append(
+            AgentTraceStep(
+                step="local_replan",
+                label="局部替换 POI" if request.event_type == "replace_poi" else "局部重规划",
+                status="done",
+                details={
+                    "event_type": request.event_type,
+                    "selected_route_id": selected_route_id,
+                    "affected_poi_id": affected_poi_id,
+                },
+            )
+        )
+        response = self.replan_service.replan(
+            ReplanRequest(
+                session_id=request.session_id,
+                selected_route_id=selected_route_id,
+                event_type=request.event_type,
+                event_label=request.message or "局部调整",
+                current_routes=session_state.current_routes,
+                current_lat=request.current_lat,
+                current_lng=request.current_lng,
+                current_time=request.event_payload.get("current_time"),
+                event_payload=event_payload,
+                intent=session_state.last_intent,
+                user_profile=session_state.user_profile,
+            )
+        )
+        routes = response.routes
+        message = self._build_replan_message(routes, selected_route_id)
+        self.memory.save_turn_result(
+            session_id=request.session_id,
+            user_message=request.message,
+            assistant_message=message,
+            intent=session_state.last_intent or Intent(),
+            user_profile=session_state.user_profile or self.profile_service.get_profile(request.user_id, request),
+            routes=routes,
+            trip_state=session_state.trip_state,
+        )
+        return ChatResponse(
+            session_id=request.session_id,
+            message=message,
+            need_clarification=False,
+            clarifying_question=None,
+            intent=session_state.last_intent,
+            user_profile=session_state.user_profile,
+            routes=routes,
+            agent_trace=trace,
+        )
+
+    def _default_route_id(self, routes: list[Route]) -> str | None:
+        return routes[0].route_id if routes else None
+
+    def _default_replacement_target(self, routes: list[Route], selected_route_id: str | None) -> str | None:
+        route = next((candidate for candidate in routes if candidate.route_id == selected_route_id), routes[0] if routes else None)
+        if route is None or not route.stops:
+            return None
+        replaceable = route.stops[1:] or route.stops
+        target = max(
+            replaceable,
+            key=lambda stop: (
+                stop.queue_minutes,
+                1 if stop.walking_intensity == "high" else 0,
+                stop.estimated_cost,
+            ),
+        )
+        return target.poi_id
+
+    def _build_replan_message(self, routes: list[Route], selected_route_id: str | None) -> str:
+        route = next((candidate for candidate in routes if candidate.route_id == selected_route_id), routes[0] if routes else None)
+        if route is None:
+            return "当前没有可调整的路线，我需要先生成一条路线再帮你换一家。"
+        if route.changed_stops:
+            change = route.changed_stops[0]
+            return f"已在当前路线里把「{change.from_name}」换成「{change.to_name}」，并重新计算了后续交通、排队和评分。"
+        return route.replan_reason or "已复核当前路线，暂时没有找到更合适的替代点。"
+
     def _format_message_route_label(self, message_route) -> str:
         route_label = self._turn_type_label(message_route.turn_type.value if message_route.turn_type else "")
         if not route_label:
@@ -252,17 +690,151 @@ class AgentOrchestrator:
             "intent_type_label": self._intent_type_label(intent_type),
             "turn_type": turn_type,
             "turn_type_label": self._turn_type_label(turn_type or ""),
+            "planning_mode": message_route.planning_mode.value if message_route.planning_mode else None,
+            "candidate_planning_modes": [mode.value for mode in message_route.candidate_planning_modes],
             "inherit_previous": message_route.inherit_previous,
             "preserve_scenario": message_route.preserve_scenario,
             "references_previous_route": message_route.references_previous_route,
             "question_type": message_route.detail_type,
             "confidence": round(message_route.confidence, 2),
+            "raw_confidence": message_route.raw_confidence,
+            "confidence_source": message_route.confidence_source,
+            "confidence_reasons": message_route.confidence_reasons,
+            "reason": message_route.reason,
+            "evidence": message_route.evidence,
         }
+
+    def _handle_partial_replan(
+        self,
+        request: ChatRequest,
+        session_state,
+        trace: list[AgentTraceStep],
+    ) -> ChatResponse | None:
+        parsed_event = self.replan_intent_parser.parse(request.message, session_state.current_routes)
+        if parsed_event is None:
+            return None
+
+        intent = session_state.last_intent or Intent()
+        user_profile = session_state.user_profile or self.profile_service.get_profile(request.user_id, request)
+        trip_state = session_state.trip_state or TripState.from_intent(intent)
+        replan_request = ReplanRequest(
+            session_id=request.session_id,
+            event_type=parsed_event.event_type,
+            event_label=parsed_event.event_label,
+            current_routes=session_state.current_routes,
+            selected_route_id=parsed_event.selected_route_id,
+            current_poi_id=parsed_event.current_poi_id,
+            locked_poi_ids=trip_state.locked_stop_ids,
+            event_payload=parsed_event.event_payload,
+            intent=intent,
+            user_profile=user_profile,
+        )
+        replan_response = self.replan_service.replan(replan_request)
+        message = self._format_partial_replan_message(replan_response.routes)
+        trace.append(
+            AgentTraceStep(
+                step="partial_replan",
+                label="基于原方案局部重规划",
+                status="done",
+                details={
+                    "event_type": parsed_event.event_type,
+                    "event_label": parsed_event.event_label,
+                    "selected_route_id": parsed_event.selected_route_id,
+                    "current_poi_id": parsed_event.current_poi_id,
+                },
+            )
+        )
+        self.memory.save_turn_result(
+            session_id=request.session_id,
+            user_message=request.message,
+            assistant_message=message,
+            intent=intent,
+            user_profile=user_profile,
+            routes=replan_response.routes,
+            trip_state=trip_state,
+        )
+        return ChatResponse(
+            session_id=request.session_id,
+            message=message,
+            need_clarification=False,
+            clarifying_question=None,
+            intent=intent,
+            user_profile=user_profile,
+            routes=replan_response.routes,
+            agent_trace=trace,
+        )
+
+    def _handle_clarification(
+        self,
+        request: ChatRequest,
+        session_state,
+        trace: list[AgentTraceStep],
+        decision: ClarificationDecision,
+        intent: Intent | None = None,
+    ) -> ChatResponse:
+        trace.append(
+            AgentTraceStep(
+                step="clarify_intent",
+                label="需要澄清用户需求",
+                status="done",
+                details=decision.model_dump(),
+            )
+        )
+        message = decision.question
+        # 追问计数 +1，确保下一轮不再追问
+        session_state.clarification_count = getattr(session_state, "clarification_count", 0) + 1
+        self.memory.save_turn_result(
+            session_id=request.session_id,
+            user_message=request.message,
+            assistant_message=message,
+            intent=intent or session_state.last_intent,
+            user_profile=session_state.user_profile,
+            routes=session_state.current_routes,
+            trip_state=session_state.trip_state,
+            clarification_count=session_state.clarification_count,
+        )
+        return ChatResponse(
+            session_id=request.session_id,
+            message=message,
+            need_clarification=True,
+            clarifying_question=message,
+            clarification_type=decision.clarification_type,
+            clarification_groups=decision.clarification_groups,
+            inferred_context=decision.inferred_context,
+            intent=intent,
+            user_profile=session_state.user_profile,
+            routes=session_state.current_routes,
+            agent_trace=trace,
+        )
+
+    def _format_partial_replan_message(self, routes: list[Route]) -> str:
+        if not routes:
+            return "我尝试基于原方案做局部重规划，但当前没有可调整的路线。"
+        route = routes[0]
+        reason = route.replan_reason or "已基于原方案完成局部重规划。"
+        changes = [f"{change.from_name or change.from_poi_id}换成{change.to_name or change.to_poi_id}" for change in route.changed_stops]
+        warning_text = "；".join(route.live_warnings[:2])
+        parts = [reason]
+        if changes:
+            parts.append("调整：" + "、".join(changes))
+        if warning_text:
+            parts.append("提醒：" + warning_text)
+        parts.append(f"当前路线人均约 {route.total_cost_per_person} 元，排队约 {route.total_queue_minutes} 分钟。")
+        return "\n".join(parts)
+
+    def _profile_for_turn(self, request: ChatRequest, session_state, intent: Intent):
+        has_request_profile = self.profile_service._request_has_profile_fields(request)
+        if session_state.user_profile and not has_request_profile:
+            base_profile = session_state.user_profile
+        else:
+            base_profile = self.profile_service.get_profile(request.user_id, request)
+        return self.profile_service.update_from_chat(base_profile, intent, message=request.message)
 
     def _intent_type_label(self, intent_type: str) -> str:
         return {
             "new_plan": "新规划",
             "modify_plan": "修改已有路线",
+            "replan": "局部重规划",
             "route_detail_question": "路线追问",
             "general_chat": "普通聊天",
         }.get(intent_type, intent_type)
@@ -284,10 +856,20 @@ class AgentOrchestrator:
             "start_time": intent.start_time,
             "duration_hours": intent.duration_hours,
             "budget_per_person": intent.budget_per_person,
+            "target_district": intent.target_district,
+            "target_business_area": intent.target_business_area,
+            "interest_tags": intent.interest_tags,
+            "optimization_goals": intent.optimization_goals,
             "preferences": intent.preferences,
             "avoid_tags": intent.avoid_tags,
             "scenario": intent.scenario,
         }
+
+    def _no_poi_data_message(self, intent: Intent) -> str:
+        region = intent.target_business_area or intent.target_district
+        if region:
+            return f"当前在{intent.city}{region}还没有可用 POI 数据，可以换一个城市或区域，我再继续帮你规划。"
+        return f"当前还没有{intent.city}的可用 POI 数据，可以换一个城市，我再继续帮你规划。"
 
     async def _parse_query_delta(
         self,
@@ -304,7 +886,7 @@ class AgentOrchestrator:
             payload = await self._llm_parse_query_delta(message, session_state)
             understanding = QueryUnderstanding.model_validate(payload.get("understanding", {}))
             delta = IntentDelta.model_validate(payload.get("delta", {}))
-            delta = self._normalize_intent_delta(delta)
+            delta = self._normalize_intent_delta(delta, message, session_state)
             trace.append(
                 AgentTraceStep(
                     step="parse_query_delta",
@@ -348,8 +930,8 @@ class AgentOrchestrator:
                 "added_hard_constraints": "object",
                 "modified_hard_constraints": "object; explicit user changes such as people_count=2",
                 "removed_hard_constraints": "array",
-                "added_preferences": "array using canonical labels",
-                "removed_preferences": "array using canonical labels",
+                "added_preferences": "array using canonical labels; compatibility field, may include interest tags or optimization goals",
+                "removed_preferences": "array using canonical labels; compatibility field, may include interest tags or optimization goals",
                 "added_avoid_tags": "array using canonical labels",
                 "removed_avoid_tags": "array using canonical labels",
                 "added_implicit_needs": "array",
@@ -368,7 +950,17 @@ class AgentOrchestrator:
                         "你是路线规划 Agent 的状态变更解析器，只输出 JSON object。"
                         "你的任务不是重写完整 Intent，而是比较用户本轮消息和上一轮 TripState，输出 QueryUnderstanding 和 IntentDelta。"
                         "本轮用户明确说出的硬约束必须进入 modified_hard_constraints，例如人数、时长、预算、开始时间、城市。"
-                        "用户否定的偏好必须进入 removed_preferences 或 removed_must_include。"
+                        "所有结构化字段必须输出系统标准单位，不能直接抽用户原文里的数字："
+                        "duration_hours 必须是小时数，1天/一天/一日游=8，半天/半日游=4，2天=16，120分钟=2；"
+                        "budget_per_person 必须是人民币元/人，总预算需要按人数换算成人均预算，人均预算保持原值；"
+                        "people_count 必须是整数人数，两个人/双人/我们俩=2；"
+                        "start_time 必须是 24 小时制 HH:MM，下午两点=14:00，晚上七点=19:00。"
+                        "示例：用户说“改成上海两个人一天”，modified_hard_constraints 应为 {\"city\":\"上海\",\"people_count\":2,\"duration_hours\":8}。"
+                        "示例：用户说“两个人人均400”，budget_per_person 应为 400；用户说“两个人总预算400”，budget_per_person 应为 200。"
+                        "标签分层：体验类写入 preferences，例如 美食、咖啡、拍照、citywalk、艺术展、自然风景、本地感、夜景、亲子、室内、安静；"
+                        "优化类也暂时写入 preferences 兼容字段，例如 少排队、省钱、少走路、高性价比、轻松、时间紧；"
+                        "避雷类写入 avoid_tags，例如 人流密集、排队久、太贵、需要预约、商业街、拍照打卡、步行多、辣。"
+                        "用户否定的偏好必须进入 removed_preferences 或 removed_must_include；用户明确避开的内容必须进入 added_avoid_tags。"
                         "不要发明标签；preferences/avoid_tags/must_include 只能使用允许值。"
                         "如果只是隐含建议升级为显式必须，只写 added_must_include 和 removed_implicit_needs。"
                     ),
@@ -392,7 +984,7 @@ class AgentOrchestrator:
         content = response["choices"][0]["message"]["content"]
         return self._load_json_object(content)
 
-    def _normalize_intent_delta(self, delta: IntentDelta) -> IntentDelta:
+    def _normalize_intent_delta(self, delta: IntentDelta, message: str = "", session_state=None) -> IntentDelta:
         data = delta.model_dump()
         data["added_preferences"] = self._filter_allowed_preferences(normalize_preferences(data["added_preferences"]))
         data["removed_preferences"] = self._filter_allowed_preferences(normalize_preferences(data["removed_preferences"]))
@@ -404,14 +996,43 @@ class AgentOrchestrator:
         data["removed_must_include"] = self._filter_allowed_needs(data["removed_must_include"])
         data["added_hard_constraints"] = self._filter_hard_constraints(data["added_hard_constraints"])
         data["modified_hard_constraints"] = self._filter_hard_constraints(data["modified_hard_constraints"])
-        return IntentDelta.model_validate(data)
+        data = self._guard_relative_budget_change(data, message, session_state)
+        normalized = IntentDelta.model_validate(data)
+        return normalize_delta_units(normalized, message) if message else normalized
+
+    def _guard_relative_budget_change(self, data: dict, message: str, session_state=None) -> dict:
+        if not message or "budget_per_person" not in (data["added_hard_constraints"] | data["modified_hard_constraints"]):
+            return data
+
+        explicit_fields = extract_standard_unit_fields(message) | extract_explicit_trip_fields(message)
+        if "budget_per_person" in explicit_fields:
+            return data
+
+        data["added_hard_constraints"].pop("budget_per_person", None)
+        data["modified_hard_constraints"].pop("budget_per_person", None)
+        if self._message_requests_lower_budget(message) and "省钱" not in data["added_preferences"]:
+            data["added_preferences"].append("省钱")
+        return data
+
+    def _message_requests_lower_budget(self, message: str) -> bool:
+        terms = ["降低人均消费", "降低消费", "降低预算", "省钱", "便宜", "预算低", "人均低", "少花", "花少点"]
+        return any(term in message for term in terms)
 
     def _delta_allowed_values(self) -> dict[str, list[str]]:
         return {
-            "preferences": ["吃好", "少排队", "更省钱", "少走路", "citywalk", "拍照", "亲子友好", "室内", "安静", "朋友同行"],
-            "avoid_tags": ["人流密集", "排队久", "太贵", "商业街", "辣", "步行多"],
+            "preferences": ["美食", "咖啡", "拍照", "citywalk", "艺术展", "自然风景", "本地感", "夜景", "亲子", "室内", "安静", "少排队", "省钱", "少走路", "高性价比", "轻松", "时间紧", "朋友同行"],
+            "avoid_tags": ["人流密集", "排队久", "太贵", "需要预约", "商业街", "拍照打卡", "辣", "步行多"],
             "needs": ["meal_stop", "rest_stop"],
-            "hard_constraints": ["city", "people_count", "start_time", "duration_hours", "budget_per_person", "scenario"],
+            "hard_constraints": [
+                "city",
+                "people_count",
+                "target_district",
+                "target_business_area",
+                "start_time",
+                "duration_hours",
+                "budget_per_person",
+                "scenario",
+            ],
         }
 
     def _filter_allowed_preferences(self, values: list[str]) -> list[str]:
@@ -434,7 +1055,7 @@ class AgentOrchestrator:
                 continue
             if key in {"people_count", "duration_hours", "budget_per_person"}:
                 result[key] = self._coerce_int(value, 0)
-            elif key in {"city", "start_time", "scenario"} and value:
+            elif key in {"city", "target_district", "target_business_area", "start_time", "scenario"} and value:
                 result[key] = str(value)
         return result
 
@@ -504,7 +1125,7 @@ class AgentOrchestrator:
     def _message_requests_meal_stop(self, message: str, added_preferences: list[str], message_route) -> bool:
         meal_terms = ["吃饭", "吃好", "餐厅", "美食", "小吃", "晚饭", "午饭", "饭"]
         is_add_constraint = bool(message_route.turn_type and message_route.turn_type.value == "add_constraint")
-        return is_add_constraint and ("吃好" in added_preferences or any(term in message for term in meal_terms))
+        return is_add_constraint and ("美食" in added_preferences or any(term in message for term in meal_terms))
 
     def _format_state_change_summary(self, summary: StateChangeSummary) -> str:
         parts: list[str] = []
@@ -597,76 +1218,55 @@ class AgentOrchestrator:
             return f"当前在{intent.city}可用候选点不足，还没有生成可执行路线。你可以换一个城市，或者补充更具体的区域、景点类型和预算偏好，我再继续规划。"
 
         try:
+            # 只给 LLM 发精简摘要，避免 token 过多拖慢推理
+            intent_summary = {
+                k: v for k, v in {
+                    "city": intent.city,
+                    "start_time": intent.start_time,
+                    "duration_hours": intent.duration_hours,
+                    "people_count": intent.people_count,
+                    "budget_per_person": intent.budget_per_person,
+                    "interest_tags": intent.interest_tags,
+                    "scenario": intent.scenario,
+                }.items() if v
+            }
             summary_input = {
-                "intent": intent.model_dump(),
-                "candidate_pois": [
-                    {
-                        "name": poi.name,
-                        "city": poi.city,
-                        "category": poi.category,
-                        "avg_price": poi.avg_price,
-                        "rating": poi.rating,
-                        "queue_minutes": poi.queue_minutes,
-                        "visit_duration_minutes": poi.visit_duration_minutes,
-                        "tags": poi.tags,
-                        "negative_tags": poi.negative_tags,
-                    }
-                    for poi in pois[:8]
-                ],
+                "intent": intent_summary,
                 "routes": [
                     {
                         "title": route.title,
-                        "objective": route.objective,
                         "summary": route.summary,
-                        "total_duration_minutes": route.total_duration_minutes,
                         "total_cost_per_person": route.total_cost_per_person,
-                        "total_queue_minutes": route.total_queue_minutes,
-                        "total_travel_minutes": route.total_travel_minutes,
                         "total_distance_km": route.total_distance_km,
-                        "score": route.score,
+                        "total_travel_minutes": route.total_travel_minutes,
+                        "total_queue_minutes": route.total_queue_minutes,
                         "stops": [
                             {
                                 "name": stop.name,
-                                "category": stop.category,
-                                "district": stop.district,
-                                "address": stop.address,
                                 "start_time": stop.start_time,
                                 "end_time": stop.end_time,
                                 "estimated_cost": stop.estimated_cost,
-                                "queue_minutes": stop.queue_minutes,
-                                "travel_minutes_from_previous": stop.travel_minutes_from_previous,
-                                "distance_km_from_previous": stop.distance_km_from_previous,
                                 "transport_mode_from_previous": stop.transport_mode_from_previous,
-                                "walking_intensity": stop.walking_intensity,
-                                "recommended_transport": stop.recommended_transport,
+                                "travel_minutes_from_previous": stop.travel_minutes_from_previous,
                                 "highlight_text": stop.highlight_text,
                                 "ugc_tip": stop.ugc_tip,
                                 "reason": stop.reason,
-                                "tags": stop.tags,
                             }
                             for stop in route.stops
                         ],
-                        "reasons": route.reasons,
                     }
                     for route in routes[:3]
                 ],
             }
-            logger.info("summarize_routes input=%s", summary_input)
+            logger.info("summarize_routes input=%s", self._preview(json.dumps(summary_input, ensure_ascii=False)))
             response = await self.llm_client.complete(
                 [
                     {
                         "role": "system",
                         "content": (
-                            "你是路线规划 Agent 的结果总结器。"
-                            "根据已召回的 POI 和已生成的路线，用中文给用户做一个简短总结。"
-                            "只总结给定内容，不要编造不存在的地点或路线。"
-                            "当 routes 不为空时，优先把结构化路线字段写进用户可见文本："
-                            "用 total_distance_km 和 total_travel_minutes 说明整体距离和交通时间；"
-                            "用 stop.reason、highlight_text、ugc_tip 解释为什么推荐、有什么亮点和避坑；"
-                            "用 transport_mode_from_previous、distance_km_from_previous、travel_minutes_from_previous 说明站点之间怎么走。"
-                            "字段为空时跳过，不要编造。"
-                            "如果 routes 为空，说明候选点不足，并建议用户换城市或补充偏好。"
-                            "回复控制在 2 到 4 句话。"
+                            "你是路线规划 Agent 的结果总结器，用中文向用户简短介绍已生成的路线方案。"
+                            "直接描述路线内容：几个站点、亮点是什么、交通怎么走、大概花多少钱。"
+                            "只用给定数据，不要编造。回复 2~3 句话，语气自然。"
                         ),
                     },
                     {
@@ -864,10 +1464,57 @@ class AgentOrchestrator:
 
         return bool(re.search(r"\d+\s*(人|个|点|小时|分钟|元|块)", text))
 
-    async def _parse_intent(self, message: str, trace: list[AgentTraceStep]) -> Intent:
+    def _gps_city_from_request(self, request: "ChatRequest | None") -> str:
+        """从 request GPS 坐标推断城市名，无坐标/无匹配时返回空字符串。"""
+        if not request:
+            return ""
+        lat = request.current_lat or request.start_lat
+        lng = request.current_lng or request.start_lng
+        if lat and lng:
+            return self.clarification_policy._coords_to_city(lat, lng)
+        return ""
+
+    async def _llm_parse_intent_safe(self, message: str, request: "ChatRequest | None" = None) -> Intent | None:
+        """并行预取时使用：LLM 解析意图，失败返回 None（不写 trace）。"""
+        try:
+            intent = await self._llm_parse_intent(message)
+            gps_city = self._gps_city_from_request(request)
+            if gps_city and not intent.city_from_message:
+                intent = intent.model_copy(update={"city": gps_city})
+            return intent
+        except Exception as exc:
+            logger.warning("prefetch parse_intent failed error=%s", type(exc).__name__)
+            return None
+
+    async def _parse_intent(
+        self,
+        message: str,
+        trace: list[AgentTraceStep],
+        request: "ChatRequest | None" = None,
+        prefetched: "Intent | None" = None,
+    ) -> Intent:
+        gps_city = self._gps_city_from_request(request)
+
+        # 有预取结果时直接使用，省去一次串行 LLM 调用
+        if prefetched is not None:
+            trace.append(
+                AgentTraceStep(
+                    step="parse_intent",
+                    label="LLM 解析用户意图（并行预取）",
+                    status="done",
+                    details=self._intent_trace_details(prefetched),
+                )
+            )
+            logger.info("step done step=parse_intent mode=llm_prefetch")
+            return prefetched
+
         try:
             logger.info("step start step=parse_intent mode=llm")
             intent = await self._llm_parse_intent(message)
+            # 如果 LLM 只是猜的城市（city_from_message=False），且 GPS 推断出了城市，则用 GPS 城市覆盖
+            if gps_city and not intent.city_from_message:
+                intent = intent.model_copy(update={"city": gps_city})
+                logger.info("intent gps_city_override city=%s", gps_city)
             trace.append(
                 AgentTraceStep(
                     step="parse_intent",
@@ -881,6 +1528,10 @@ class AgentOrchestrator:
         except Exception as exc:
             logger.exception("step failed step=parse_intent mode=llm fallback=true error=%s", type(exc).__name__)
             intent = self._mock_parse_intent(message)
+            # fallback 时同样用 GPS 城市覆盖默认上海
+            if gps_city:
+                intent = intent.model_copy(update={"city": gps_city})
+                logger.info("intent fallback gps_city_override city=%s", gps_city)
             trace.append(
                 AgentTraceStep(
                     step="parse_intent",
@@ -894,18 +1545,23 @@ class AgentOrchestrator:
 
     async def _llm_parse_intent(self, message: str) -> Intent:
         schema_fields = {
-            "city": "string, default 上海 when omitted",
+            "city": "string, 如果消息中有地名/城市/景点可推断则填写，否则返回空字符串（不要猜测默认值）",
             "people_count": "integer",
             "start_time": "HH:MM string",
             "duration_hours": "integer",
             "budget_per_person": "integer, CNY",
             "start_location_name": "string or null, route start place name when mentioned",
+            "target_district": "string or null, destination district/area such as 徐汇区 or 朝阳区 when mentioned",
+            "target_business_area": "string or null, destination business area/street such as 武康路 or 三里屯 when mentioned",
             "start_lat": "number or null, route start latitude when known",
             "start_lng": "number or null, route start longitude when known",
-            "preferences": "array of short Chinese strings",
-            "avoid_tags": "array of short Chinese strings",
+            "interest_tags": "array, experience tags only: 美食/咖啡/拍照/citywalk/艺术展/自然风景/本地感/夜景/亲子/室内/安静",
+            "optimization_goals": "array, route optimization goals only: 少排队/省钱/少走路/高性价比/轻松/时间紧",
+            "preferences": "array, compatibility field; can be empty or interest_tags + optimization_goals",
+            "avoid_tags": "array, avoid items: 人流密集/排队久/太贵/需要预约/商业街/拍照打卡/步行多/辣",
             "scenario": "short snake_case string",
             "need_clarification": "boolean",
+            "city_from_message": "boolean, true only if city can be clearly inferred from the message content or context (e.g. user mentioned a place, landmark, or city name); false if city is just a default guess",
         }
         response = await self.llm_client.complete(
             [
@@ -917,6 +1573,10 @@ class AgentOrchestrator:
                         "必须只返回一个 JSON object，不要 Markdown，不要解释。"
                         "无论信息是否完整，都必须包含所有字段。"
                         "用户只打招呼或需求不清时，用默认值补齐字段，并把 need_clarification 设为 true。"
+                        "不要把优化目标当兴趣标签：少排队、省钱、少走路、高性价比、轻松、时间紧必须进入 optimization_goals。"
+                        "不要把预算硬约束当标签：人均100以内只设置 budget_per_person=100；更省钱/便宜点才进入 optimization_goals=省钱。"
+                        "否定表达要进入 avoid_tags，例如不想拍照=拍照打卡，不想排队=排队久，不要太贵=太贵。"
+                        "city_from_message：只要用户消息或上下文中能推断出城市（提到地名、景点、街道等），就设为 true；纯猜测时设为 false。"
                     ),
                 },
                 {
@@ -965,8 +1625,12 @@ class AgentOrchestrator:
             if normalized[key] <= 0:
                 normalized[key] = defaults[key]
 
-        for key in ("preferences", "avoid_tags"):
+        for key in ("preferences", "interest_tags", "optimization_goals", "avoid_tags"):
             normalized[key] = self._coerce_string_list(normalized.get(key))
+
+        for key in ("start_location_name", "target_district", "target_business_area"):
+            value = normalized.get(key)
+            normalized[key] = str(value).strip() if value else None
 
         value = normalized.get("need_clarification", defaults["need_clarification"])
         if isinstance(value, str):
@@ -1017,20 +1681,48 @@ class AgentOrchestrator:
         return value if len(value) <= limit else f"{value[:limit]}..."
 
     def _mock_parse_intent(self, message: str) -> Intent:
-        preferences = ["吃好", "少排队", "拍照", "少走路"]
+        preferences = []
+        if any(term in message for term in ["吃好", "美食", "餐厅", "小吃"]):
+            preferences.append("美食")
+        if any(term in message for term in ["少排队", "别排队", "不排队", "不想排队"]):
+            preferences.append("少排队")
+        if any(term in message for term in ["拍照", "出片", "打卡", "citywalk", "街区"]):
+            preferences.append("拍照")
+        if any(term in message for term in ["少走路", "轻松", "别太累", "不要太累"]):
+            preferences.append("少走路")
         if "省钱" in message or "便宜" in message:
-            preferences.append("更省钱")
+            preferences.append("省钱")
         if "亲子" in message or "小孩" in message:
-            preferences.append("亲子友好")
+            preferences.append("亲子")
+
+        avoid_tags = []
+        if any(term in message for term in ["人多", "拥挤", "人流密集"]):
+            avoid_tags.append("人流密集")
+        if any(term in message for term in ["排队久", "排队太久"]):
+            avoid_tags.append("排队久")
+        if any(term in message for term in ["太贵", "贵"]):
+            avoid_tags.append("太贵")
 
         return Intent(
-            city="上海",
+            city="",
             people_count=3 if "三" in message or "3" in message else 2,
             start_time="14:00",
             duration_hours=6,
             budget_per_person=300,
+            target_district=self._extract_region_from_message(message, "district"),
+            target_business_area=self._extract_region_from_message(message, "business_area"),
             preferences=preferences,
-            avoid_tags=["排队久", "太贵"],
+            avoid_tags=avoid_tags,
             scenario="friends_citywalk",
             need_clarification=False,
         )
+
+    def _extract_region_from_message(self, message: str, kind: str) -> str | None:
+        if kind == "district":
+            match = re.search(r"[\u4e00-\u9fa5]{2,6}区|[\u4e00-\u9fa5]{2,6}县|[\u4e00-\u9fa5]{2,6}新区", message)
+            return match.group(0) if match else None
+        for area in ["武康路", "安福路", "外滩", "陆家嘴", "南京路", "淮海路", "新天地", "田子坊", "三里屯", "王府井", "后海", "什刹海", "南锣鼓巷", "国贸", "西单"]:
+            if area in message:
+                return area
+        match = re.search(r"[\u4e00-\u9fa5]{2,8}(?:路|街|巷|弄|大道|步行街|老街)", message)
+        return match.group(0) if match else None

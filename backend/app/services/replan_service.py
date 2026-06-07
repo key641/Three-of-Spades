@@ -1,14 +1,913 @@
-from app.schemas.route import ReplanRequest, RoutePlanResponse
+from app.schemas.intent import Intent
+from app.schemas.map import ExternalPOICandidate, ExternalPOIStatus, GeoPoint
+from app.schemas.poi import POI
+from app.schemas.route import ReplanRequest, Route, RouteChange, RoutePlanRequest, RoutePlanResponse, RouteScoreBreakdown, RouteStop
+from app.schemas.user import UserProfile
+from app.services.fine_rank_service import FineRankService
+from app.services.map_provider import MapProvider, MockMapProvider
+from app.services.poi_service import POIService
+from app.services.route_rerank_service import RouteRerankService
+from app.services.route_service import RouteService
+from app.services.scoring_service import ScoringService
 
 
 class ReplanService:
-    """B-owned module: partial replanning after queue, traffic, or preference events."""
+    """Partial replanning after queue, traffic, map status, or preference events."""
+
+    QUEUE_REPLACE_THRESHOLD = 45
+    TRAFFIC_WARNING_MULTIPLIER = 1.4
+    REPLACEMENT_CANDIDATES_PER_STOP = 8
+    LOCAL_REPLAN_BEAM_WIDTH = 6
+    LOCAL_REPLAN_MAX_CANDIDATES = 10
+
+    def __init__(
+        self,
+        map_provider: MapProvider | None = None,
+        poi_service: POIService | None = None,
+        route_service: RouteService | None = None,
+    ) -> None:
+        self.map_provider = map_provider or MockMapProvider()
+        self.poi_service = poi_service or POIService()
+        self.route_service = route_service or RouteService()
+        self.scoring_service = ScoringService()
+        self.fine_rank_service = FineRankService()
+        self.rerank_service = RouteRerankService()
 
     def replan(self, request: ReplanRequest) -> RoutePlanResponse:
-        # TODO(B): preserve completed stops and replace impacted future POIs.
-        updated_routes = request.current_routes
-        for route in updated_routes:
-            route.summary = f"已根据事件「{request.event_label}」重新评估，后续版本会替换受影响 POI。"
-            route.replan_reason = "当前骨架先保留原路线，后续接入局部替换逻辑。"
+        if not request.current_routes:
+            return RoutePlanResponse(routes=[])
+
+        updated_routes: list[Route] = []
+        for route in request.current_routes:
+            if request.selected_route_id and route.route_id != request.selected_route_id:
+                updated_routes.append(route)
+                continue
+            updated_routes.append(self._replan_route(route, request))
         return RoutePlanResponse(routes=updated_routes)
 
+    def _replan_route(self, route: Route, request: ReplanRequest) -> Route:
+        route = route.model_copy(deep=True)
+        original_travel_minutes = route.total_travel_minutes
+        completed_ids = set(request.completed_poi_ids)
+        locked_ids = set(request.locked_poi_ids)
+        event_payload = {**request.event_payload, "event_type": request.event_type, "event_label": request.event_label}
+        preserve_ids = set(self._as_list(event_payload.get("preserve_poi_ids")))
+        poi_by_id = {poi.id: poi for poi in self.poi_service.all_pois()}
+
+        completed_stops = [stop for stop in route.stops if stop.poi_id in completed_ids]
+        future_stops = [stop for stop in route.stops if stop.poi_id not in completed_ids]
+        if not future_stops:
+            route.replan_reason = "已重新评估，所有路线点都已完成，无需调整。"
+            route.data_sources = self._sources(route, self.map_provider.source)
+            return route
+
+        unavailable_ids: set[str] = set()
+        adjusted_pois: dict[str, POI] = {}
+
+        city = self._route_city(route, poi_by_id)
+        local_candidates = self.poi_service.all_pois(city=city)
+        route_poi_ids = {stop.poi_id for stop in route.stops}
+        affected_ids = set(self._as_list(event_payload.get("affected_poi_ids")))
+        affected_id = str(event_payload.get("affected_poi_id", ""))
+        if affected_id:
+            affected_ids.add(affected_id)
+        replace_count = self._replacement_limit(event_payload, affected_ids)
+        replacement_attempts = 0
+
+        option_sets: list[list[tuple[POI, RouteChange | None, list[str]]]] = []
+        for stop in future_stops:
+            poi = self._poi_for_stop(stop, poi_by_id)
+            status = self._live_status_for_stop(stop, event_payload)
+            adjusted = self._apply_live_status(poi, status)
+            adjusted_pois[adjusted.id] = adjusted
+
+            should_replace = self._should_replace(stop, adjusted, status, request)
+            if stop.poi_id in preserve_ids and status.status not in {"closed", "unavailable", "sold_out"}:
+                should_replace = False
+            if stop.poi_id in locked_ids and status.status not in {"closed", "unavailable", "sold_out"}:
+                should_replace = False
+            if (
+                should_replace
+                and replace_count is not None
+                and replacement_attempts >= replace_count
+                and status.status not in {"closed", "unavailable", "sold_out"}
+            ):
+                should_replace = False
+
+            if should_replace:
+                replacement_attempts += 1
+                unavailable_ids.add(stop.poi_id)
+                replacements = self._find_replacement_candidates(
+                    original=adjusted,
+                    route=route,
+                    selected_poi_ids=route_poi_ids | unavailable_ids,
+                    completed_ids=completed_ids,
+                    locked_ids=locked_ids,
+                    preserve_ids=preserve_ids,
+                    local_candidates=local_candidates,
+                    request=request,
+                    event_payload=event_payload,
+                    previous_stop=completed_stops[-1] if completed_stops else None,
+                )
+                if replacements:
+                    warning = self._status_warning(status, adjusted) or self._replacement_reason(status, request)
+                    option_sets.append(
+                        [
+                            (
+                                replacement,
+                                RouteChange(
+                            change_type="replace",
+                            from_poi_id=stop.poi_id,
+                            from_name=stop.name,
+                            to_poi_id=replacement.id,
+                            to_name=replacement.name,
+                            reason=self._replacement_reason(status, request),
+                                ),
+                                [f"{stop.name} {warning}，已换成 {replacement.name}。"],
+                            )
+                            for replacement in replacements
+                        ]
+                    )
+                    continue
+
+            warning = self._status_warning(status, adjusted)
+            option_sets.append([(adjusted, None, [f"{stop.name} {warning}。"] if warning else [])])
+
+        candidate_routes = self._build_local_replan_candidates(
+            route,
+            completed_stops,
+            option_sets,
+            request,
+            event_payload,
+            poi_by_id | adjusted_pois,
+        )
+        if candidate_routes:
+            route = self._choose_best_local_route(candidate_routes, request)
+        if request.event_type == "traffic_jam":
+            route.total_travel_minutes = max(route.total_travel_minutes, original_travel_minutes)
+        route.live_warnings = list(dict.fromkeys([*route.live_warnings, *self._traffic_warnings(route.stops, event_payload)]))
+        route.data_sources = self._sources(route, self.map_provider.source)
+        route.replan_reason = self._replan_reason(request, bool(route.changed_stops), route.live_warnings)
+        route.summary = self._summary(route, request, bool(route.changed_stops))
+        return route
+
+    def _live_status_for_stop(self, stop: RouteStop, event_payload: dict) -> ExternalPOIStatus:
+        payload = dict(event_payload)
+        payload.setdefault("base_queue_minutes", stop.queue_minutes)
+        payload.setdefault("category", stop.category)
+        payload.setdefault("primary_category", stop.primary_category)
+        affected_category = str(payload.get("affected_category", ""))
+        has_explicit_target = payload.get("affected_poi_id") or payload.get("affected_poi_ids")
+        if affected_category and not has_explicit_target:
+            if affected_category in {stop.category, stop.primary_category} or affected_category in stop.tags:
+                payload["affected_poi_id"] = stop.poi_id
+        return self.map_provider.get_place_status(stop.poi_id, payload)
+
+    def _apply_live_status(self, poi: POI, status: ExternalPOIStatus) -> POI:
+        updated = poi.model_copy(deep=True)
+        if status.queue_minutes is not None:
+            updated.queue_minutes = status.queue_minutes
+        if status.live_crowd_level is not None:
+            updated.live_crowd_level = status.live_crowd_level
+        if status.status in {"closed", "unavailable", "sold_out"}:
+            updated.risk_flags = list(dict.fromkeys([*updated.risk_flags, status.status]))
+            updated.avoid_reasons = list(dict.fromkeys([*updated.avoid_reasons, status.reason or "实时状态不可用"]))
+        return updated
+
+    def _should_replace(self, stop: RouteStop, poi: POI, status: ExternalPOIStatus, request: ReplanRequest) -> bool:
+        if status.status in {"closed", "unavailable", "sold_out"} or not status.is_open or not status.is_accessible:
+            return True
+        if request.event_payload.get("warning_only"):
+            return False
+        if request.event_type in {"replace_poi", "avoid_poi"}:
+            if request.event_payload.get("force_replace") and self._is_affected_stop(stop, request.event_payload):
+                return True
+            if self._is_affected_stop(stop, request.event_payload):
+                return True
+            if request.event_type == "avoid_poi" and self._matches_payload_terms(stop, poi, request.event_payload, "avoid_tags"):
+                return True
+        if request.event_type == "preference_change":
+            if self._is_affected_stop(stop, request.event_payload):
+                return True
+            if self._matches_payload_terms(stop, poi, request.event_payload, "avoid_tags"):
+                return True
+            prefer_tags = set(self._as_list(request.event_payload.get("prefer_tags")))
+            if {"少走路", "轻松", "室内休息"} & prefer_tags and stop.walking_intensity == "high":
+                return True
+            if {"室内", "雨天", "下雨"} & prefer_tags and not stop.indoor:
+                return True
+        if request.event_type == "queue_spike" and poi.queue_minutes >= self.QUEUE_REPLACE_THRESHOLD:
+            return True
+        if request.event_type == "user_tired" and stop.walking_intensity == "high":
+            return True
+        if request.event_type == "weather_change" and not stop.indoor:
+            return True
+        return False
+
+    def _find_replacement(
+        self,
+        original: POI,
+        route: Route,
+        selected_poi_ids: set[str],
+        completed_ids: set[str],
+        locked_ids: set[str],
+        preserve_ids: set[str],
+        local_candidates: list[POI],
+        request: ReplanRequest,
+        event_payload: dict,
+        previous_stop: RouteStop | None,
+    ) -> POI | None:
+        candidates = self._find_replacement_candidates(
+            original,
+            route,
+            selected_poi_ids,
+            completed_ids,
+            locked_ids,
+            preserve_ids,
+            local_candidates,
+            request,
+            event_payload,
+            previous_stop,
+        )
+        return candidates[0] if candidates else None
+
+    def _find_replacement_candidates(
+        self,
+        original: POI,
+        route: Route,
+        selected_poi_ids: set[str],
+        completed_ids: set[str],
+        locked_ids: set[str],
+        preserve_ids: set[str],
+        local_candidates: list[POI],
+        request: ReplanRequest,
+        event_payload: dict,
+        previous_stop: RouteStop | None,
+    ) -> list[POI]:
+        excluded_ids = selected_poi_ids | completed_ids | locked_ids | preserve_ids
+        candidates = self._recall_replacement_candidates(original, excluded_ids, local_candidates, request, event_payload)
+        viable = [
+            poi
+            for poi in candidates
+            if self._is_replacement_role_compatible(original, poi, event_payload)
+            and self._live_status_for_poi(poi, event_payload).status not in {"closed", "unavailable", "sold_out"}
+        ]
+        if not viable:
+            nearby = self._external_replacements(original, previous_stop, event_payload)
+            viable = [self._poi_from_external(candidate, original) for candidate in nearby]
+        if not viable:
+            return []
+
+        origin = self._origin_point(previous_stop, original)
+        return sorted(
+            viable,
+            key=lambda poi: self._replacement_score(original, poi, origin, request, event_payload),
+            reverse=True,
+        )[: self.REPLACEMENT_CANDIDATES_PER_STOP]
+
+    def _recall_replacement_candidates(
+        self,
+        original: POI,
+        excluded_ids: set[str],
+        local_candidates: list[POI],
+        request: ReplanRequest,
+        event_payload: dict,
+    ) -> list[POI]:
+        allow_cross_category = bool(event_payload.get("allow_cross_category", True))
+        avoid_terms = self._as_list(event_payload.get("avoid_tags"))
+        strict_category = [
+            poi
+            for poi in local_candidates
+            if poi.id not in excluded_ids
+            and not self._matches_poi_terms(poi, avoid_terms)
+            and self._matches_replacement_category(poi, event_payload)
+        ]
+        if strict_category and (event_payload.get("replacement_category") or not allow_cross_category):
+            return strict_category
+
+        role_candidates = [
+            poi
+            for poi in local_candidates
+            if poi.id not in excluded_ids
+            and not self._matches_poi_terms(poi, avoid_terms)
+            and (
+                self._replacement_role_score(original, poi) > 0
+                or bool(set(original.experience_tags) & set(poi.experience_tags))
+                or bool(set(original.suitable_time_slots) & set(poi.suitable_time_slots))
+                or self._objective_bonus(poi, request) > 0
+                or self._term_match_score(poi, self._as_list(event_payload.get("prefer_tags"))) > 0
+            )
+        ]
+        return self._unique_pois([*strict_category, *role_candidates])
+
+    def _is_replacement_role_compatible(self, original: POI, candidate: POI, event_payload: dict) -> bool:
+        if event_payload.get("replacement_category") and self._matches_replacement_category(candidate, event_payload):
+            return True
+        if self._replacement_role_score(original, candidate) > 0:
+            return True
+        if bool(set(original.experience_tags) & set(candidate.experience_tags)):
+            return True
+        if bool(set(original.suitable_time_slots) & set(candidate.suitable_time_slots)):
+            return True
+        return bool(event_payload.get("allow_cross_category", True) and set(original.route_roles) & set(candidate.route_roles))
+
+    def _live_status_for_poi(self, poi: POI, event_payload: dict) -> ExternalPOIStatus:
+        payload = dict(event_payload)
+        payload.setdefault("base_queue_minutes", poi.queue_minutes)
+        payload.setdefault("category", poi.category)
+        payload.setdefault("primary_category", poi.primary_category)
+        return self.map_provider.get_place_status(poi.id, payload)
+
+    def _external_replacements(
+        self,
+        original: POI,
+        previous_stop: RouteStop | None,
+        event_payload: dict,
+    ) -> list[ExternalPOICandidate]:
+        origin = self._origin_point(previous_stop, original)
+        return self.map_provider.search_nearby_pois(
+            origin,
+            radius_km=2.5,
+            categories=[original.category, original.primary_category],
+        keywords=[original.name, *original.route_roles, *original.tags],
+            event_payload=event_payload,
+        )
+
+    def _poi_from_external(self, candidate: ExternalPOICandidate, original: POI) -> POI:
+        category = candidate.map_category or original.category
+        roles = original.route_roles or ["main_activity"]
+        return POI(
+            id=next(iter(candidate.external_place_ids.values()), f"external_{candidate.name}"),
+            name=candidate.name,
+            city=candidate.city or original.city,
+            district=candidate.district or original.district,
+            address=candidate.address,
+            category=category,
+            external_place_ids=candidate.external_place_ids,
+            source_provider=candidate.source_provider,
+            map_category=candidate.map_category,
+            map_category_code=candidate.map_category_code,
+            canonical_poi_id=original.canonical_poi_id or original.id,
+            primary_category=original.primary_category or category,
+            secondary_categories=original.secondary_categories,
+            route_roles=roles,
+            experience_tags=list(dict.fromkeys([*original.experience_tags, *candidate.tags])),
+            lat=candidate.lat,
+            lng=candidate.lng,
+            avg_price=candidate.avg_price or original.avg_price,
+            price_min=candidate.avg_price or original.price_min,
+            price_max=candidate.avg_price or original.price_max,
+            rating=candidate.rating,
+            review_count=candidate.review_count,
+            popularity=original.popularity,
+            crowd_level=original.crowd_level,
+            queue_minutes=candidate.queue_minutes,
+            live_crowd_level=candidate.live_crowd_level,
+            visit_duration_minutes=original.visit_duration_minutes,
+            open_time=original.open_time,
+            close_time=original.close_time,
+            last_entry_time=original.last_entry_time,
+            open_hours=original.open_hours,
+            suitable_time_slots=original.suitable_time_slots,
+            tags=list(dict.fromkeys([*original.tags, *candidate.tags])),
+            negative_tags=[],
+            family_friendly=original.family_friendly,
+            couple_friendly=original.couple_friendly,
+            friends_friendly=original.friends_friendly,
+            solo_friendly=original.solo_friendly,
+            elderly_friendly=original.elderly_friendly,
+            rainy_day_score=original.rainy_day_score,
+            budget_friendly=original.budget_friendly,
+            photo_friendly=original.photo_friendly,
+            food_nearby=original.food_nearby,
+            night_activity=original.night_activity,
+            indoor=original.indoor,
+            walking_intensity=original.walking_intensity,
+            recommended_transport=original.recommended_transport,
+            meal_type=original.meal_type,
+            transit_hub_nearby=original.transit_hub_nearby,
+            cover_image_url=original.cover_image_url,
+            highlight_text=f"地图实时补充：{candidate.name}",
+            highlight_text_tags=candidate.tags,
+            ugc_tip=original.ugc_tip,
+        )
+
+    def _replacement_score(self, original: POI, candidate: POI, origin: GeoPoint, request: ReplanRequest, event_payload: dict) -> float:
+        status = self._live_status_for_poi(candidate, event_payload)
+        leg = self.map_provider.get_live_travel_time(origin, GeoPoint(lat=candidate.lat, lng=candidate.lng), self._transport_mode(candidate), event_payload=event_payload)
+        score = self._replacement_role_score(original, candidate) * 3
+        score += max(0, 1 - min(candidate.queue_minutes, 90) / 90) * 2
+        score += max(0, 1 - min(leg.travel_minutes, 60) / 60) * 1.5
+        score += max(0, candidate.rating - 3.5) * 0.4
+        score += self._term_match_score(candidate, self._as_list(event_payload.get("prefer_tags"))) * 1.8
+        score -= self._term_match_score(candidate, self._as_list(event_payload.get("avoid_tags"))) * 3.0
+        score -= self._budget_penalty(candidate, request) * 1.2
+        score += self._objective_bonus(candidate, request) * 0.8
+        score += self._fine_rank_score(candidate, request) * 1.4
+        if request.event_type == "user_tired":
+            score += (1.2 if candidate.walking_intensity == "low" else 0) + (0.8 if candidate.indoor else 0)
+        if request.event_type == "weather_change" or self._has_any_payload_term(event_payload, "prefer_tags", {"室内", "雨天", "下雨"}):
+            score += 1.5 if candidate.indoor else -1
+        if status.status in {"closed", "unavailable", "sold_out"}:
+            score -= 10
+        return score
+
+    def _fine_rank_score(self, candidate: POI, request: ReplanRequest) -> float:
+        if not request.intent or not request.user_profile:
+            return 0
+        return self.fine_rank_service.score(
+            candidate,
+            request.intent,
+            request.user_profile,
+            objective=request.event_type,
+            poi_universe=[candidate],
+        ).poi_relevance_score
+
+    def _replacement_role_score(self, original: POI, candidate: POI) -> float:
+        role_overlap = len(set(original.route_roles) & set(candidate.route_roles))
+        category_hit = original.primary_category and original.primary_category == candidate.primary_category
+        meal_hit = original.meal_type != "non_meal" and original.meal_type == candidate.meal_type
+        return role_overlap + (1 if category_hit else 0) + (0.7 if meal_hit else 0)
+
+    def _rebuild_future_stops(
+        self,
+        completed_stops: list[RouteStop],
+        future_pois: list[POI],
+        route: Route,
+        request: ReplanRequest,
+        event_payload: dict,
+    ) -> list[RouteStop]:
+        if not future_pois:
+            return []
+        current_minutes = self._parse_time(request.current_time or (completed_stops[-1].end_time if completed_stops else future_pois[0].open_time))
+        origin = self._origin_from_request_or_route(request, completed_stops, future_pois[0])
+        rebuilt: list[RouteStop] = []
+        for poi in future_pois:
+            mode = self._transport_mode(poi)
+            leg = self.map_provider.get_live_travel_time(origin, GeoPoint(lat=poi.lat, lng=poi.lng), mode, event_payload=event_payload)
+            start = current_minutes + leg.travel_minutes
+            end = start + poi.queue_minutes + poi.visit_duration_minutes
+            rebuilt.append(self._stop_from_poi(poi, start, end, leg.travel_minutes, leg.distance_km, leg.transport_mode, route.objective))
+            current_minutes = end
+            origin = GeoPoint(lat=poi.lat, lng=poi.lng)
+        return rebuilt
+
+    def _build_local_replan_candidates(
+        self,
+        route: Route,
+        completed_stops: list[RouteStop],
+        option_sets: list[list[tuple[POI, RouteChange | None, list[str]]]],
+        request: ReplanRequest,
+        event_payload: dict,
+        poi_by_id: dict[str, POI],
+    ) -> list[Route]:
+        beams: list[tuple[list[POI], list[RouteChange], list[str], set[str]]] = [([], [], [], {stop.poi_id for stop in route.stops})]
+        for options in option_sets:
+            next_beams: list[tuple[list[POI], list[RouteChange], list[str], set[str]]] = []
+            for pois, changes, warnings, used_ids in beams:
+                for poi, change, option_warnings in options[: self.REPLACEMENT_CANDIDATES_PER_STOP]:
+                    if poi.id in used_ids and change is not None:
+                        continue
+                    next_beams.append(
+                        (
+                            [*pois, poi],
+                            [*changes, change] if change is not None else changes,
+                            [*warnings, *option_warnings],
+                            {*used_ids, poi.id},
+                        )
+                    )
+            beams = sorted(
+                next_beams,
+                key=lambda beam: self._partial_route_seed_score(beam[0], beam[1], request, event_payload),
+                reverse=True,
+            )[: self.LOCAL_REPLAN_BEAM_WIDTH]
+            if not beams:
+                break
+
+        candidate_routes: list[Route] = []
+        for future_pois, changes, warnings, _ in beams[: self.LOCAL_REPLAN_MAX_CANDIDATES]:
+            candidate = route.model_copy(deep=True)
+            candidate.stops = completed_stops + self._rebuild_future_stops(completed_stops, future_pois, candidate, request, event_payload)
+            candidate.changed_stops = changes
+            candidate.live_warnings = list(dict.fromkeys(warnings))
+            candidate_poi_by_id = poi_by_id | {poi.id: poi for poi in future_pois}
+            self._refresh_route_metrics(candidate, request, candidate_poi_by_id)
+            candidate_routes.append(candidate)
+        return candidate_routes
+
+    def _partial_route_seed_score(self, pois: list[POI], changes: list[RouteChange], request: ReplanRequest, event_payload: dict) -> float:
+        if not pois:
+            return 0
+        score = sum(max(0, poi.rating - 3.5) for poi in pois)
+        score += sum(max(0, 1 - min(poi.queue_minutes, 90) / 90) for poi in pois)
+        score += sum(self._objective_bonus(poi, request) for poi in pois)
+        score += sum(self._term_match_score(poi, self._as_list(event_payload.get("prefer_tags"))) for poi in pois)
+        score -= sum(self._term_match_score(poi, self._as_list(event_payload.get("avoid_tags"))) for poi in pois) * 2
+        score -= sum(self._budget_penalty(poi, request) for poi in pois)
+        score += len(changes) * 0.2
+        if self._has_any_payload_term(event_payload, "prefer_tags", {"少走路", "轻松"}):
+            score += sum(0.4 for poi in pois if poi.walking_intensity == "low")
+            score -= sum(0.5 for poi in pois if poi.walking_intensity == "high")
+        if self._has_any_payload_term(event_payload, "prefer_tags", {"室内", "雨天", "下雨"}):
+            score += sum(0.45 for poi in pois if poi.indoor)
+            score -= sum(0.45 for poi in pois if not poi.indoor)
+        return score
+
+    def _choose_best_local_route(self, routes: list[Route], request: ReplanRequest) -> Route:
+        if not routes:
+            raise ValueError("routes must not be empty")
+        poi_by_id = {poi.id: poi for poi in self.poi_service.all_pois()}
+        for route in routes:
+            poi_by_id.update({stop.poi_id: self._poi_for_stop(stop, poi_by_id) for stop in route.stops if stop.poi_id not in poi_by_id})
+        plan_request = self._plan_request_for_replan(routes[0], request, poi_by_id)
+        ranked = self.rerank_service.rerank(routes, plan_request, poi_by_id, max_routes=1, max_per_objective=1)
+        return ranked[0].route if ranked else max(routes, key=lambda route: route.score)
+
+    def _stop_from_poi(
+        self,
+        poi: POI,
+        start_minutes: int,
+        end_minutes: int,
+        travel_minutes: int,
+        distance_km: float,
+        transport_mode: str,
+        objective: str,
+    ) -> RouteStop:
+        return RouteStop(
+            poi_id=poi.id,
+            name=poi.name,
+            category=poi.category,
+            primary_category=poi.primary_category,
+            secondary_categories=poi.secondary_categories,
+            route_roles=poi.route_roles,
+            experience_tags=poi.experience_tags,
+            district=poi.district,
+            business_area=poi.business_area,
+            address=poi.address,
+            lat=poi.lat,
+            lng=poi.lng,
+            start_time=self._format_time(start_minutes),
+            end_time=self._format_time(end_minutes),
+            estimated_cost=poi.avg_price,
+            queue_minutes=poi.queue_minutes,
+            tags=poi.tags,
+            meal_type=poi.meal_type,
+            open_hours=poi.open_hours,
+            last_entry_time=poi.last_entry_time,
+            walking_intensity=poi.walking_intensity,
+            cover_image_url=poi.cover_image_url,
+            highlight_text=poi.highlight_text,
+            ugc_tip=poi.ugc_tip,
+            indoor=poi.indoor,
+            recommended_transport=poi.recommended_transport,
+            travel_minutes_from_previous=travel_minutes,
+            distance_km_from_previous=distance_km,
+            transport_mode_from_previous=transport_mode,
+            route_leg_source_from_previous=self.map_provider.source,
+            route_steps_from_previous=[
+                self._route_step_instruction(transport_mode, distance_km, travel_minutes)
+            ],
+            reason=f"根据实时{self.map_provider.source}数据调整，继续匹配{objective}目标",
+        )
+
+    def _refresh_route_metrics(self, route: Route, request: ReplanRequest, poi_by_id: dict[str, POI]) -> None:
+        route.total_cost_per_person = sum(stop.estimated_cost for stop in route.stops)
+        route.total_queue_minutes = sum(stop.queue_minutes for stop in route.stops)
+        route.total_travel_minutes = sum(stop.travel_minutes_from_previous or 0 for stop in route.stops)
+        route.total_distance_km = round(sum(stop.distance_km_from_previous or 0 for stop in route.stops), 1)
+        route.total_duration_minutes = self._route_elapsed_minutes(route.stops)
+        plan_request = self._plan_request_for_replan(route, request, poi_by_id)
+        route.score_breakdown = self.scoring_service.score(route.stops, route.objective, plan_request, poi_by_id)
+        route.score = self.scoring_service.overall_score(route.score_breakdown, route.objective, route.stops, plan_request, poi_by_id)
+
+    def _plan_request_for_replan(self, route: Route, request: ReplanRequest, poi_by_id: dict[str, POI]) -> RoutePlanRequest:
+        intent = request.intent or Intent(
+            city=self._route_city(route, poi_by_id),
+            start_time=route.stops[0].start_time if route.stops else "14:00",
+            duration_hours=max(1, round(route.total_duration_minutes / 60)),
+            budget_per_person=max(route.total_cost_per_person, 1),
+            preferences=[route.objective],
+        )
+        profile = request.user_profile or UserProfile(user_id="replan_user", preferences=[route.objective])
+        return RoutePlanRequest(intent=intent, user_profile=profile, candidate_pois=list(poi_by_id.values()))
+
+    def _traffic_warnings(self, stops: list[RouteStop], event_payload: dict) -> list[str]:
+        warnings = []
+        if event_payload.get("event_type") != "traffic_jam":
+            return warnings
+        multiplier = float(event_payload.get("traffic_multiplier", 1.0) or 1.0)
+        if multiplier >= self.TRAFFIC_WARNING_MULTIPLIER:
+            warnings.append(f"交通拥堵已计入后续路程，预计通行时间约为平时 {multiplier:.1f} 倍。")
+        return warnings
+
+    def _replacement_reason(self, status: ExternalPOIStatus, request: ReplanRequest) -> str:
+        if status.status in {"closed", "unavailable", "sold_out"}:
+            return status.reason or "原 POI 实时状态不可用"
+        if request.event_type == "replace_poi":
+            return "用户希望更换该 POI"
+        if request.event_type == "avoid_poi":
+            return "用户希望避开该类型或标签"
+        if request.event_type == "preference_change":
+            return "用户偏好变化，改为更匹配的新点位"
+        if request.event_type == "queue_spike":
+            return "原 POI 实时排队过长"
+        if request.event_type == "traffic_jam":
+            return "原路线交通变慢，改用更顺路点位"
+        if request.event_type == "user_tired":
+            return "用户状态变化，改为更轻松点位"
+        if request.event_type == "weather_change":
+            return "天气变化，改为更稳妥点位"
+        return request.event_label
+
+    def _status_warning(self, status: ExternalPOIStatus, poi: POI) -> str:
+        if status.status in {"closed", "unavailable", "sold_out"}:
+            return status.reason or "实时状态不可用"
+        if status.queue_minutes is not None and poi.queue_minutes > 0:
+            return f"实时排队约 {poi.queue_minutes} 分钟"
+        if poi.queue_minutes >= self.QUEUE_REPLACE_THRESHOLD:
+            return f"实时排队约 {poi.queue_minutes} 分钟"
+        if status.live_crowd_level is not None and status.live_crowd_level >= 0.8:
+            return "实时人流较高"
+        return ""
+
+    def _replan_reason(self, request: ReplanRequest, replacement_used: bool, warnings: list[str]) -> str:
+        if replacement_used:
+            return f"已根据「{request.event_label}」替换受影响的后续点位，并重新计算时间、排队和交通。"
+        if warnings:
+            return f"已根据「{request.event_label}」重新评估路线，当前无需替换点位。"
+        return f"已接入实时{self.map_provider.source}数据复核，原路线仍是当前更优选择。"
+
+    def _is_affected_stop(self, stop: RouteStop, event_payload: dict) -> bool:
+        affected_ids = set(self._as_list(event_payload.get("affected_poi_ids")))
+        affected_id = str(event_payload.get("affected_poi_id", ""))
+        if affected_id:
+            affected_ids.add(affected_id)
+        if stop.poi_id in affected_ids:
+            return True
+        affected_category = str(event_payload.get("affected_category", ""))
+        return bool(affected_category and affected_category in {stop.category, stop.primary_category, *stop.tags})
+
+    def _matches_payload_terms(self, stop: RouteStop, poi: POI, event_payload: dict, key: str) -> bool:
+        return self._matches_text_terms(self._stop_text(stop, poi), self._as_list(event_payload.get(key)))
+
+    def _matches_poi_terms(self, poi: POI, terms: list[str]) -> bool:
+        return self._matches_text_terms(self._poi_text(poi), terms)
+
+    def _matches_text_terms(self, text: str, terms: list[str]) -> bool:
+        if not terms:
+            return False
+        lowered = text.lower()
+        return any(alias.lower() in lowered for term in terms for alias in self._term_aliases(term))
+
+    def _term_match_score(self, poi: POI, terms: list[str]) -> float:
+        if not terms:
+            return 0
+        text = self._poi_text(poi)
+        matches = sum(1 for term in terms if self._matches_text_terms(text, [term]))
+        return matches / len(terms)
+
+    def _matches_replacement_category(self, poi: POI, event_payload: dict) -> bool:
+        category = str(event_payload.get("replacement_category", "")).strip()
+        if not category:
+            return True
+        if self._has_any({category}, {"咖啡馆", "咖啡", "cafe"}):
+            return poi.category == "cafe" or poi.meal_type == "cafe" or "coffee_break" in poi.route_roles or "咖啡" in poi.tags
+        if self._has_any({category}, {"餐厅", "美食", "吃饭", "restaurant"}):
+            return poi.category == "restaurant" or poi.meal_type in {"local_food", "fine_dining"} or "meal" in poi.route_roles
+        if self._has_any({category}, {"小吃", "市集", "market"}):
+            return poi.category == "market" or poi.meal_type == "light_meal" or "snack" in poi.route_roles
+        if self._has_any({category}, {"室内展览", "展览", "博物馆", "美术馆"}):
+            return poi.category in {"museum", "gallery"} or bool({"展览", "艺术展"} & set(poi.tags + poi.highlight_text_tags))
+        if self._has_any({category}, {"商场", "购物", "室内"}):
+            return poi.category == "shopping" or poi.indoor
+        return self._matches_text_terms(self._poi_text(poi), [category])
+
+    def _budget_penalty(self, poi: POI, request: ReplanRequest) -> float:
+        budget = request.intent.budget_per_person if request.intent else 0
+        if budget <= 0 or poi.avg_price <= budget:
+            return 0
+        return min(1, (poi.avg_price - budget) / budget)
+
+    def _objective_bonus(self, poi: POI, request: ReplanRequest) -> float:
+        terms: set[str] = set()
+        if request.intent:
+            terms.update(request.intent.interest_tags + request.intent.optimization_goals + request.intent.preferences)
+        if request.user_profile:
+            terms.update(request.user_profile.interest_tags + request.user_profile.optimization_goals + request.user_profile.tags + request.user_profile.preferences)
+        terms.add(request.event_type)
+        if self._has_any(terms, {"少排队", "low_queue"}) and poi.queue_minutes <= 15:
+            return 1
+        if self._has_any(terms, {"少走路", "轻松", "low_walking"}) and poi.walking_intensity == "low":
+            return 1
+        if self._has_any(terms, {"室内", "雨天", "indoor_rainy"}) and poi.indoor:
+            return 1
+        if self._has_any(terms, {"美食", "吃好", "咖啡", "food_first"}) and poi.meal_type != "non_meal":
+            return 1
+        return 0
+
+    def _has_any_payload_term(self, event_payload: dict, key: str, values: set[str]) -> bool:
+        terms = set(self._as_list(event_payload.get(key)))
+        return self._has_any(terms, values)
+
+    def _has_any(self, terms: set[str], values: set[str]) -> bool:
+        return any(value in term or term in value for term in terms for value in values)
+
+    def _unique_pois(self, pois: list[POI]) -> list[POI]:
+        seen: set[str] = set()
+        result: list[POI] = []
+        for poi in pois:
+            if poi.id in seen:
+                continue
+            result.append(poi)
+            seen.add(poi.id)
+        return result
+
+    def _route_step_instruction(self, transport_mode: str, distance_km: float, travel_minutes: int) -> str:
+        mode_text = {
+            "walk": "步行",
+            "metro": "乘坐地铁",
+            "bus": "乘坐公交",
+            "taxi": "打车",
+            "drive": "打车",
+        }.get(transport_mode, f"乘坐{transport_mode}")
+        return f"{mode_text}约 {distance_km:.1f} 公里，预计 {travel_minutes} 分钟到达下一站"
+
+    def _stop_text(self, stop: RouteStop, poi: POI) -> str:
+        return " ".join(
+            str(part)
+            for part in [
+                stop.name,
+                stop.category,
+                stop.primary_category,
+                stop.meal_type,
+                stop.walking_intensity,
+                stop.highlight_text,
+                stop.ugc_tip,
+                *stop.secondary_categories,
+                *stop.route_roles,
+                *stop.experience_tags,
+                *stop.tags,
+                self._poi_text(poi),
+            ]
+            if part
+        )
+
+    def _poi_text(self, poi: POI) -> str:
+        return " ".join(
+            str(part)
+            for part in [
+                poi.name,
+                poi.category,
+                poi.primary_category,
+                poi.meal_type,
+                poi.walking_intensity,
+                poi.highlight_text,
+                poi.ugc_tip,
+                *poi.secondary_categories,
+                *poi.route_roles,
+                *poi.experience_tags,
+                *poi.tags,
+                *poi.highlight_text_tags,
+                *poi.suitable_time_slots,
+            ]
+            if part
+        )
+
+    def _term_aliases(self, term: str) -> list[str]:
+        aliases = {
+            "咖啡馆": ["咖啡馆", "咖啡", "cafe", "coffee_break"],
+            "咖啡": ["咖啡", "cafe", "coffee_break"],
+            "餐厅": ["餐厅", "美食", "restaurant", "meal", "local_food", "fine_dining"],
+            "美食": ["美食", "餐厅", "restaurant", "meal", "local_food", "fine_dining"],
+            "小吃": ["小吃", "market", "snack", "light_meal"],
+            "室内展览": ["室内展览", "室内", "展览", "museum", "gallery"],
+            "室内": ["室内", "museum", "gallery", "theater", "shopping", "cafe", "indoor"],
+            "雨天": ["雨天", "室内", "rainy", "museum", "gallery", "theater", "shopping"],
+            "安静": ["安静", "清净", "人少", "小众", "cafe"],
+            "人少": ["人少", "安静", "清净", "小众"],
+            "少走路": ["少走路", "轻松", "low", "metro", "transit_anchor"],
+            "轻松": ["轻松", "少走路", "low", "metro"],
+            "商业化": ["商业化", "商业街"],
+            "人多": ["人多", "人流密集", "拥挤", "crowded", "long_queue"],
+            "太贵": ["太贵", "高价", "贵"],
+        }
+        return aliases.get(term, [term])
+
+    def _as_list(self, value: object) -> list[str]:
+        if value is None:
+            return []
+        if isinstance(value, list):
+            return [str(item) for item in value if item]
+        return [str(value)]
+
+    def _replacement_limit(self, event_payload: dict, affected_ids: set[str]) -> int | None:
+        raw = event_payload.get("replace_count")
+        if raw is not None:
+            try:
+                return max(0, int(raw))
+            except (TypeError, ValueError):
+                return len(affected_ids) if affected_ids else None
+        return len(affected_ids) if affected_ids else None
+
+    def _summary(self, route: Route, request: ReplanRequest, replacement_used: bool) -> str:
+        action = "动态调整后" if replacement_used else "实时复核后"
+        return (
+            f"{action}，{route.title}综合评分 {route.score} 分，包含 {len(route.stops)} 个点，"
+            f"人均约 {route.total_cost_per_person} 元，排队 {route.total_queue_minutes} 分钟，"
+            f"路上约 {route.total_travel_minutes} 分钟。"
+        )
+
+    def _poi_for_stop(self, stop: RouteStop, poi_by_id: dict[str, POI]) -> POI:
+        poi = poi_by_id.get(stop.poi_id)
+        if poi:
+            return poi
+        return POI(
+            id=stop.poi_id,
+            name=stop.name,
+            city="上海",
+            district=stop.district,
+            business_area=stop.business_area,
+            address=stop.address,
+            category=stop.category,
+            primary_category=stop.primary_category,
+            secondary_categories=stop.secondary_categories,
+            route_roles=stop.route_roles,
+            experience_tags=stop.experience_tags,
+            lat=0,
+            lng=0,
+            avg_price=stop.estimated_cost,
+            rating=4.0,
+            queue_minutes=stop.queue_minutes,
+            visit_duration_minutes=max(30, self._parse_time(stop.end_time) - self._parse_time(stop.start_time) - stop.queue_minutes),
+            open_hours=stop.open_hours or "00:00-23:59",
+            tags=stop.tags,
+            family_friendly=0,
+            indoor=stop.indoor,
+            walking_intensity=stop.walking_intensity,
+            recommended_transport=stop.recommended_transport,
+            meal_type=stop.meal_type,
+            cover_image_url=stop.cover_image_url,
+            highlight_text=stop.highlight_text,
+            ugc_tip=stop.ugc_tip,
+        )
+
+    def _route_city(self, route: Route, poi_by_id: dict[str, POI]) -> str:
+        for stop in route.stops:
+            poi = poi_by_id.get(stop.poi_id)
+            if poi and poi.city:
+                return poi.city
+        return "上海"
+
+    def _origin_from_request_or_route(self, request: ReplanRequest, completed_stops: list[RouteStop], fallback: POI) -> GeoPoint:
+        if request.current_lat is not None and request.current_lng is not None:
+            return GeoPoint(lat=request.current_lat, lng=request.current_lng)
+        if request.current_poi_id:
+            poi = next((candidate for candidate in self.poi_service.all_pois() if candidate.id == request.current_poi_id), None)
+            if poi:
+                return GeoPoint(lat=poi.lat, lng=poi.lng)
+        if completed_stops:
+            poi = next((candidate for candidate in self.poi_service.all_pois() if candidate.id == completed_stops[-1].poi_id), None)
+            if poi:
+                return GeoPoint(lat=poi.lat, lng=poi.lng)
+        return GeoPoint(lat=fallback.lat, lng=fallback.lng)
+
+    def _origin_point(self, previous_stop: RouteStop | None, fallback: POI) -> GeoPoint:
+        if previous_stop:
+            poi = next((candidate for candidate in self.poi_service.all_pois() if candidate.id == previous_stop.poi_id), None)
+            if poi:
+                return GeoPoint(lat=poi.lat, lng=poi.lng)
+        return GeoPoint(lat=fallback.lat, lng=fallback.lng)
+
+    def _transport_mode(self, poi: POI) -> str:
+        if poi.recommended_transport:
+            return poi.recommended_transport[0]
+        return "walk" if poi.walking_intensity != "high" else "metro"
+
+    def _sources(self, route: Route, provider_source: str) -> list[str]:
+        sources = {provider_source}
+        for stop in route.stops:
+            if stop.poi_id.startswith("mock_") or stop.poi_id.startswith("external_"):
+                sources.add(provider_source)
+            else:
+                sources.add("local")
+        return sorted(sources)
+
+    def _parse_time(self, value: str) -> int:
+        try:
+            hour, minute = value.split(":", 1)
+            return int(hour) * 60 + int(minute)
+        except ValueError:
+            return 14 * 60
+
+    def _format_time(self, minutes: int) -> str:
+        minutes = minutes % (24 * 60)
+        return f"{minutes // 60:02d}:{minutes % 60:02d}"
+
+    def _route_elapsed_minutes(self, stops: list[RouteStop]) -> int:
+        if not stops:
+            return 0
+        start = self._parse_time(stops[0].start_time)
+        end = self._parse_time(stops[-1].end_time)
+        if end < start:
+            end += 24 * 60
+        return end - start

@@ -1,4 +1,5 @@
 import math
+import threading
 from dataclasses import dataclass, field
 from typing import Any
 
@@ -35,13 +36,50 @@ class AmapService:
 
     BASE_URL = "https://restapi.amap.com/v3/direction"
 
-    def __init__(self, api_key: str | None = None, timeout_seconds: float = 2.5) -> None:
+    def __init__(self, api_key: str | None = None, timeout_seconds: float = 2.5, route_provider: str | None = None) -> None:
         self.api_key = settings.amap_web_service_key if api_key is None else api_key
         self.timeout_seconds = timeout_seconds
+        self.route_provider = settings.map_route_provider if route_provider is None else route_provider
+        self._route_leg_cache: dict[tuple[str, str, str, str], RouteLeg] = {}
+        self._route_leg_cache_lock = threading.Lock()
+        self._route_leg_inflight: dict[tuple[str, str, str, str], threading.Event] = {}
 
-    def route_leg(self, origin: GeoPoint, destination: GeoPoint, mode: str = "walk") -> RouteLeg:
-        if not self.api_key:
+    def route_leg(self, origin: GeoPoint, destination: GeoPoint, mode: str = "walk", departure_time: str | None = None) -> RouteLeg:
+        if self.route_provider == "mock" or (not self.api_key and self.route_provider != "fallback"):
+            from app.services.mock_route_map_service import MockRouteMapService
+
+            return MockRouteMapService().route_leg(origin, destination, mode=mode, departure_time=departure_time)
+
+        cache_key = (
+            self._format_point(origin),
+            self._format_point(destination),
+            self._endpoint_mode(mode),
+            departure_time or "",
+        )
+        inflight_event: threading.Event | None = None
+        should_fetch = False
+        with self._route_leg_cache_lock:
+            cached = self._route_leg_cache.get(cache_key)
+            if cached is not None:
+                return cached
+            inflight_event = self._route_leg_inflight.get(cache_key)
+            if inflight_event is None:
+                inflight_event = threading.Event()
+                self._route_leg_inflight[cache_key] = inflight_event
+                should_fetch = True
+
+        if not should_fetch:
+            inflight_event.wait()
+            with self._route_leg_cache_lock:
+                cached = self._route_leg_cache.get(cache_key)
+            if cached is not None:
+                return cached
             return self._fallback_leg(origin, destination, mode)
+
+        if not self.api_key:
+            leg = self._fallback_leg(origin, destination, mode)
+            self._store_route_leg(cache_key, leg)
+            return leg
 
         endpoint_mode = self._endpoint_mode(mode)
         try:
@@ -58,9 +96,18 @@ class AmapService:
             response.raise_for_status()
             data = response.json()
             leg = self._parse_route_response(data, mode)
-            return leg or self._fallback_leg(origin, destination, mode)
+            result = leg or self._fallback_leg(origin, destination, mode)
         except (httpx.HTTPError, ValueError, KeyError, TypeError):
-            return self._fallback_leg(origin, destination, mode)
+            result = self._fallback_leg(origin, destination, mode)
+        self._store_route_leg(cache_key, result)
+        return result
+
+    def _store_route_leg(self, cache_key: tuple[str, str, str, str], leg: RouteLeg) -> None:
+        with self._route_leg_cache_lock:
+            self._route_leg_cache[cache_key] = leg
+            inflight_event = self._route_leg_inflight.pop(cache_key, None)
+            if inflight_event is not None:
+                inflight_event.set()
 
     def _parse_route_response(self, data: dict[str, Any], mode: str) -> RouteLeg | None:
         if data.get("status") != "1":
@@ -103,13 +150,30 @@ class AmapService:
         distance_km = self._distance_km(origin, destination)
         distance_meters = max(1, round(distance_km * 1000))
         duration_minutes = self._fallback_duration_minutes(distance_km, mode)
+        steps = self._fallback_steps(mode, distance_meters, duration_minutes)
         return RouteLeg(
             mode=mode,
             distance_meters=distance_meters,
             duration_minutes=duration_minutes,
             polyline=f"{self._format_point(origin)};{self._format_point(destination)}",
+            steps=steps,
             source="fallback",
         )
+
+    def _fallback_steps(self, mode: str, distance_meters: int, duration_minutes: int) -> list[RouteLegStep]:
+        normalized = mode.lower()
+        distance_text = f"{distance_meters / 1000:.1f} 公里" if distance_meters >= 1000 else f"{max(20, round(distance_meters / 10) * 10)} 米"
+        if "walk" in normalized:
+            instruction = f"步行约 {distance_text}，预计 {duration_minutes} 分钟到达"
+        elif "taxi" in normalized or "drive" in normalized:
+            instruction = f"打车约 {distance_text}，预计 {duration_minutes} 分钟到达"
+        elif "bus" in normalized:
+            instruction = f"步行至附近公交站，乘公交后步行到达，全程约 {distance_text}，预计 {duration_minutes} 分钟"
+        elif "metro" in normalized:
+            instruction = f"步行至附近地铁站，乘地铁后步行到达，全程约 {distance_text}，预计 {duration_minutes} 分钟"
+        else:
+            instruction = f"建议{mode}前往，全程约 {distance_text}，预计 {duration_minutes} 分钟"
+        return [RouteLegStep(instruction=instruction, distance_meters=distance_meters, duration_minutes=duration_minutes)]
 
     def _fallback_duration_minutes(self, distance_km: float, mode: str) -> int:
         if "walk" in mode:

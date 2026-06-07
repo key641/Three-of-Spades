@@ -1,5 +1,13 @@
 import re
 
+from app.agent.tag_taxonomy import (
+    extract_tag_layers,
+    legacy_preferences_from_layers,
+    normalize_avoid_tags as normalize_taxonomy_avoid_tags,
+    normalize_interest_tags,
+    normalize_optimization_goals,
+    split_preference_terms,
+)
 from app.schemas.intent import Intent
 
 
@@ -15,7 +23,29 @@ CITY_ALIASES: dict[str, list[str]] = {
     "西安": ["西安"],
     "苏州": ["苏州"],
     "重庆": ["重庆"],
+    "长沙": ["长沙"],
+    "厦门": ["厦门"],
+    "青岛": ["青岛"],
+    "天津": ["天津"],
 }
+
+KNOWN_BUSINESS_AREAS = [
+    "武康路",
+    "安福路",
+    "外滩",
+    "陆家嘴",
+    "南京路",
+    "淮海路",
+    "新天地",
+    "田子坊",
+    "三里屯",
+    "王府井",
+    "后海",
+    "什刹海",
+    "南锣鼓巷",
+    "国贸",
+    "西单",
+]
 
 PREFERENCE_ALIASES: dict[str, list[str]] = {
     "少排队": ["少排队", "别排队", "不排队", "不想排队", "排队少"],
@@ -27,6 +57,7 @@ PREFERENCE_ALIASES: dict[str, list[str]] = {
     "亲子友好": ["亲子", "带娃", "小孩", "儿童"],
     "室内": ["室内", "雨天", "下雨"],
     "安静": ["安静", "清净", "人少"],
+    "自然风景": ["自然", "风景", "自然风景", "公园", "江景", "海边", "湖边", "山", "森林"],
 }
 
 PREFERENCE_CANONICAL_ALIASES: dict[str, str] = {
@@ -90,22 +121,38 @@ def enhance_intent_from_message(intent: Intent, message: str) -> Intent:
     if start_time:
         data["start_time"] = start_time
 
-    added_preferences = _extract_terms(text, PREFERENCE_ALIASES)
-    removed_preferences = _extract_terms(text, NEGATIVE_PREFERENCE_ALIASES)
-    data["preferences"] = _remove_values(
-        _remove_non_preferences(_unique([*_normalize_preferences(intent.preferences), *added_preferences])),
-        removed_preferences,
+    district = _extract_district(text)
+    if district:
+        data["target_district"] = district
+
+    business_area = _extract_business_area(text)
+    if business_area:
+        data["target_business_area"] = business_area
+
+    layers = extract_tag_layers(
+        text,
+        seed_preferences=[*intent.preferences, *intent.interest_tags, *intent.optimization_goals],
+        seed_avoid_tags=intent.avoid_tags,
     )
-    data["avoid_tags"] = _unique([*_normalize_avoid_tags(intent.avoid_tags), *_extract_terms(text, AVOID_ALIASES)])
+    removed_preferences = extract_removed_preferences(text)
+    layers.interest_tags = _remove_values(layers.interest_tags, removed_preferences)
+    data["interest_tags"] = layers.interest_tags
+    data["optimization_goals"] = layers.optimization_goals
+    data["avoid_tags"] = layers.avoid_tags
+    data["preferences"] = legacy_preferences_from_layers(
+        layers.interest_tags,
+        layers.optimization_goals,
+        layers.unknown_preferences,
+    )
 
     if city or duration_hours or data["preferences"] or data["avoid_tags"]:
         data["need_clarification"] = False
 
-    if "亲子友好" in data["preferences"]:
+    if "亲子" in data["interest_tags"]:
         data["scenario"] = "family_trip"
-    elif "吃好" in data["preferences"]:
+    elif "美食" in data["interest_tags"]:
         data["scenario"] = "foodie_tour"
-    elif "citywalk" in data["preferences"]:
+    elif "citywalk" in data["interest_tags"]:
         data["scenario"] = "friends_citywalk"
 
     return Intent.model_validate(data)
@@ -129,25 +176,64 @@ def extract_explicit_trip_fields(message: str) -> dict[str, object]:
     start_time = _extract_start_time(text)
     if start_time:
         fields["start_time"] = start_time
+    district = _extract_district(text)
+    if district:
+        fields["target_district"] = district
+    business_area = _extract_business_area(text)
+    if business_area:
+        fields["target_business_area"] = business_area
     return fields
 
 
 def extract_removed_preferences(message: str) -> list[str]:
-    return _extract_terms(message.strip(), NEGATIVE_PREFERENCE_ALIASES)
+    return split_preference_terms(_extract_terms(message.strip(), NEGATIVE_PREFERENCE_ALIASES)).interest_tags
 
 
 def normalize_preferences(values: list[str]) -> list[str]:
-    return _unique(_normalize_preferences(values))
+    layers = split_preference_terms(values)
+    return legacy_preferences_from_layers(layers.interest_tags, layers.optimization_goals, layers.unknown_preferences)
+
+
+def normalize_interest_preferences(values: list[str]) -> list[str]:
+    layers = split_preference_terms(values)
+    return normalize_interest_tags([*layers.interest_tags, *values])
+
+
+def normalize_goal_preferences(values: list[str]) -> list[str]:
+    layers = split_preference_terms(values)
+    return normalize_optimization_goals([*layers.optimization_goals, *values])
 
 
 def normalize_avoid_tags(values: list[str]) -> list[str]:
-    return _unique(_normalize_avoid_tags(values))
+    return normalize_taxonomy_avoid_tags(values)
 
 
 def _extract_city(text: str) -> str | None:
     for city, aliases in CITY_ALIASES.items():
         if any(alias in text for alias in aliases):
             return city
+    return None
+
+
+def _extract_district(text: str) -> str | None:
+    non_district_endings = {"地区", "景区", "特区", "城区", "风景区", "保护区", "开发区", "区别", "区域"}
+    for match in re.finditer(r"[\u4e00-\u9fa5]{2,6}区|[\u4e00-\u9fa5]{2,6}县|[\u4e00-\u9fa5]{2,6}新区", text):
+        value = match.group(0)
+        if value in non_district_endings or value[-2:] in non_district_endings:
+            continue
+        return value
+    return None
+
+
+def _extract_business_area(text: str) -> str | None:
+    for area in KNOWN_BUSINESS_AREAS:
+        if area in text:
+            return area
+    match = re.search(r"[\u4e00-\u9fa5]{2,8}(?:路|街|巷|弄|大道|步行街|老街)", text)
+    if match:
+        value = match.group(0)
+        if value not in {"路线", "道路"}:
+            return value
     return None
 
 
