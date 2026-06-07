@@ -1,9 +1,9 @@
-import { FormEvent, useEffect, useRef, useState, useCallback } from "react";
+import React, { FormEvent, useEffect, useLayoutEffect, useRef, useState, useCallback } from "react";
+import { API_BASE_URL } from "../api/client";
 import { Send, MapPin, Users, Wallet, Pencil, LocateFixed, Clock, Shuffle, ChevronLeft, Copy, RefreshCw, Trash2, ArrowUp, ArrowDown, Navigation, Sun } from "lucide-react";
 import { AgentTrace } from "../components/AgentTrace";
 import { ChatPanel } from "../components/ChatPanel";
 import { RouteCompare } from "../components/RouteCompare";
-import { UserProfileBadge } from "../components/UserProfileBadge";
 import { MapPanel } from "../components/MapPanel";
 import { BottomSheet } from "../components/BottomSheet";
 import type { SheetSnap } from "../components/BottomSheet";
@@ -360,6 +360,75 @@ function buildInitMessage(trip: TripConstraints): string {
   return parts.join("，") + "，帮我规划一下今天的行程吧！";
 }
 
+// ── Debug Panel 辅助组件 ──────────────────────────────────────
+
+type LLMCheckResult = { ok: boolean; model?: string; reply?: string; elapsed_ms?: number; provider?: string; error?: string } | null;
+
+function LLMHealthCheck() {
+  const [status, setStatus] = useState<"idle" | "checking" | "done">("idle");
+  const [result, setResult] = useState<LLMCheckResult>(null);
+
+  async function check() {
+    setStatus("checking");
+    setResult(null);
+    try {
+      const res = await fetch(`${API_BASE_URL}/api/debug/llm-check`);
+      const data = await res.json() as LLMCheckResult;
+      setResult(data);
+    } catch (e) {
+      setResult({ ok: false, error: e instanceof Error ? e.message : "网络错误" });
+    } finally {
+      setStatus("done");
+    }
+  }
+
+  return (
+    <div style={{ marginBottom: 16, background: "rgba(56,201,138,0.06)", borderRadius: 10, padding: "12px 14px", border: "1px solid rgba(56,201,138,0.2)" }}>
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 8 }}>
+        <span style={{ color: "#38c98a", fontSize: 12, fontWeight: 700 }}>🔌 第 0 步：LLM 连通性检查</span>
+        <button
+          onClick={check}
+          disabled={status === "checking"}
+          style={{
+            background: status === "checking" ? "rgba(56,201,138,0.15)" : "rgba(56,201,138,0.25)",
+            border: "1px solid rgba(56,201,138,0.5)",
+            borderRadius: 6, color: "#38c98a", padding: "3px 12px",
+            cursor: status === "checking" ? "not-allowed" : "pointer", fontSize: 12, fontWeight: 600,
+          }}
+        >
+          {status === "checking" ? "⏳ 检测中..." : "▶ 检测"}
+        </button>
+      </div>
+
+      {status === "idle" && (
+        <span style={{ color: "#4b5563", fontSize: 11 }}>点击「检测」按钮，直接 ping 一次大模型接口</span>
+      )}
+      {status === "checking" && (
+        <span style={{ color: "#94a3b8", fontSize: 11 }}>正在调用 LLM，请稍候...</span>
+      )}
+      {status === "done" && result && (
+        <div>
+          <DebugRow
+            label="连通状态"
+            value={result.ok ? "✅ 正常" : "❌ 失败"}
+            highlight={result.ok ? "ok" : "warn"}
+          />
+          {result.ok ? (
+            <>
+              <DebugRow label="模型" value={result.model ?? "-"} />
+              <DebugRow label="provider" value={result.provider ?? "-"} />
+              <DebugRow label="响应耗时" value={`${result.elapsed_ms} ms`} />
+              <DebugRow label="LLM 回复" value={result.reply ?? "-"} />
+            </>
+          ) : (
+            <DebugRow label="错误信息" value={result.error ?? "未知错误"} highlight="warn" />
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
 // ── 智能追问系统（mock 数据） ──────────────────────────────────
 
 interface FollowUpOption { label: string; value: string; }
@@ -466,72 +535,6 @@ function buildFollowUpQuestions(trip: TripConstraints): FollowUpQuestion[] {
   return questions.slice(0, 2);
 }
 
-/** 首次自由输入后的通用追问（2-3 个，不依赖 TripConstraints） */
-function buildWelcomeFollowUpQuestions(): FollowUpQuestion[] {
-  const isWeekend = [0, 6].includes(new Date().getDay());
-  return [
-    {
-      id: "pace",
-      icon: "🎯",
-      question: "今天的出行节奏想要怎样？",
-      options: [
-        { label: "悠闲慢游，重在体验", value: "relaxed" },
-        { label: "紧凑充实，多逛几处", value: "packed" },
-        { label: "随缘就好",            value: "auto" },
-      ],
-    },
-    {
-      id: "people",
-      icon: "👥",
-      question: "和谁一起出行？",
-      options: [
-        { label: "我一个人",       value: "solo" },
-        { label: "两人小约会",     value: "couple" },
-        { label: "家人 / 多人团", value: "group" },
-      ],
-    },
-    {
-      id: "crowd",
-      icon: isWeekend ? "🚦" : "⏰",
-      question: isWeekend
-        ? "今天是周末，热门景点人流较多，是否避开？"
-        : "今天人少，想去热门打卡地还是小众宝藏地？",
-      options: isWeekend
-        ? [
-            { label: "避开人多，偏安静", value: "avoid_crowd" },
-            { label: "不介意，热闹也好", value: "ok_crowd" },
-            { label: "随便你安排",        value: "auto" },
-          ]
-        : [
-            { label: "热门打卡地",   value: "popular" },
-            { label: "小众宝藏地",   value: "hidden" },
-            { label: "两者都要",     value: "mixed" },
-          ],
-    },
-  ];
-}
-
-/** 将通用追问答案拼成补充说明 */
-function buildWelcomeSupplement(answers: Record<string, string>): string {
-  const parts: string[] = [];
-  const map: Record<string, Record<string, string>> = {
-    pace:   { relaxed: "节奏轻松悠闲", packed: "节奏紧凑充实", auto: "节奏随缘" },
-    people: { solo: "独自出行", couple: "两人同行", group: "多人出行" },
-    crowd:  {
-      avoid_crowd: "尽量避开人多的地方",
-      ok_crowd:    "不介意人流",
-      auto:        "地点类型不限",
-      popular:     "偏向热门打卡地",
-      hidden:      "偏向小众宝藏地",
-      mixed:       "热门与小众兼顾",
-    },
-  };
-  for (const [qid, val] of Object.entries(answers)) {
-    const hint = map[qid]?.[val];
-    if (hint) parts.push(hint);
-  }
-  return parts.length > 0 ? "，" + parts.join("，") : "";
-}
 
 /** 将 TripSetupPanel 追问答案拼成补充说明 */
 function buildFollowUpSupplement(answers: Record<string, string>): string {
@@ -1082,14 +1085,15 @@ function buildActionMessage(actionKey: string, routeTitle: string): string {
 }
 
 /** 将 POI 级操作转成 AI 消息文本（或返回 null 表示仅填输入框） */
-function buildPoiActionMessage(action: PoiAction, routeId: string): string | null {
+function buildPoiActionMessage(action: PoiAction, routeTitle: string): string | null {
+  const name = `【${routeTitle}】`;
   switch (action.type) {
     case "swap_same":
-      return `路线 ${routeId} 中的「${action.poiName}」我不满意，帮我换一个同类型的地点`;
+      return `${name}中的「${action.poiName}」我不满意，帮我换一个同类型的地点`;
     case "swap_as":
-      return `路线 ${routeId} 中的「${action.poiName}」帮我换成${action.category}类型的地点`;
+      return `${name}中的「${action.poiName}」帮我换成${action.category}类型的地点`;
     case "remove":
-      return `路线 ${routeId} 中去掉「${action.poiName}」，帮我重新衔接路线`;
+      return `${name}中去掉「${action.poiName}」，帮我重新衔接路线`;
     case "talk_ai":
       // 预填输入框，让用户自己发送
       return null;
@@ -1098,26 +1102,38 @@ function buildPoiActionMessage(action: PoiAction, routeId: string): string | nul
 
 // ── 主页面 ────────────────────────────────────────────────────
 export function PlannerPage({ profile, onResetProfile, preset, onPresetConsumed, onBackToHome, onTripFinished, initialMsg }: PlannerPageProps) {
-  const { messages, response, liveTrace, loading, error, send, inject, reset } = useChat();
+  const { messages, response, liveTrace, loading, error, lastRequest, send, inject, reset, answerClarify, patchRouteStops } = useChat();
   const [inputText, setInputText] = useState("");
   const [localProfile, setLocalProfile] = useState<OnboardingProfile>(profile);
   const [trip, setTrip] = useState<TripConstraints | null>(null);
-  // 如果有 initialMsg（首页直接输入的），跳过 WelcomeScreen
-  const [showSetup, setShowSetup] = useState(!initialMsg);
+  // 如果有 initialMsg 或 preset.initialMsg（首页直接输入的），跳过 WelcomeScreen，避免闪屏
+  const [showSetup, setShowSetup] = useState(!(initialMsg ?? preset?.initialMsg));
 
-  
+  // ── Debug Panel 历史记录（每轮请求 append 一条，不覆盖） ──────
+  interface DebugRecord {
+    round: number;
+    request: Record<string, unknown> | null;
+    response: import("../api/types").ChatResponse | null;
+    timestamp: number;
+  }
+  const [debugHistory, setDebugHistory] = useState<DebugRecord[]>([]);
+  const debugRoundRef = useRef(0);
 
-  // 追问状态：null = 不显示，有值 = 显示追问卡片
+  // 追问状态：null = 不显示，有值 = 显示追问卡片（TripSetupPanel 路径使用）
   const [followUp, setFollowUp] = useState<{ trip: TripConstraints; questions: FollowUpQuestion[] } | null>(null);
-  // 欢迎首屏追问状态：存储首次发送的原始消息 + 通用追问（选完后保留展示，由 done 控制只读）
-  const [welcomeFollowUp, setWelcomeFollowUp] = useState<{ pendingMsg: string; questions: FollowUpQuestion[] } | null>(null);
-  const [welcomeFollowUpDone, setWelcomeFollowUpDone] = useState(false);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
+  // ── Debug Panel 状态 ──────────────────────────────────────────
+  const [showDebug, setShowDebug] = useState(false);
 
   // ── Sheet 状态 ──────────────────────────────────────────────
   const [sheetSnap, setSheetSnap]     = useState<SheetSnap>("half");
   const [activePoi, setActivePoi]     = useState<string | null>(null);
   const [activeRouteIndex, setActiveRouteIndex] = useState(0);
+  // 用户主动点击方案后才在地图上显示路线；-1 表示尚未选择，地图不显示任何标记
+  const [mapRouteIndex, setMapRouteIndex] = useState<number>(-1);
+
+  // mapStops：直接驱动地图显示的 stops，删节点时直接 setMapStops，与 routes 完全解耦
+  const [mapStops, setMapStops] = useState<import("../api/types").RouteStop[] | null>(null);
 
   // ── 编辑 Sheet 状态 ──────────────────────────────────────────
   const [showEditSheet, setShowEditSheet] = useState(false);
@@ -1127,19 +1143,20 @@ export function PlannerPage({ profile, onResetProfile, preset, onPresetConsumed,
   const [editableRoutes, setEditableRoutes] = useState<import("../api/types").Route[]>([]);
 
   // ── 消费来自首页的预设参数 ──────────────────────────────────
-  useEffect(() => {
+  // 用 useLayoutEffect（同步执行，在浏览器绘制前）避免 PlanningWelcomeScreen 闪屏
+  useLayoutEffect(() => {
     if (!preset) return;
     if (preset.initialMsg) {
       const msg = preset.initialMsg;
       reset();
       setTrip(null);
       setFollowUp(null);
-      setWelcomeFollowUp(null);
-      setWelcomeFollowUpDone(false);
-      setShowSetup(false);
+      setShowSetup(false); // 立即同步置 false，不等下一帧
       setSheetSnap("half");
-      inject("user", msg);
-      setWelcomeFollowUp({ pendingMsg: msg, questions: buildWelcomeFollowUpQuestions() });
+      // 异步发请求（send 里有 async 逻辑，不能在 useLayoutEffect 直接 await）
+      Promise.resolve().then(() => {
+        send(msg, localProfile, DEFAULT_TRIP_CONSTRAINTS);
+      });
     } else {
       setShowSetup(true);
       setTrip(null);
@@ -1155,9 +1172,10 @@ export function PlannerPage({ profile, onResetProfile, preset, onPresetConsumed,
     const msg = initialMsgRef.current;
     if (!msg) return;
     initialMsgRef.current = undefined; // 只触发一次
+    // 重置会话，确保后端不带旧 session 记忆，追问判断从头开始
+    reset();
     setSheetSnap("half");
-    inject("user", msg);
-    setWelcomeFollowUp({ pendingMsg: msg, questions: buildWelcomeFollowUpQuestions() });
+    send(msg, localProfile, DEFAULT_TRIP_CONSTRAINTS);
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
@@ -1177,16 +1195,6 @@ export function PlannerPage({ profile, onResetProfile, preset, onPresetConsumed,
     const finalMsg = buildInitMessage(followUp.trip).replace("，帮我规划一下今天的行程吧！", supplement + "，帮我规划一下今天的行程吧！");
     setFollowUp(null);
     send(finalMsg, localProfile, followUp.trip);
-  }
-
-  function handleWelcomeFollowUpConfirm(answers: Record<string, string>) {
-    if (!welcomeFollowUp) return;
-    const supplement = buildWelcomeSupplement(answers);
-    const finalMsg = welcomeFollowUp.pendingMsg + supplement;
-    // 卡片保留（不 setWelcomeFollowUp(null)），切换为只读态
-    setWelcomeFollowUpDone(true);
-    // silent=true：不往消息列表插入 user bubble（页面上追问卡片已展示用户选择，无需重复）
-    send(finalMsg, localProfile, DEFAULT_TRIP_CONSTRAINTS, true);
   }
 
   function handleSkip() {
@@ -1246,7 +1254,8 @@ export function PlannerPage({ profile, onResetProfile, preset, onPresetConsumed,
     if (actionKey.startsWith("skip_poi:")) {
       const parts = actionKey.split(":");   // ["skip_poi", poiId, poiName]
       const poiName = parts[2] ?? "";
-      const msg = `路线 ${routeId} 中跳过「${poiName}」，帮我衔接前后行程`;
+      const skipRouteTitle = response?.routes?.find((r) => r.route_id === routeId)?.title ?? routeId;
+      const msg = `【${skipRouteTitle}】中跳过「${poiName}」，帮我衔接前后行程`;
       send(msg, localProfile, trip ?? DEFAULT_TRIP_CONSTRAINTS);
       return;
     }
@@ -1260,9 +1269,10 @@ export function PlannerPage({ profile, onResetProfile, preset, onPresetConsumed,
   }
 
   const handlePoiAction = useCallback((action: PoiAction, routeId: string) => {
+    const routeTitle = response?.routes?.find((r) => r.route_id === routeId)?.title ?? routeId;
     if (action.type === "talk_ai") {
       // 预填输入框提示，聚焦让用户补充
-      const hint = `路线 ${routeId} 中的「${action.poiName}」`;
+      const hint = `【${routeTitle}】中的「${action.poiName}」`;
       setInputText(hint);
       setTimeout(() => {
         const el = textareaRef.current;
@@ -1275,10 +1285,10 @@ export function PlannerPage({ profile, onResetProfile, preset, onPresetConsumed,
       }, 50);
       return;
     }
-    const msg = buildPoiActionMessage(action, routeId);
+    const msg = buildPoiActionMessage(action, routeTitle);
     if (msg) send(msg, localProfile, trip ?? DEFAULT_TRIP_CONSTRAINTS);
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [localProfile, trip]);
+  }, [localProfile, trip, response?.routes]);
 
   // 地图 POI 被点击 → 高亮
   function handlePoiClick(poiId: string) {
@@ -1286,15 +1296,35 @@ export function PlannerPage({ profile, onResetProfile, preset, onPresetConsumed,
     if (sheetSnap === "peek") setSheetSnap("half");
   }
 
-  // AI 返回方案后 → 同步可编辑路线副本
+  // AI 返回方案后 → 同步可编辑路线副本，清空本地编辑 stops、重置地图选择
   useEffect(() => {
     if ((response?.routes?.length ?? 0) > 0 && !loading) {
       setActiveRouteIndex(0);
+      setMapRouteIndex(-1); // 新方案返回，重置地图，等用户主动点击
+      setMapStops(null);     // 清空地图 stops，回到空白状态
       setSheetSnap("half");
       setEditableRoutes(response!.routes.map((r) => ({ ...r, stops: [...r.stops] })));
     }
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [response?.routes?.length, loading]);
+
+  // ── 每轮请求结束后，将本轮记录追加到 debugHistory ──────────
+  useEffect(() => {
+    // 只在 loading 刚结束（response 有值）时追加
+    if (!loading && response) {
+      const round = ++debugRoundRef.current;
+      setDebugHistory((prev) => [
+        ...prev,
+        {
+          round,
+          request: lastRequest,
+          response,
+          timestamp: Date.now(),
+        },
+      ]);
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [loading, response]);
 
   function handleResetProfile() {
     reset();
@@ -1302,11 +1332,6 @@ export function PlannerPage({ profile, onResetProfile, preset, onPresetConsumed,
   }
 
   const hasRoutes = (response?.routes?.length ?? 0) > 0;
-  const displayProfile: { preferences?: string[]; avoid_tags?: string[] } =
-    response?.user_profile ?? {
-      preferences: localProfile.preferences,
-      avoid_tags:  localProfile.avoid_tags,
-    };
 
   const currentCity = trip?.city ?? DEFAULT_TRIP_CONSTRAINTS.city;
 
@@ -1315,23 +1340,14 @@ export function PlannerPage({ profile, onResetProfile, preset, onPresetConsumed,
     <div className="sheet-chat-inner">
       {/* 可滚动内容区 */}
       <div className="sheet-chat-scroll">
-        {/* 对话消息列表（追问卡片嵌入第一条 user 消息之后） */}
+        {/* 对话消息列表（追问卡片嵌入第一条 user 消息之后；路线方案附在最后一条 assistant 气泡下方） */}
         <ChatPanel
           messages={messages}
           loading={loading}
           error={error}
-          clarifyingQuestion={response?.need_clarification ? (response.clarifying_question ?? null) : null}
-          onClarify={(answer) => send(answer, localProfile, trip ?? DEFAULT_TRIP_CONSTRAINTS)}
+          onClarify={(answer) => answerClarify(answer, localProfile, trip ?? DEFAULT_TRIP_CONSTRAINTS)}
           afterFirstUserMessage={
-            // 欢迎首屏追问（选完后只读保留）
-            welcomeFollowUp ? (
-              <SmartFollowUp
-                questions={welcomeFollowUp.questions}
-                onAllAnswered={handleWelcomeFollowUpConfirm}
-                readonly={welcomeFollowUpDone}
-              />
-            ) :
-            // TripSetupPanel 路径追问
+            // TripSetupPanel 路径追问（由前端本地规则生成）
             (followUp && !loading) ? (
               <SmartFollowUp
                 questions={followUp.questions}
@@ -1342,32 +1358,53 @@ export function PlannerPage({ profile, onResetProfile, preset, onPresetConsumed,
           beforeLoadingBubble={
             <AgentTrace steps={response?.agent_trace ?? []} loading={loading} />
           }
+          afterLastAssistant={
+            hasRoutes ? (
+              <div className="sheet-inline-routes">
+                <RouteCompare
+                  routes={response?.routes ?? []}
+                  loading={false}
+                  onAction={handleAction}
+                  onPoiAction={handlePoiAction}
+                  onTripFinished={onTripFinished}
+                  onRoutePreview={(routeId) => {
+                    const idx = (response?.routes ?? []).findIndex((r) => r.route_id === routeId);
+                    if (idx !== -1) {
+                      const route = response!.routes[idx];
+                      setActiveRouteIndex(idx);
+                      setMapRouteIndex(idx);
+                      // 用路线的初始 stops 驱动地图
+                      setMapStops([...route.stops]);
+                    }
+                  }}
+                  onLiveStopsChange={(routeId, newStops) => {
+                    // 直接更新 mapStops 驱动地图，与 routes 完全解耦
+                    setMapStops(newStops);
+                    // 确保地图已激活
+                    const idx = (response?.routes ?? []).findIndex((r) => r.route_id === routeId);
+                    if (idx !== -1) {
+                      setMapRouteIndex(idx);
+                    }
+                    // 同步写回底层方案（不影响地图更新）
+                    patchRouteStops(routeId, newStops);
+                  }}
+                  onInjectChat={(text) => {
+                    setInputText(text);
+                    setTimeout(() => {
+                      const el = textareaRef.current;
+                      if (el) {
+                        el.focus();
+                        el.setSelectionRange(text.length, text.length);
+                        el.style.height = "auto";
+                        el.style.height = Math.min(el.scrollHeight, 120) + "px";
+                      }
+                    }, 50);
+                  }}
+                />
+              </div>
+            ) : undefined
+          }
         />
-
-        {/* 路线方案（有结果时内联展示） */}
-        {(hasRoutes || loading) && (
-          <div className="sheet-inline-routes">
-            <RouteCompare
-              routes={response?.routes ?? []}
-              loading={loading}
-              onAction={handleAction}
-              onPoiAction={handlePoiAction}
-              onTripFinished={onTripFinished}
-              onInjectChat={(text) => {
-                setInputText(text);
-                setTimeout(() => {
-                  const el = textareaRef.current;
-                  if (el) {
-                    el.focus();
-                    el.setSelectionRange(text.length, text.length);
-                    el.style.height = "auto";
-                    el.style.height = Math.min(el.scrollHeight, 120) + "px";
-                  }
-                }, 50);
-              }}
-            />
-          </div>
-        )}
       </div>
 
       {/* 输入栏固定在底部 */}
@@ -1400,9 +1437,11 @@ export function PlannerPage({ profile, onResetProfile, preset, onPresetConsumed,
       <div className="map-bg">
         <MapPanel
           routes={response?.routes ?? []}
-          activeRouteIndex={activeRouteIndex}
+          activeRouteIndex={mapRouteIndex}  // -1 时不显示任何路线标记
           activePoi={activePoi}
           onPoiClick={handlePoiClick}
+          sheetSnap={sheetSnap}
+          liveStops={mapStops ?? undefined}
         />
       </div>
 
@@ -1418,22 +1457,224 @@ export function PlannerPage({ profile, onResetProfile, preset, onPresetConsumed,
             <ChevronLeft size={20} />
           </button>
         )}
-        <UserProfileBadge
-          profile={displayProfile}
-          onReset={handleResetProfile}
-        />
       </header>
+
+      {/* ── Debug 悬浮按钮（右下角） ── */}
+      <button
+        type="button"
+        onClick={() => setShowDebug(v => !v)}
+        title="调试面板"
+        style={{
+          position: "fixed",
+          right: 16,
+          bottom: 96,
+          zIndex: 8888,
+          width: 44,
+          height: 44,
+          borderRadius: "50%",
+          background: showDebug ? "rgba(245,200,66,0.9)" : "rgba(30,30,30,0.75)",
+          border: "1.5px solid rgba(245,200,66,0.6)",
+          boxShadow: "0 4px 16px rgba(0,0,0,0.35)",
+          cursor: "pointer",
+          fontSize: 20,
+          display: "flex",
+          alignItems: "center",
+          justifyContent: "center",
+          backdropFilter: "blur(6px)",
+        }}
+      >
+        🐛
+      </button>
+
+      {/* ── Debug Panel（右侧抽屉） ── */}
+      {showDebug && (
+        <>
+          {/* 半透明遮罩，点击关闭 */}
+          <div
+            onClick={() => setShowDebug(false)}
+            style={{
+              position: "fixed", top: 0, left: 0, right: 0, bottom: 0,
+              zIndex: 9998,
+              background: "rgba(0,0,0,0.45)",
+              backdropFilter: "blur(2px)",
+            }}
+          />
+          {/* 抽屉主体 */}
+          <div style={{
+            position: "fixed",
+            top: 0, right: 0, bottom: 0,
+            width: "min(420px, 92vw)",
+            zIndex: 9999,
+            background: "#111827",
+            borderLeft: "1px solid rgba(255,255,255,0.10)",
+            boxShadow: "-8px 0 32px rgba(0,0,0,0.5)",
+            display: "flex",
+            flexDirection: "column",
+            fontFamily: "'SF Mono', 'Fira Code', monospace",
+          }}>
+            {/* ── 固定标题栏 ── */}
+            <div style={{
+              flexShrink: 0,
+              display: "flex", justifyContent: "space-between", alignItems: "center",
+              padding: "12px 16px",
+              borderBottom: "1px solid rgba(255,255,255,0.08)",
+              background: "#0f172a",
+            }}>
+              <span style={{ color: "#f5c842", fontWeight: 700, fontSize: 14 }}>🐛 LLM 调试面板</span>
+              <div style={{ display: "flex", gap: 8 }}>
+                <button
+                  onClick={() => { reset(); setDebugHistory([]); debugRoundRef.current = 0; setShowDebug(false); }}
+                  style={{ background: "rgba(239,68,68,0.15)", border: "1px solid rgba(239,68,68,0.4)", borderRadius: 6, color: "#f87171", padding: "3px 10px", cursor: "pointer", fontSize: 11 }}
+                  title="清空会话"
+                >🔄 清空会话</button>
+                <button
+                  onClick={() => setShowDebug(false)}
+                  style={{ background: "none", border: "1px solid #374151", borderRadius: 6, color: "#9ca3af", padding: "3px 10px", cursor: "pointer", fontSize: 12 }}
+                >✕ 关闭</button>
+              </div>
+            </div>
+
+            {/* ── 可滚动内容区 ── */}
+            <div style={{
+              flex: 1,
+              overflowY: "auto",
+              padding: "12px 14px",
+              display: "flex",
+              flexDirection: "column",
+              gap: 12,
+            }}>
+              {/* 第0步：LLM 健康检查 */}
+              <LLMHealthCheck />
+
+              {/* 实时进行中（loading 时显示） */}
+              {loading && (
+                <div style={{ background: "rgba(251,191,36,0.06)", borderRadius: 8, padding: "10px 12px", border: "1px solid rgba(251,191,36,0.3)" }}>
+                  <div style={{ color: "#fbbf24", fontSize: 12, marginBottom: 6 }}>⏳ 请求中，等待后端响应...</div>
+                  {liveTrace.map((step, i) => (
+                    <div key={i} style={{ display: "flex", gap: 8, marginBottom: 3, alignItems: "flex-start" }}>
+                      <span style={{ color: step.status === "done" ? "#34d399" : step.status === "fallback" ? "#fbbf24" : "#94a3b8", fontSize: 11, minWidth: 55, flexShrink: 0 }}>{step.status}</span>
+                      <span style={{ color: "#e2e8f0", fontSize: 11 }}>{step.label}</span>
+                    </div>
+                  ))}
+                </div>
+              )}
+
+              {/* 无历史记录提示 */}
+              {debugHistory.length === 0 && !loading && (
+                <div style={{ color: "#4b5563", fontSize: 12, textAlign: "center", padding: "32px 0" }}>
+                  尚未发送请求<br />发送消息后此处会按轮次记录输入 / 输出
+                </div>
+              )}
+
+              {/* 按轮次展示历史记录（最新在顶部） */}
+              {[...debugHistory].reverse().map((rec) => {
+                const res = rec.response;
+                const req = rec.request;
+                const time = new Date(rec.timestamp).toLocaleTimeString("zh-CN", { hour: "2-digit", minute: "2-digit", second: "2-digit" });
+                return (
+                  <div key={rec.round} style={{ border: "1px solid rgba(255,255,255,0.10)", borderRadius: 8 }}>
+                    {/* 轮次标题 */}
+                    <div style={{ background: "rgba(255,255,255,0.04)", padding: "7px 12px", display: "flex", alignItems: "center", gap: 8, justifyContent: "space-between", borderRadius: "8px 8px 0 0" }}>
+                      <span style={{ color: "#f5c842", fontWeight: 700, fontSize: 12 }}>第 {rec.round} 轮</span>
+                      <div style={{ display: "flex", gap: 6, alignItems: "center" }}>
+                        <span style={{
+                          background: res?.need_clarification ? "rgba(251,191,36,0.15)" : "rgba(56,201,138,0.15)",
+                          border: `1px solid ${res?.need_clarification ? "#fbbf24" : "#34d399"}`,
+                          borderRadius: 4, padding: "1px 6px", fontSize: 10, fontWeight: 700,
+                          color: res?.need_clarification ? "#fbbf24" : "#34d399",
+                        }}>
+                          {res?.need_clarification ? "🔔 追问" : "✅ 规划"}
+                        </span>
+                        <span style={{ color: "#6b7280", fontSize: 10 }}>{time}</span>
+                      </div>
+                    </div>
+
+                    {/* 内容区（不设 overflow:hidden，让内容自然撑开） */}
+                    <div style={{ padding: "10px 12px", display: "flex", flexDirection: "column", gap: 8 }}>
+                      {/* 📤 发送内容 */}
+                      <div>
+                        <div style={{ color: "#6b7280", fontSize: 10, marginBottom: 4 }}>📤 发送给后端</div>
+                        <div style={{ background: "rgba(0,0,0,0.3)", borderRadius: 5, padding: "6px 9px" }}>
+                          <div style={{ color: "#93c5fd", fontSize: 11, marginBottom: 3 }}>
+                            message: <span style={{ color: "#e2e8f0" }}>{String(req?.message ?? "-")}</span>
+                          </div>
+                          <div style={{ color: "#93c5fd", fontSize: 10 }}>
+                            trip_city: <span style={{ color: req?.trip_city && req.trip_city !== "(未传，后端追问)" ? "#e2e8f0" : "#374151" }}>{String(req?.trip_city ?? "(未传)")}</span>
+                            {"  "}start_lat: <span style={{ color: req?.start_lat ? "#e2e8f0" : "#374151" }}>{String(req?.start_lat ?? "(无GPS)")}</span>
+                          </div>
+                        </div>
+                      </div>
+
+                      {/* 📥 后端响应 */}
+                      <div>
+                        <div style={{ color: "#6b7280", fontSize: 10, marginBottom: 4 }}>📥 后端响应</div>
+                        <div style={{ background: "rgba(0,0,0,0.3)", borderRadius: 5, padding: "6px 9px" }}>
+                          <div style={{ marginBottom: 3 }}>
+                            <span style={{ color: "#94a3b8", fontSize: 10 }}>need_clarification: </span>
+                            <span style={{ color: res?.need_clarification ? "#fbbf24" : "#34d399", fontWeight: 700, fontSize: 11 }}>
+                              {String(res?.need_clarification)}
+                            </span>
+                          </div>
+                          {res?.need_clarification && (
+                            <div style={{ marginBottom: 3 }}>
+                              <span style={{ color: "#94a3b8", fontSize: 10 }}>clarifying_question: </span>
+                              <span style={{ color: "#fde68a", fontSize: 11 }}>{res?.clarifying_question ?? "(null)"}</span>
+                            </div>
+                          )}
+                          <div style={{ marginBottom: 3 }}>
+                            <span style={{ color: "#94a3b8", fontSize: 10 }}>message: </span>
+                            <span style={{ color: "#d1fae5", fontSize: 11 }}>{res?.message || "(空)"}</span>
+                          </div>
+                          {(res?.routes?.length ?? 0) > 0 && (
+                            <div style={{ marginBottom: 3 }}>
+                              <span style={{ color: "#94a3b8", fontSize: 10 }}>routes: </span>
+                              <span style={{ color: "#a7f3d0", fontSize: 11 }}>{res!.routes.map((r) => r.title).join(" / ")}</span>
+                            </div>
+                          )}
+                          {(res?.agent_trace?.length ?? 0) > 0 && (
+                            <div>
+                              <div style={{ color: "#94a3b8", fontSize: 10, marginBottom: 2 }}>agent_trace:</div>
+                              {res!.agent_trace.map((step, i) => (
+                                <div key={i} style={{ display: "flex", gap: 6, alignItems: "flex-start", marginBottom: 2, paddingLeft: 6 }}>
+                                  <span style={{ color: step.status === "done" ? "#34d399" : step.status === "fallback" ? "#fbbf24" : "#94a3b8", fontSize: 10, minWidth: 48, flexShrink: 0 }}>{step.status}</span>
+                                  <span style={{ color: "#cbd5e1", fontSize: 10 }}>{step.label}</span>
+                                </div>
+                              ))}
+                            </div>
+                          )}
+                        </div>
+                      </div>
+
+                      {/* 完整 JSON（可折叠，点击复制） */}
+                      <details style={{ fontSize: 10, color: "#6b7280" }}>
+                        <summary style={{ cursor: "pointer", userSelect: "none", padding: "2px 0" }}>完整 JSON（点击展开 / 复制）</summary>
+                        <pre
+                          onClick={() => navigator.clipboard?.writeText(JSON.stringify({ request: req, response: res }, null, 2))}
+                          style={{ margin: "5px 0 0", color: "#94a3b8", fontSize: 10, whiteSpace: "pre-wrap", wordBreak: "break-all", cursor: "pointer", background: "rgba(0,0,0,0.4)", borderRadius: 5, padding: "7px 9px", maxHeight: 220, overflowY: "auto" }}
+                          title="点击复制"
+                        >
+                          {JSON.stringify({ request: req, response: res }, null, 2)}
+                        </pre>
+                      </details>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+        </>
+      )}
 
       {/* ── 规划欢迎首屏 ── */}
       {showSetup && (
         <PlanningWelcomeScreen
           onBack={handleSkip}
           onSend={(msg) => {
-            // 先存消息 + 展示追问，不立刻发 AI
+            // 重置会话后直接发请求，由后端决定是否追问
+            reset();
             setShowSetup(false);
             setSheetSnap("half");
-            inject("user", msg);
-            setWelcomeFollowUp({ pendingMsg: msg, questions: buildWelcomeFollowUpQuestions() });
+            send(msg, localProfile, DEFAULT_TRIP_CONSTRAINTS);
           }}
         />
       )}

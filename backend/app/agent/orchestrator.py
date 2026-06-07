@@ -116,8 +116,12 @@ class AgentOrchestrator:
             message_route=message_route,
             session_state=session_state,
         )
-        if route_clarification.clarification_type == "intent_disambiguation":
-            return self._handle_clarification(request, session_state, trace, route_clarification)
+        # 路由歧义 或 消息级缺失（城市/目标）在 LLM 解析前即可判断，直接追问无需等 intent 解析
+        if route_clarification.need_clarification:
+            return self._handle_clarification(
+                request, session_state, trace, route_clarification,
+                intent=session_state.last_intent or Intent(),
+            )
 
         if message_route.intent_type == MessageIntentType.ROUTE_DETAIL_QUESTION:
             response = self.route_detail_handler.answer(request.message, request.session_id, session_state)
@@ -578,6 +582,8 @@ class AgentOrchestrator:
             )
         )
         message = decision.question
+        # 追问计数 +1，确保下一轮不再追问
+        session_state.clarification_count = getattr(session_state, "clarification_count", 0) + 1
         self.memory.save_turn_result(
             session_id=request.session_id,
             user_message=request.message,
@@ -586,6 +592,7 @@ class AgentOrchestrator:
             user_profile=session_state.user_profile,
             routes=session_state.current_routes,
             trip_state=session_state.trip_state,
+            clarification_count=session_state.clarification_count,
         )
         return ChatResponse(
             session_id=request.session_id,

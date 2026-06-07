@@ -1,47 +1,139 @@
-import { useState, useMemo } from "react";
+import { useState, useEffect, useRef } from "react";
+import L from "leaflet";
+import "leaflet/dist/leaflet.css";
 import {
   X, Share2, Clock, MapPin, Wallet, Footprints,
   Star, Copy, MessageCircle, CheckCheck,
 } from "lucide-react";
-import type { Route } from "../api/types";
+import type { Route, RouteStop } from "../api/types";
 import { PhoneStatusBar } from "../App";
 
-// ── 复用 MapPanel 的坐标 + 颜色逻辑 ─────────────────────
-const BEIJING_AREAS: { name: string; x: number; y: number }[] = [
-  { name: "故宫", x: 42, y: 35 },
-  { name: "天坛", x: 46, y: 65 },
-  { name: "颐和园", x: 18, y: 28 },
-  { name: "三里屯", x: 62, y: 38 },
-  { name: "南锣鼓巷", x: 48, y: 28 },
-  { name: "798艺术区", x: 72, y: 22 },
-  { name: "鸟巢", x: 60, y: 15 },
-  { name: "王府井", x: 50, y: 40 },
-];
+// ── 修复 Leaflet 默认图标路径 ────────────────────────────
+delete (L.Icon.Default.prototype as unknown as Record<string, unknown>)._getIconUrl;
+L.Icon.Default.mergeOptions({
+  iconRetinaUrl: "https://unpkg.com/leaflet@1.9.4/dist/images/marker-icon-2x.png",
+  iconUrl:       "https://unpkg.com/leaflet@1.9.4/dist/images/marker-icon.png",
+  shadowUrl:     "https://unpkg.com/leaflet@1.9.4/dist/images/marker-shadow.png",
+});
 
+// ── 北京默认中心 ────────────────────────────────────────
+const BEIJING_CENTER: [number, number] = [39.9042, 116.4074];
+
+// ── 坐标提取（与 MapPanel 完全一致）────────────────────
 function hashCoord(s: string, min: number, max: number): number {
   let h = 0;
   for (let i = 0; i < s.length; i++) h = (h * 31 + s.charCodeAt(i)) >>> 0;
   return min + ((h % 1000) / 1000) * (max - min);
 }
 
-function getPoiCoord(stop: RouteStop) {
-  const known = BEIJING_AREAS.find(
-    (a) => stop.name.includes(a.name) || a.name.includes(stop.name)
-  );
-  if (known) return { x: known.x, y: known.y };
-  return { x: hashCoord(stop.name + "x", 20, 80), y: hashCoord(stop.name + "y", 20, 80) };
+function getStopLatLng(stop: RouteStop): [number, number] {
+  if (stop.lat && stop.lng) return [stop.lat, stop.lng];
+  return [
+    hashCoord(stop.poi_id + "lat", 39.78, 40.05),
+    hashCoord(stop.poi_id + "lng", 116.20, 116.65),
+  ];
 }
 
+// ── 类别颜色（与 MapPanel 完全一致）────────────────────
 function categoryColor(c: string): string {
   const map: Record<string, string> = {
-    food: "#FF6B6B", restaurant: "#FF6B6B",
-    culture: "#845EC2", museum: "#845EC2",
-    nature: "#4CAF50", park: "#4CAF50",
-    shopping: "#FF9800", landmark: "#2196F3",
-    show: "#E040FB", rest: "#9E9E9E",
-    citywalk: "#00BCD4", scenic: "#FF5722",
+    food: "#FF6600", restaurant: "#FF6600",
+    nature: "#52C41A", park: "#52C41A",
+    culture: "#722ED1", museum: "#722ED1",
+    shopping: "#1677FF", landmark: "#FA8C16",
+    show: "#EB2F96", rest: "#13C2C2",
+    citywalk: "#38c98a",
   };
   return map[c] ?? "#FF6600";
+}
+
+// ── 序号圆形图标（与 MapPanel 完全一致）────────────────
+function makeNumberIcon(index: number, color: string): L.DivIcon {
+  return L.divIcon({
+    className: "",
+    html: `<div style="
+      width:28px;height:28px;border-radius:50%;
+      background:${color};border:2px solid white;
+      box-shadow:0 2px 8px rgba(0,0,0,0.25);
+      display:flex;align-items:center;justify-content:center;
+      color:#fff;font-size:12px;font-weight:700;
+    ">${index + 1}</div>`,
+    iconSize:    [28, 28],
+    iconAnchor:  [14, 14],
+    popupAnchor: [0, -18],
+  });
+}
+
+// ── 内嵌高德地图组件 ─────────────────────────────────────
+function SummaryMap({ stops }: { stops: RouteStop[] }) {
+  const wrapRef   = useRef<HTMLDivElement>(null);
+  const mapRef    = useRef<L.Map | null>(null);
+
+  useEffect(() => {
+    if (!wrapRef.current || mapRef.current) return;
+
+    const map = L.map(wrapRef.current, {
+      center: BEIJING_CENTER,
+      zoom: 12,
+      zoomControl: false,
+      attributionControl: false,
+      dragging: true,
+      scrollWheelZoom: false,
+    });
+
+    // 高德矢量底图
+    L.tileLayer(
+      "https://wprd0{s}.is.autonavi.com/appmaptile?x={x}&y={y}&z={z}&size=1&scl=2&style=7",
+      { subdomains: ["1","2","3","4"], maxZoom: 20 },
+    ).addTo(map);
+    // 高德注记层
+    L.tileLayer(
+      "https://wprd0{s}.is.autonavi.com/appmaptile?x={x}&y={y}&z={z}&size=2&scl=1&style=8",
+      { subdomains: ["1","2","3","4"], maxZoom: 20, opacity: 0.9 },
+    ).addTo(map);
+
+    mapRef.current = map;
+    map.invalidateSize();
+
+    if (stops.length > 0) {
+      const latlngs: [number, number][] = stops.map(getStopLatLng);
+
+      // 绘制连线
+      L.polyline(latlngs, {
+        color: "#FF6600", weight: 2.5, opacity: 0.75, dashArray: "6 5",
+      }).addTo(map);
+
+      // 绘制标记
+      stops.forEach((stop, idx) => {
+        const pos   = latlngs[idx];
+        const color = categoryColor(stop.category);
+        L.marker(pos, { icon: makeNumberIcon(idx, color) })
+          .addTo(map)
+          .bindPopup(
+            `<div style="font-size:13px;font-weight:600;min-width:80px">
+              ${idx + 1}. ${stop.name}
+            </div>`,
+            { closeButton: false },
+          );
+      });
+
+      // fitBounds 显示所有点
+      map.fitBounds(L.latLngBounds(latlngs), {
+        paddingTopLeft:     [20, 20],
+        paddingBottomRight: [20, 20],
+        maxZoom: 14,
+        animate: false,
+      });
+    }
+
+    return () => {
+      map.remove();
+      mapRef.current = null;
+    };
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  return <div ref={wrapRef} style={{ width: "100%", height: "100%" }} />;
 }
 
 // ── Props ───────────────────────────────────────────────
@@ -118,7 +210,6 @@ function SharePanel({ route, onClose }: { route: Route; onClose: () => void }) {
 export function TripSummaryOverlay({ route, scores, comment, onFinish }: TripSummaryOverlayProps) {
   const [showShare, setShowShare] = useState(false);
   const stops = route.stops ?? [];
-  const coords = useMemo(() => stops.map(getPoiCoord), [stops]);
 
   // 计算平均分（用于回调）
   const scoreValues = Object.values(scores).filter((v) => v > 0);
@@ -163,57 +254,9 @@ export function TripSummaryOverlay({ route, scores, comment, onFinish }: TripSum
 
       {/* 主体可滚动区 */}
       <div className="trip-summary-body">
-        {/* 地图 */}
+        {/* 高德地图（与行程规划页保持一致） */}
         <div className="trip-summary-map">
-          <svg viewBox="0 0 100 100" preserveAspectRatio="xMidYMid slice" className="trip-summary-svg">
-            {/* 背景网格 */}
-            {[10, 20, 30, 40, 50, 60, 70, 80, 90].map((v) => (
-              <line key={`h${v}`} x1="0" y1={v} x2="100" y2={v} stroke="#e5e7eb" strokeWidth="0.15" />
-            ))}
-            {[10, 20, 30, 40, 50, 60, 70, 80, 90].map((v) => (
-              <line key={`v${v}`} x1={v} y1="0" x2={v} y2="100" stroke="#e5e7eb" strokeWidth="0.15" />
-            ))}
-
-            {/* 路径连线 */}
-            {coords.length >= 2 &&
-              coords.slice(0, -1).map((c, i) => {
-                const next = coords[i + 1];
-                return (
-                  <g key={`p${i}`}>
-                    <path
-                      d={`M ${c.x} ${c.y} L ${next.x} ${next.y}`}
-                      fill="none"
-                      stroke="#FF6600"
-                      strokeWidth="0.6"
-                      strokeDasharray="2 1.5"
-                      opacity="0.7"
-                    />
-                    <circle
-                      cx={(c.x + next.x) / 2}
-                      cy={(c.y + next.y) / 2}
-                      r="0.6"
-                      fill="#FF6600"
-                      opacity="0.5"
-                    />
-                  </g>
-                );
-              })}
-
-            {/* POI 点 */}
-            {coords.map((c, i) => {
-              const stop = stops[i];
-              const color = categoryColor(stop.category);
-              return (
-                <g key={stop.poi_id}>
-                  <circle cx={c.x} cy={c.y} r="2.5" fill={color} opacity="0.2" />
-                  <circle cx={c.x} cy={c.y} r="1.6" fill={color} stroke="#fff" strokeWidth="0.4" />
-                  <text x={c.x} y={c.y + 4.5} textAnchor="middle" fontSize="2.2" fill="#374151">
-                    {i + 1}
-                  </text>
-                </g>
-              );
-            })}
-          </svg>
+          <SummaryMap stops={stops} />
         </div>
 
         {/* 标题 + 副标题 */}
