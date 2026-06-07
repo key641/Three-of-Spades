@@ -1,15 +1,21 @@
-import React, { useEffect, useRef, useState } from "react";
+import React, { useEffect, useMemo, useRef, useState } from "react";
 import { MapPin, AlertTriangle, Send, CheckCircle } from "lucide-react";
 import type { ChatMessage } from "../hooks/useChat";
+import type { ClarificationGroup } from "../api/types";
 import { AgentTrace } from "./AgentTrace";
 
 interface ChatPanelProps {
   messages: ChatMessage[];
   loading: boolean;
   error: string | null;
+  /** 旧版纯文本追问文案（无 group 时显示 chips；有 group 时作为 group 面板的标题） */
   clarifyingQuestion?: string | null;
-  /** 用户点击快捷答案或输入后触发 */
-  onClarify?: (answer: string) => void;
+  /** 结构化追问分组（后端返回 clarification_groups 时使用） */
+  clarificationGroups?: ClarificationGroup[];
+  /** 后端推断的已知上下文，展示在 group 面板顶部 */
+  inferredContext?: Record<string, unknown>;
+  /** 用户提交追问回答时触发 */
+  onClarify?: (answer: string, extra?: Record<string, unknown>) => void;
   /** 插入到第一条 user 消息气泡之后（追问卡片） */
   afterFirstUserMessage?: React.ReactNode;
   /** 插入到消息列表末尾、loading 打字动效之前（如 AgentTrace） */
@@ -18,12 +24,19 @@ interface ChatPanelProps {
   afterLastAssistant?: React.ReactNode;
 }
 
-const CLARIFY_CHIPS: Record<string, string[]> = {
-  default: ["1人", "2人", "3人及以上", "不确定"],
-  people:  ["1人", "2人", "3人", "4人以上"],
-  budget:  ["100以内", "100~200", "200~400", "400以上"],
-  time:    ["上午", "下午", "晚上", "全天"],
-};
+// ── 追问卡片（活跃 / 只读两态） ────────────────────────────────
+function ClarifyCard({
+  question,
+  answer,
+  onSubmit,
+}: {
+  question: string;
+  /** 已填写的回答；有值则只读展示 */
+  answer?: string;
+  onSubmit?: (val: string) => void;
+}) {
+  const [inputVal, setInputVal] = useState("");
+  const readonly = !!answer;
 
   function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
@@ -144,6 +157,9 @@ export function ChatPanel({
   const lastResponseRef = useRef<HTMLDivElement>(null);
   const prevLoadingRef  = useRef(false);
 
+  // structured group 面板的用户选择状态：groupId -> optionId
+  const [answers, setAnswers] = useState<Record<string, string>>({});
+
   useEffect(() => {
     const justStarted  = loading && !prevLoadingRef.current;
     const justFinished = !loading && prevLoadingRef.current;
@@ -160,6 +176,7 @@ export function ChatPanel({
     }
   }, [messages, loading]);
 
+  // 每轮新追问时重置已选答案
   useEffect(() => {
     setAnswers({});
   }, [clarifyingQuestion, clarificationGroups]);
@@ -256,7 +273,7 @@ export function ChatPanel({
             <div ref={lastResponseRef} style={{ height: 0 }} />
           )}
 
-          {/* ── clarify 消息：持久追问卡片 ── */}
+          {/* ── clarify 消息：持久追问卡片（LYNN 方案） ── */}
           {msg.role === "clarify" ? (
             <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
               {/* AgentTrace（如有）附在卡片上方 */}
@@ -320,6 +337,7 @@ export function ChatPanel({
         </div>
       )}
 
+      {/* ── Structured group 追问面板（keyki 逻辑，有 clarificationGroups 时显示）── */}
       {clarifyingQuestion && !loading && hasStructuredClarification && (
         <div
           style={{
@@ -402,47 +420,16 @@ export function ChatPanel({
               onClick={() => submitStructuredClarification(false)}
               style={{ minHeight: 34, opacity: canSubmitClarification ? 1 : 0.45 }}
             >
-              开始规划
+              确认，帮我规划 →
             </button>
             <button
               className="chip"
               type="button"
-              disabled={!canSubmitClarification}
               onClick={() => submitStructuredClarification(true)}
-              style={{ minHeight: 34, opacity: canSubmitClarification ? 1 : 0.45 }}
+              style={{ minHeight: 34, opacity: 0.65 }}
             >
               跳过可选，直接安排
             </button>
-          </div>
-        </div>
-      )}
-
-      {clarifyingQuestion && !loading && !hasStructuredClarification && (
-        <div
-          style={{
-            alignSelf: "flex-start",
-            background: "var(--color-card)",
-            border: "1px solid var(--color-border)",
-            borderRadius: "var(--radius-md)",
-            padding: "12px 14px",
-            maxWidth: "88%",
-          }}
-        >
-          <p style={{ margin: "0 0 10px", fontSize: "var(--font-body)", color: "var(--color-text)" }}>
-            {clarifyingQuestion}
-          </p>
-          <div className="chips" style={{ padding: 0 }}>
-            {guessClarifyChips(clarifyingQuestion).map((chip) => (
-              <button
-                key={chip}
-                className="chip"
-                type="button"
-                onClick={() => onClarify?.(chip)}
-                style={{ minHeight: 30 }}
-              >
-                {chip}
-              </button>
-            ))}
           </div>
         </div>
       )}

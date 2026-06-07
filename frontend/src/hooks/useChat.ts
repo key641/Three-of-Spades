@@ -1,17 +1,24 @@
 import { useRef, useState } from "react";
 import { resetChatSession, sendChatMessageStream } from "../api/chatApi";
-import type { AgentTraceStep, ChatResponse } from "../api/types";
+import type { AgentTraceStep, ChatResponse, ClarificationGroup } from "../api/types";
 import type { OnboardingProfile, TripConstraints } from "./useOnboarding";
+import { waitForGps } from "../utils/gpsCache";
 
 export interface ChatMessage {
   role: "user" | "assistant" | "trace" | "clarify";
   content: string;
   timestamp: number;
   agentTrace?: AgentTraceStep[];
-  /** clarify 角色专用：AI 追问的问题文本 */
+  /** 当前轮次的用户输入原文，用于 AgentTrace 叙述中「用户说…」开头 */
+  agentUserInput?: string;
+  /** clarify 角色专用：AI 追问的问题文本（兜底单问题） */
   clarifyQuestion?: string;
+  /** clarify 角色专用：后端返回的多组追问（优先使用） */
+  clarificationGroups?: ClarificationGroup[];
   /** clarify 角色专用：用户已填写的回答（填写后变为只读展示） */
   clarifyAnswer?: string;
+  /** clarify 角色专用：用户选择的各组答案 label 汇总文本，用于展示已回答状态 */
+  clarifyAnswerLabels?: string;
 }
 
 export function useChat() {
@@ -120,15 +127,20 @@ export function useChat() {
         // 追问轮次：先插一条友好的前置气泡，再插入 clarify 卡片
         const preMsg: ChatMessage = {
           role: "assistant",
-          content: "我想知道这些信息帮助规划",
+          content: res.message || "我想多了解一点，帮你规划得更准",
           timestamp: Date.now(),
           // agent_trace 挂在前置气泡上展示，clarify 卡片本身不再重复
           agentTrace: res.agent_trace && res.agent_trace.length > 0 ? res.agent_trace : undefined,
+          agentUserInput: message,
         };
         const clarifyRecord: ChatMessage = {
           role: "clarify",
           content: "",
           timestamp: Date.now() + 1,
+          // 优先使用多组追问，兜底用单问题文本
+          clarificationGroups: res.clarification_groups && res.clarification_groups.length > 0
+            ? res.clarification_groups
+            : undefined,
           clarifyQuestion: res.clarifying_question ?? "",
         };
         setMessages((prev) => [...prev, preMsg, clarifyRecord]);
@@ -140,6 +152,7 @@ export function useChat() {
           timestamp: Date.now(),
           // agent_trace 挂在前置气泡上展示
           agentTrace: res.agent_trace && res.agent_trace.length > 0 ? res.agent_trace : undefined,
+          agentUserInput: message,
         };
         const newMsgs: ChatMessage[] = [preMsg];
         // res.message 可能包含额外文案（如后端有说明性文字），有内容则追加
@@ -166,11 +179,17 @@ export function useChat() {
   /**
    * 用户回答追问：把最后一条 clarify 记录的 clarifyAnswer 填上（就地更新，不加新气泡），
    * 然后 silent=true 发起下一轮请求。
+   * @param answer        发送给后端的消息文本
+   * @param labelSummary  可选，用于在气泡中展示的已回答摘要（各选项 label 拼接）
+   * @param clarifyValues 可选，用户选择的各选项 value 合并对象（如 {city, target_district}），
+   *                      会作为 options 附加到下一轮请求，让后端直接拿到结构化字段
    */
   function answerClarify(
     answer: string,
     profile?: OnboardingProfile,
     trip?: TripConstraints,
+    labelSummary?: string,
+    clarifyValues?: Record<string, unknown>,
   ) {
     // 1. 找到最后一条 clarify 消息，填入回答
     setMessages((prev) => {
@@ -178,11 +197,14 @@ export function useChat() {
       if (idx === -1) return prev;
       const realIdx = prev.length - 1 - idx;
       return prev.map((m, i) =>
-        i === realIdx ? { ...m, clarifyAnswer: answer } : m,
+        i === realIdx
+          ? { ...m, clarifyAnswer: answer, clarifyAnswerLabels: labelSummary ?? answer }
+          : m,
       );
     });
     // 2. silent=true：不再往 messages 里额外插 user bubble
-    send(answer, profile, trip, true);
+    //    把结构化 value 作为 options 附带，后端直接读取 city/target_district 等字段
+    send(answer, profile, trip, true, clarifyValues ?? {});
   }
 
   /** 在本地直接插入一条消息（用于欢迎语，不走网络） */
@@ -224,27 +246,27 @@ export function useChat() {
   return { messages, response, liveTrace, loading, error, lastRequest, send, inject, reset, answerClarify, patchRouteStops };
 }
 
+// 默认起点：北京市西城区西单
+const DEFAULT_START = {
+  start_location_name: "北京市西城区西单",
+  start_lat: 39.9072,
+  start_lng: 116.3740,
+  current_lat: 39.9072,
+  current_lng: 116.3740,
+};
+
 async function getCurrentLocationOptions(): Promise<Record<string, unknown>> {
-  if (typeof navigator === "undefined" || !navigator.geolocation) {
-    return {};
+  // App.tsx 挂载时已发起 GPS 请求，这里等待最多 4 秒让缓存写入。
+  // 用户只要在弹窗出现后的 4 秒内点了"允许"，坐标就能传给后端。
+  const coords = await waitForGps(4000);
+  if (coords) {
+    return {
+      current_lat: coords.lat,
+      current_lng: coords.lng,
+      start_lat:   coords.lat,
+      start_lng:   coords.lng,
+    };
   }
-  return new Promise((resolve) => {
-    const timer = window.setTimeout(() => resolve({}), 1200);
-    navigator.geolocation.getCurrentPosition(
-      (position) => {
-        window.clearTimeout(timer);
-        resolve({
-          current_lat: position.coords.latitude,
-          current_lng: position.coords.longitude,
-          start_lat: position.coords.latitude,
-          start_lng: position.coords.longitude,
-        });
-      },
-      () => {
-        window.clearTimeout(timer);
-        resolve({});
-      },
-      { enableHighAccuracy: false, maximumAge: 300000, timeout: 1000 },
-    );
-  });
+  // 无 GPS 时使用默认西单起点，避免后端追问城市
+  return DEFAULT_START;
 }

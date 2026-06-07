@@ -587,7 +587,7 @@ function AboutOverlay({ onClose }: { onClose: () => void }) {
 export interface ProfilePageProps {
   profile: OnboardingProfile;
   onResetProfile: () => void;
-  onNewTrip: (goals?: string[]) => void;
+  onNewTrip: (goals?: string[], initialMsg?: string) => void;
   tripHistory?: HistoryTrip[];
   onBack?: () => void;
 }
@@ -759,7 +759,16 @@ export function ProfilePage({ profile, onResetProfile, onNewTrip, tripHistory = 
           trips={tripHistory}
           onClose={() => setShowHistory(false)}
           onView={(t) => setViewTrip(t)}
-          onRestart={(t) => { setShowHistory(false); onNewTrip(t.goals); }}
+          onRestart={(t) => {
+            setShowHistory(false);
+            // 构建包含历史路线信息的提示词，通过聊天框启动新规划
+            const stops = t.stops ?? [];
+            const poisStr = stops.map((s) => s.name).join("、");
+            const msg = poisStr
+              ? `我上次走过「${t.title}」这条路线（经过${poisStr}），想参考它重新规划一次行程`
+              : `我上次走过「${t.title}」，想参考它重新规划一次行程`;
+            onNewTrip(t.goals, msg);
+          }}
           onNewTrip={() => { setShowHistory(false); onNewTrip(); }}
         />
       )}
@@ -770,8 +779,15 @@ export function ProfilePage({ profile, onResetProfile, onNewTrip, tripHistory = 
           trip={viewTrip}
           onClose={() => setViewTrip(null)}
           onRestart={() => {
+            if (!viewTrip) return;
             setViewTrip(null);
-            onNewTrip(viewTrip.goals);
+            // 构建包含历史路线信息的提示词，通过聊天框启动新规划
+            const stops = viewTrip.stops ?? [];
+            const poisStr = stops.map((s) => s.name).join("、");
+            const msg = poisStr
+              ? `我上次走过「${viewTrip.title}」这条路线（经过${poisStr}），想参考它重新规划一次行程`
+              : `我上次走过「${viewTrip.title}」，想参考它重新规划一次行程`;
+            onNewTrip(viewTrip.goals, msg);
           }}
         />
       )}

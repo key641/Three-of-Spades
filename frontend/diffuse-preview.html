@@ -1,0 +1,853 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>弥散风格预览 v3 — Drifto</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Sora:wght@300;400;500;600;700;800&family=Noto+Sans+SC:wght@300;400;500;700&display=swap" rel="stylesheet" />
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+    html { scroll-behavior: smooth; }
+    body {
+      font-family: 'Sora', 'Noto Sans SC', sans-serif;
+      background: #eef6f1;
+      color: #1c2620;
+      overflow-x: hidden;
+      min-height: 100vh;
+    }
+
+    /* ── 色彩 ── */
+    :root {
+      /* 品牌主色：薄荷绿 + 蛋黄 */
+      --mint:        #38c98a;
+      --mint-s:      rgba(56,201,138,0.13);
+      --mint-m:      rgba(56,201,138,0.28);
+      --mint-d:      #2aad74;   /* 深薄荷，文字用 */
+      --yolk:        #f5c842;   /* 蛋黄 */
+      --yolk-s:      rgba(245,200,66,0.15);
+      --yolk-m:      rgba(245,200,66,0.30);
+      --yolk-d:      #b88a00;   /* 深蛋黄，文字用 */
+      /* 辅助色 */
+      --sky:         #56aee8;
+      --sky-s:       rgba(86,174,232,0.12);
+      --coral:       #ff5a3c;   /* 降为辅助 */
+      --coral-s:     rgba(255,90,60,0.10);
+      /* 向下兼容映射 */
+      --yellow:      var(--yolk);
+      --yellow-s:    var(--yolk-s);
+      --ink:         #1a2a22;
+      --ink2:        #3d4e46;
+      --ink3:        #6b7c74;
+      --ink4:        #9aada5;
+      --card-bg:     rgba(255,255,255,0.80);
+      --card-bg2:    rgba(255,255,255,0.90);
+      --card-border: rgba(255,255,255,0.96);
+      --card-sh:     0 4px 28px rgba(28,38,32,0.08), inset 0 1px 0 rgba(255,255,255,0.9);
+      --card-sh2:    0 10px 44px rgba(28,38,32,0.11), inset 0 1px 0 rgba(255,255,255,1);
+    }
+
+    /* ── 弥散背景光晕 ── */
+    .bg-layer {
+      position: fixed; inset: 0;
+      pointer-events: none; z-index: 0; overflow: hidden;
+    }
+    .orb {
+      position: absolute; border-radius: 50%;
+      animation: breathe 10s ease-in-out infinite alternate;
+    }
+    .o1 { /* 薄荷 左上 — 主光晕加强 */
+      width: 600px; height: 600px;
+      background: radial-gradient(circle, rgba(56,201,138,0.36) 0%, transparent 70%);
+      top: -150px; left: -130px; filter: blur(55px);
+    }
+    .o2 { /* 蛋黄 右上 — 品牌色替换天蓝 */
+      width: 500px; height: 500px;
+      background: radial-gradient(circle, rgba(245,200,66,0.32) 0%, transparent 70%);
+      top: -90px; right: -120px; filter: blur(60px);
+      animation-delay: -3.5s; animation-duration: 12s;
+    }
+    .o3 { /* 薄荷 中右 */
+      width: 380px; height: 380px;
+      background: radial-gradient(circle, rgba(56,201,138,0.20) 0%, transparent 70%);
+      top: 40%; right: -60px; filter: blur(54px);
+      animation-delay: -7s; animation-duration: 14s;
+    }
+    .o4 { /* 蛋黄 左下 — 替换珊瑚 */
+      width: 460px; height: 460px;
+      background: radial-gradient(circle, rgba(245,200,66,0.24) 0%, transparent 70%);
+      bottom: -80px; left: -70px; filter: blur(62px);
+      animation-delay: -2s; animation-duration: 11s;
+    }
+    .o5 { /* 薄荷 右下 */
+      width: 340px; height: 340px;
+      background: radial-gradient(circle, rgba(56,201,138,0.18) 0%, transparent 70%);
+      bottom: 8%; right: 4%; filter: blur(48px);
+      animation-delay: -5.5s; animation-duration: 9s;
+    }
+    @keyframes breathe {
+      0%   { transform: scale(1)    translate(0, 0);        opacity: 0.88; }
+      50%  { transform: scale(1.07) translate(12px, -8px);  opacity: 1;   }
+      100% { transform: scale(0.95) translate(-7px, 10px);  opacity: 0.9;  }
+    }
+
+    /* ── 顶部导航 ── */
+    .nav-bar {
+      position: fixed; top: 16px; left: 50%;
+      transform: translateX(-50%); z-index: 900;
+      background: rgba(255,255,255,0.78);
+      backdrop-filter: blur(20px); -webkit-backdrop-filter: blur(20px);
+      border: 1px solid rgba(255,255,255,0.9);
+      border-radius: 100px; padding: 6px 14px;
+      font-size: 12px; font-weight: 600; color: var(--ink3);
+      box-shadow: 0 4px 20px rgba(28,38,32,0.09);
+      white-space: nowrap;
+    }
+    .nav-bar span { color: var(--mint-d); }
+
+    /* ── 主内容 ── */
+    .wrap {
+      position: relative; z-index: 1;
+      max-width: 400px; margin: 0 auto;
+      padding: 68px 15px 80px;
+      display: flex; flex-direction: column; gap: 13px;
+    }
+
+    /* ── 卡片 ── */
+    .c, .cf {
+      backdrop-filter: blur(22px); -webkit-backdrop-filter: blur(22px);
+      border-radius: 22px; overflow: hidden;
+    }
+    .c  { background: var(--card-bg);  border: 1px solid var(--card-border);  box-shadow: var(--card-sh);  }
+    .cf { background: var(--card-bg2); border: 1px solid rgba(255,255,255,0.98); box-shadow: var(--card-sh2); }
+
+    /* 卡片内标题行 */
+    .ch {
+      display: flex; align-items: center; gap: 9px;
+      padding: 14px 17px 11px;
+      border-bottom: 1px solid rgba(28,38,32,0.05);
+    }
+    .ch-ico {
+      width: 28px; height: 28px; border-radius: 8px;
+      display: flex; align-items: center; justify-content: center;
+      flex-shrink: 0;
+    }
+    .ico-mint   { background: var(--mint-s); }
+    .ico-coral  { background: var(--coral-s); }
+    .ico-yellow { background: var(--yellow-s); }
+    .ico-sky    { background: var(--sky-s); }
+    .ch-title { font-size: 13px; font-weight: 700; color: var(--ink); letter-spacing: -0.01em; }
+    .ch-right { margin-left: auto; font-size: 11px; font-weight: 500; color: var(--ink4); }
+    .ch-right.mint  { color: var(--mint); }
+    .ch-right.coral { color: var(--coral); }
+
+    /* 卡片分隔线 */
+    .cdiv {
+      height: 1px;
+      background: linear-gradient(90deg, transparent, rgba(28,38,32,0.07) 20%, rgba(28,38,32,0.07) 80%, transparent);
+      margin: 0 17px;
+    }
+
+    /* 小节标题（左色条） */
+    .sec-title {
+      display: flex; align-items: center; gap: 8px;
+      padding: 13px 17px 9px;
+    }
+    .sec-bar { width: 3px; height: 15px; border-radius: 99px; }
+    .sec-bar.mint   { background: var(--mint); }
+    .sec-bar.coral  { background: var(--coral); }
+    .sec-bar.yellow { background: var(--yellow); }
+    .sec-bar.sky    { background: var(--sky); }
+    .sec-text { font-size: 13px; font-weight: 700; color: var(--ink); letter-spacing: -0.01em; }
+    .sec-count { margin-left: auto; font-size: 11px; font-weight: 600; color: var(--ink4); }
+
+    /* ── Topbar ── */
+    .topbar {
+      display: flex; align-items: center; justify-content: space-between;
+      padding: 14px 17px 13px;
+    }
+    .tbl { display: flex; flex-direction: column; gap: 1px; }
+    .logo { font-size: 18px; font-weight: 800; letter-spacing: -0.04em; color: var(--ink); line-height: 1; }
+    .logo i { font-style: normal; background: linear-gradient(135deg,var(--mint),var(--yolk)); -webkit-background-clip: text; -webkit-text-fill-color: transparent; background-clip: text; }
+    .tagline { font-size: 10px; color: var(--ink4); font-weight: 500; letter-spacing: 0.01em; }
+    .tbr { display: flex; align-items: center; gap: 7px; }
+    .nav-pips { display: flex; gap: 3px; }
+    .np { width: 7px; height: 7px; border-radius: 50%; }
+    .np.m { background: var(--mint); }
+    .np.c { background: var(--yolk); }
+    .np.y { background: var(--yellow); opacity: 0.7; }
+    .avatar {
+      width: 34px; height: 34px; border-radius: 50%;
+      background: linear-gradient(135deg,var(--mint),var(--yolk));
+      display: flex; align-items: center; justify-content: center;
+      box-shadow: 0 2px 8px rgba(56,201,138,0.28);
+    }
+
+    /* ── 进度条 ── */
+    .prog-wrap { padding: 14px 17px 0; }
+    .prog-row { display: flex; justify-content: space-between; align-items: center; margin-bottom: 7px; }
+    .prog-step { font-size: 11px; font-weight: 700; color: var(--ink3); letter-spacing: 0.04em; }
+    .prog-pct  { font-size: 11px; font-weight: 700; color: var(--mint-d); }
+    .prog-track { height: 4px; background: rgba(28,38,32,0.07); border-radius: 99px; overflow: hidden; }
+    .prog-fill { height: 100%; width: 50%; background: linear-gradient(90deg,var(--mint),var(--yolk)); border-radius: 99px; }
+    .prog-pips { display: flex; gap: 4px; margin-top: 7px; }
+    .pip { flex: 1; height: 3px; border-radius: 99px; background: rgba(28,38,32,0.07); }
+    .pip.done { background: var(--mint); }
+    .pip.cur  { background: rgba(56,201,138,0.35); }
+
+    /* ── 步骤标题 ── */
+    .step-wrap { padding: 13px 17px 3px; }
+    .overline { font-size: 10px; font-weight: 700; letter-spacing: 0.1em; text-transform: uppercase; color: var(--mint-d); margin-bottom: 5px; }
+    .big-title { font-size: 20px; font-weight: 700; letter-spacing: -0.03em; color: var(--ink); line-height: 1.25; }
+    .sub-text { font-size: 12px; color: var(--ink4); padding: 4px 17px 13px; line-height: 1.65; }
+
+    /* ── 场景网格 ── */
+    .sgrid { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; padding: 0 13px 13px; }
+    .scard {
+      background: rgba(255,255,255,0.6);
+      border: 1.5px solid rgba(28,38,32,0.08);
+      border-radius: 14px; padding: 12px 11px 10px;
+      cursor: pointer; transition: all 0.18s;
+      position: relative; overflow: hidden;
+    }
+    .scard.sm { border-color: rgba(56,201,138,0.4);  background: rgba(56,201,138,0.09);  box-shadow: 0 3px 12px rgba(56,201,138,0.13); }
+    .scard.sc { border-color: rgba(245,200,66,0.45);  background: rgba(245,200,66,0.10);   box-shadow: 0 3px 12px rgba(245,200,66,0.14); }
+    .scard.sy { border-color: rgba(240,192,64,0.42);  background: rgba(240,192,64,0.10);  box-shadow: 0 3px 12px rgba(240,192,64,0.10); }
+    .scard.ss { border-color: rgba(86,174,232,0.38);  background: rgba(86,174,232,0.09);  box-shadow: 0 3px 12px rgba(86,174,232,0.09); }
+
+    .scard-ico {
+      width: 30px; height: 30px; border-radius: 8px;
+      display: flex; align-items: center; justify-content: center;
+      background: rgba(28,38,32,0.06); margin-bottom: 7px;
+    }
+    .scard.sm .scard-ico { background: rgba(56,201,138,0.2); }
+    .scard.sc .scard-ico { background: rgba(245,200,66,0.24); }
+    .scard.sy .scard-ico { background: rgba(240,192,64,0.22); }
+    .scard.ss .scard-ico { background: rgba(86,174,232,0.18); }
+
+    .scard-name { font-size: 13px; font-weight: 700; color: var(--ink); letter-spacing: -0.01em; }
+    .scard-desc { font-size: 10px; color: var(--ink4); margin-top: 3px; line-height: 1.35; }
+    .scard.sm .scard-name { color: #157a50; }
+    .scard.sc .scard-name { color: var(--yolk-d); }
+    .scard.sy .scard-name { color: #8a6800; }
+    .scard.ss .scard-name { color: #1a5a90; }
+
+    .scard-check {
+      position: absolute; top: 8px; right: 8px;
+      width: 16px; height: 16px; border-radius: 50%;
+      display: flex; align-items: center; justify-content: center;
+      transform: scale(0); transition: transform 0.18s;
+    }
+    .scard.sm .scard-check { background: var(--mint);   transform: scale(1); }
+    .scard.sc .scard-check { background: var(--yolk);  transform: scale(1); }
+    .scard.sy .scard-check { background: var(--yellow); transform: scale(1); }
+    .scard.ss .scard-check { background: var(--sky);    transform: scale(1); }
+
+    /* ── 节奏选择 ── */
+    .vibe-row { display: flex; gap: 6px; padding: 0 13px 13px; }
+    .vchip {
+      flex: 1; display: flex; flex-direction: column; align-items: center; gap: 5px;
+      padding: 9px 4px; border-radius: 12px;
+      border: 1.5px solid rgba(28,38,32,0.07);
+      background: rgba(255,255,255,0.55);
+      cursor: pointer; transition: all 0.18s;
+    }
+    .vchip.sm { background: var(--mint-s);   border-color: rgba(56,201,138,0.35); }
+    .vchip.sc { background: var(--yolk-s);  border-color: rgba(245,200,66,0.40);  }
+    .vchip-lbl { font-size: 10px; font-weight: 600; color: var(--ink3); }
+    .vchip.sm .vchip-lbl { color: var(--mint-d); }
+    .vchip.sc .vchip-lbl { color: var(--yolk-d); }
+
+    /* ── 偏好标签 ── */
+    .pref-body { padding: 13px 17px 15px; }
+    .pref-head { display: flex; align-items: center; gap: 7px; margin-bottom: 8px; }
+    .pref-head-line { flex: 1; height: 1px; background: rgba(28,38,32,0.06); }
+    .pref-lbl { font-size: 10px; font-weight: 700; letter-spacing: 0.08em; text-transform: uppercase; white-space: nowrap; }
+    .pref-lbl.like  { color: var(--mint-d); }
+    .pref-lbl.avoid { color: #d05050; }
+    .ptags { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 11px; }
+    .ptag {
+      display: inline-flex; align-items: center; gap: 4px;
+      padding: 5px 12px; border-radius: 100px; font-size: 12px; font-weight: 500;
+      cursor: pointer; font-family: inherit; transition: all 0.18s;
+      border: 1.5px solid rgba(28,38,32,0.09); background: rgba(255,255,255,0.7); color: var(--ink2);
+    }
+    .ptag.sm { background: var(--mint-s);  border-color: rgba(56,201,138,0.38);  color: var(--mint-d); }
+    .ptag.sa { background: rgba(208,80,80,0.08); border-color: rgba(208,80,80,0.26); color: #a04040; }
+
+    /* ── 聊天 ── */
+    .chat-body { padding: 11px 13px 13px; display: flex; flex-direction: column; gap: 9px; }
+    .buser {
+      align-self: flex-end; max-width: 85%;
+      background: linear-gradient(135deg,var(--mint),#4ddea0);
+      border-radius: 18px 4px 18px 18px;
+      padding: 10px 14px; font-size: 13px; line-height: 1.55; color: white;
+      box-shadow: 0 4px 14px rgba(56,201,138,0.26);
+    }
+    .bai {
+      align-self: flex-start; max-width: 88%;
+      background: rgba(255,255,255,0.88);
+      border: 1px solid rgba(28,38,32,0.07);
+      border-radius: 4px 18px 18px 18px;
+      padding: 10px 14px; font-size: 13px; line-height: 1.55; color: var(--ink);
+      box-shadow: 0 2px 8px rgba(28,38,32,0.05);
+    }
+    .bai .hm { color: var(--mint-d); font-weight: 600; }
+    .bai .hy { color: var(--yolk-d); font-weight: 600; }
+    .typing {
+      align-self: flex-start;
+      background: rgba(255,255,255,0.88);
+      border: 1px solid rgba(28,38,32,0.07);
+      border-radius: 4px 18px 18px 18px;
+      padding: 11px 15px; display: flex; gap: 4px; align-items: center;
+      box-shadow: 0 2px 8px rgba(28,38,32,0.05);
+    }
+    .td { width: 6px; height: 6px; border-radius: 50%; background: var(--ink4); animation: td 1.3s ease-in-out infinite; }
+    .td:nth-child(2) { animation-delay: 0.18s; }
+    .td:nth-child(3) { animation-delay: 0.36s; }
+    @keyframes td { 0%,100%{transform:translateY(0);opacity:0.4} 40%{transform:translateY(-4px);opacity:1} }
+
+    /* ── 输入栏 ── */
+    .ibar { display: flex; align-items: center; gap: 7px; padding: 9px 12px 11px; }
+    .ifield {
+      flex: 1; background: rgba(28,38,32,0.04);
+      border: 1.5px solid rgba(28,38,32,0.08); border-radius: 100px;
+      padding: 9px 14px; font-size: 13px; color: var(--ink); outline: none; font-family: inherit;
+      transition: border-color 0.2s;
+    }
+    .ifield::placeholder { color: var(--ink4); }
+    .ifield:focus { border-color: rgba(56,201,138,0.5); }
+    .isend {
+      width: 37px; height: 37px; border-radius: 50%;
+      background: linear-gradient(135deg,var(--mint),#5de8a8);
+      border: none; cursor: pointer; flex-shrink: 0;
+      display: flex; align-items: center; justify-content: center;
+      box-shadow: 0 3px 10px rgba(56,201,138,0.32);
+      transition: transform 0.15s;
+    }
+    .isend:hover { transform: scale(1.07); }
+
+    /* ── 路线卡片 ── */
+    .route-body { padding: 15px 17px 13px; }
+    .rbadge {
+      display: inline-flex; align-items: center; gap: 5px;
+      font-size: 10px; font-weight: 700; letter-spacing: 0.07em; text-transform: uppercase;
+      padding: 3px 10px 3px 7px; border-radius: 100px; margin-bottom: 8px;
+      background: var(--yolk-s); color: var(--yolk-d); border: 1px solid rgba(245,200,66,0.3);
+    }
+    .rbadge-dot { width: 6px; height: 6px; border-radius: 50%; background: var(--yolk); }
+    .rtitle { font-size: 16px; font-weight: 700; color: var(--ink); letter-spacing: -0.02em; line-height: 1.3; margin-bottom: 11px; }
+
+    .rmeta {
+      display: flex; margin-bottom: 14px;
+      background: rgba(28,38,32,0.03); border: 1px solid rgba(28,38,32,0.05);
+      border-radius: 12px; overflow: hidden;
+    }
+    .rmi { flex: 1; display: flex; flex-direction: column; align-items: center; padding: 9px 4px; gap: 3px; }
+    .rmi + .rmi { border-left: 1px solid rgba(28,38,32,0.06); }
+    .rmv { font-size: 14px; font-weight: 800; color: var(--ink); letter-spacing: -0.02em; line-height: 1; }
+    .rmk { font-size: 10px; color: var(--ink4); font-weight: 500; }
+    .rmv.mint { color: var(--mint-d); }
+
+    /* 时间轴 */
+    .tline { display: flex; flex-direction: column; }
+    .ti { display: flex; gap: 11px; position: relative; }
+    .ti:not(:last-child)::before {
+      content: ''; position: absolute; left: 10px; top: 25px; bottom: 0; width: 1px;
+      background: linear-gradient(to bottom, rgba(56,201,138,0.3), rgba(56,201,138,0.04));
+    }
+    .tidot {
+      width: 22px; height: 22px; border-radius: 50%; flex-shrink: 0; margin-top: 1px;
+      border: 2px solid rgba(56,201,138,0.4); background: white;
+      display: flex; align-items: center; justify-content: center;
+      box-shadow: 0 1px 6px rgba(56,201,138,0.14);
+    }
+    .tidot-in { width: 8px; height: 8px; border-radius: 50%; background: var(--mint); }
+    .tic { flex: 1; padding-bottom: 15px; }
+    .titime { font-size: 10px; font-weight: 700; color: var(--mint-d); letter-spacing: 0.04em; margin-bottom: 2px; }
+    .tiname { font-size: 13px; font-weight: 700; color: var(--ink); letter-spacing: -0.01em; }
+    .tidesc { font-size: 11px; color: var(--ink4); margin-top: 2px; line-height: 1.4; }
+    .titags { display: flex; gap: 4px; margin-top: 5px; flex-wrap: wrap; }
+    .titag { font-size: 10px; font-weight: 600; padding: 2px 7px; border-radius: 100px; }
+    .titag.m { background: var(--mint-s); color: #157a50; }
+    .titag.y { background: var(--yellow-s); color: #8a6800; }
+    .titag.c { background: var(--coral-s); color: #b83020; }
+
+    /* 评分 */
+    .ssec { margin-top: 13px; padding-top: 11px; border-top: 1px solid rgba(28,38,32,0.05); }
+    .ssec-title { font-size: 10px; font-weight: 700; letter-spacing: 0.07em; text-transform: uppercase; color: var(--ink4); margin-bottom: 7px; }
+    .srow { display: flex; gap: 6px; }
+    .schip {
+      flex: 1; background: rgba(255,255,255,0.7); border: 1px solid rgba(28,38,32,0.06);
+      border-radius: 10px; padding: 8px 4px; text-align: center;
+    }
+    .schip.best  { background: var(--mint-s);  border-color: rgba(56,201,138,0.25); }
+    .schip.best2 { background: var(--yolk-s);  border-color: rgba(245,200,66,0.28); }
+    .sval { font-size: 15px; font-weight: 800; color: var(--ink); display: block; letter-spacing: -0.02em; }
+    .schip.best  .sval { color: var(--mint-d); }
+    .schip.best2 .sval { color: var(--yolk-d); }
+    .skey { font-size: 9px; color: var(--ink4); display: block; margin-top: 2px; font-weight: 500; }
+
+    /* ── ActionBar ── */
+    .asec { padding: 11px 13px 9px; }
+    .asec-title { font-size: 10px; font-weight: 700; letter-spacing: 0.08em; text-transform: uppercase; color: var(--ink4); margin-bottom: 7px; padding: 0 1px; }
+    .achips { display: flex; gap: 5px; flex-wrap: wrap; }
+    .achip {
+      display: inline-flex; align-items: center; gap: 5px;
+      padding: 6px 12px; border-radius: 100px;
+      border: 1.5px solid rgba(28,38,32,0.09);
+      background: rgba(255,255,255,0.75); font-size: 12px; font-weight: 500;
+      color: var(--ink2); cursor: pointer; font-family: inherit; transition: all 0.18s;
+    }
+    .achip.ac { background: var(--yolk-s);   border-color: rgba(245,200,66,0.38); color: var(--yolk-d); }
+    .achip.am { background: var(--mint-s);   border-color: rgba(56,201,138,0.35); color: var(--mint-d); }
+    .achip.ay { background: var(--yolk-s);   border-color: rgba(245,200,66,0.38); color: var(--yolk-d); }
+    .achip.as { background: var(--sky-s);    border-color: rgba(86,174,232,0.35); color: #1a5a90; }
+
+    /* ── 保存按钮 ── */
+    .bsave {
+      display: flex; align-items: center; justify-content: center; gap: 7px;
+      width: calc(100% - 26px); margin: 0 13px 13px;
+      padding: 13px; border-radius: 14px;
+      background: linear-gradient(135deg,var(--mint),var(--yolk));
+      border: none; color: white; font-size: 14px; font-weight: 700;
+      font-family: inherit; cursor: pointer; letter-spacing: -0.01em;
+      box-shadow: 0 6px 22px rgba(56,201,138,0.30);
+    }
+
+    /* ── 我的行程 ── */
+    .trip { display: flex; align-items: center; gap: 11px; padding: 10px 16px; }
+    .trip + .trip { border-top: 1px solid rgba(28,38,32,0.05); }
+    .trip-dot { width: 8px; height: 8px; border-radius: 50%; flex-shrink: 0; }
+    .trip-dot.pl { background: var(--yellow); }
+    .trip-dot.on { background: var(--mint); box-shadow: 0 0 5px rgba(56,201,138,0.5); }
+    .trip-dot.dn { background: var(--ink4); }
+    .trip-info { flex: 1; min-width: 0; }
+    .trip-name { font-size: 13px; font-weight: 700; color: var(--ink); letter-spacing: -0.01em; }
+    .trip-meta { font-size: 11px; color: var(--ink4); margin-top: 1px; }
+    .tbadge { font-size: 10px; font-weight: 700; padding: 3px 9px; border-radius: 100px; }
+    .tbadge.pl { background: var(--yellow-s); color: #8a6800; border: 1px solid rgba(240,192,64,0.3); }
+    .tbadge.on { background: var(--mint-s);   color: #157a50; border: 1px solid rgba(56,201,138,0.3); }
+    .tbadge.dn { background: rgba(28,38,32,0.06); color: var(--ink3); border: 1px solid rgba(28,38,32,0.1); }
+
+    /* ── 底部决策栏 ── */
+    .dbar {
+      position: fixed; bottom: 20px; left: 50%;
+      transform: translateX(-50%); z-index: 900;
+      display: flex; gap: 7px; align-items: center;
+      background: rgba(28,38,32,0.88);
+      backdrop-filter: blur(20px); -webkit-backdrop-filter: blur(20px);
+      border: 1px solid rgba(255,255,255,0.1);
+      border-radius: 100px; padding: 6px;
+      box-shadow: 0 8px 30px rgba(0,0,0,0.18);
+      white-space: nowrap;
+    }
+    .dbtn {
+      padding: 8px 17px; border-radius: 100px; border: none;
+      cursor: pointer; font-family: 'Sora',sans-serif; font-size: 12.5px;
+      font-weight: 600; transition: all 0.22s; color: rgba(255,255,255,0.4); background: transparent;
+    }
+    .dbtn.pick { background: linear-gradient(135deg,var(--mint),var(--yolk)); color: white; box-shadow: 0 3px 14px rgba(56,201,138,0.38); }
+    .dbtn.pick-m { background: linear-gradient(135deg,var(--yolk),#fada6a); color: var(--ink); box-shadow: 0 3px 12px rgba(245,200,66,0.40); }
+
+    /* ── SVG 图标辅助 ── */
+    svg { display: inline-block; vertical-align: middle; flex-shrink: 0; }
+  </style>
+</head>
+<body>
+
+<!-- 弥散背景 -->
+<div class="bg-layer">
+  <div class="orb o1"></div>
+  <div class="orb o2"></div>
+  <div class="orb o3"></div>
+  <div class="orb o4"></div>
+  <div class="orb o5"></div>
+</div>
+
+<!-- 顶部标题 -->
+<div class="nav-bar">Drifto <span>浅色弥散</span> 风格预览 v3 · 薄荷绿 + 蛋黄品牌色</div>
+
+<div class="wrap">
+
+  <!-- ① Topbar -->
+  <div class="cf">
+    <div class="topbar">
+      <div class="tbl">
+        <div class="logo">Dr<i>i</i>fto</div>
+        <div class="tagline">说走就走的 AI 出行规划</div>
+      </div>
+      <div class="tbr">
+        <div class="nav-pips">
+          <div class="np m"></div>
+          <div class="np c"></div>
+          <div class="np y"></div>
+        </div>
+        <div class="avatar">
+          <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="white" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="8" r="4"/><path d="M4 20c0-4 3.6-7 8-7s8 3 8 7"/></svg>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ② Onboarding 步骤 1：场景选择 -->
+  <div class="cf">
+    <div class="prog-wrap">
+      <div class="prog-row">
+        <span class="prog-step">STEP 1 / 2</span>
+        <span class="prog-pct">50%</span>
+      </div>
+      <div class="prog-track"><div class="prog-fill"></div></div>
+      <div class="prog-pips">
+        <div class="pip done"></div>
+        <div class="pip cur"></div>
+      </div>
+    </div>
+
+    <div class="step-wrap">
+      <div class="overline">出行偏好</div>
+      <div class="big-title">你平时出门<br>喜欢怎么玩？</div>
+    </div>
+    <p class="sub-text">多选 · AI 会自动匹配最合适路线</p>
+
+    <div class="sgrid">
+      <!-- 选中：薄荷 -->
+      <div class="scard sm">
+        <div class="scard-check">
+          <svg width="8" height="8" viewBox="0 0 10 10" fill="none" stroke="white" stroke-width="2.2" stroke-linecap="round"><polyline points="1.5,5 4,7.5 8.5,2.5"/></svg>
+        </div>
+        <div class="scard-ico">
+          <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="#157a50" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="5" r="2.2"/><path d="M9 22l1.5-6-1.5-3h6l-1.5 3 1.5 6"/><line x1="9" y1="13" x2="6" y2="18"/><line x1="15" y1="13" x2="18" y2="18"/></svg>
+        </div>
+        <div class="scard-name">街头漫游</div>
+        <div class="scard-desc">咖啡馆·集市·新店探索</div>
+      </div>
+      <!-- 未选 -->
+      <div class="scard">
+        <div class="scard-check"></div>
+        <div class="scard-ico">
+          <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="#6b7c74" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 11l3-7h12l3 7v2a2 2 0 01-2 2H5a2 2 0 01-2-2v-2z"/><path d="M8 21v-6h8v6"/><line x1="12" y1="3" x2="12" y2="8"/></svg>
+        </div>
+        <div class="scard-name">美食探店</div>
+        <div class="scard-desc">打卡·特色小吃·网红店</div>
+      </div>
+      <!-- 选中：珊瑚 -->
+      <div class="scard sc">
+        <div class="scard-check">
+          <svg width="8" height="8" viewBox="0 0 10 10" fill="none" stroke="white" stroke-width="2.2" stroke-linecap="round"><polyline points="1.5,5 4,7.5 8.5,2.5"/></svg>
+        </div>
+        <div class="scard-ico">
+          <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="#b88a00" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="18" height="14" rx="2"/><path d="M8 21h8M12 17v4"/></svg>
+        </div>
+        <div class="scard-name">文化艺术</div>
+        <div class="scard-desc">博物馆·美术馆·展览</div>
+      </div>
+      <!-- 选中：淡黄 -->
+      <div class="scard sy">
+        <div class="scard-check">
+          <svg width="8" height="8" viewBox="0 0 10 10" fill="none" stroke="white" stroke-width="2.2" stroke-linecap="round"><polyline points="1.5,5 4,7.5 8.5,2.5"/></svg>
+        </div>
+        <div class="scard-ico">
+          <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="#8a6800" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"/></svg>
+        </div>
+        <div class="scard-name">演出活动</div>
+        <div class="scard-desc">演唱会·展览·赛事</div>
+      </div>
+    </div>
+
+    <div class="cdiv"></div>
+
+    <!-- 今天节奏 -->
+    <div class="sec-title">
+      <div class="sec-bar sky"></div>
+      <div class="sec-text">今天想要什么节奏？</div>
+    </div>
+    <div class="vibe-row">
+      <div class="vchip sm">
+        <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="#157a50" stroke-width="1.8" stroke-linecap="round"><circle cx="12" cy="12" r="10"/><path d="M8 14s1.5 2 4 2 4-2 4-2"/><line x1="9" y1="9" x2="9.01" y2="9"/><line x1="15" y1="9" x2="15.01" y2="9"/></svg>
+        <span class="vchip-lbl">悠闲慢游</span>
+      </div>
+      <div class="vchip">
+        <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="#6b7c74" stroke-width="1.8" stroke-linecap="round"><path d="M13 2L3 14h9l-1 8 10-12h-9l1-8z"/></svg>
+        <span class="vchip-lbl">特种兵打卡</span>
+      </div>
+      <div class="vchip sc">
+        <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="#b88a00" stroke-width="1.8" stroke-linecap="round"><circle cx="12" cy="12" r="3"/><line x1="12" y1="2" x2="12" y2="5"/><line x1="12" y1="19" x2="12" y2="22"/><line x1="4.22" y1="4.22" x2="6.34" y2="6.34"/><line x1="17.66" y1="17.66" x2="19.78" y2="19.78"/><line x1="2" y1="12" x2="5" y2="12"/><line x1="19" y1="12" x2="22" y2="12"/></svg>
+        <span class="vchip-lbl">随心探索</span>
+      </div>
+    </div>
+  </div>
+
+  <!-- ③ 偏好标签卡 -->
+  <div class="c">
+    <div class="ch">
+      <div class="ch-ico ico-mint">
+        <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="#157a50" stroke-width="2.2" stroke-linecap="round"><path d="M20.84 4.61a5.5 5.5 0 00-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 00-7.78 7.78l1.06 1.06L12 21.23l7.78-7.78 1.06-1.06a5.5 5.5 0 000-7.78z"/></svg>
+      </div>
+      <div class="ch-title">出行偏好</div>
+      <div class="ch-right mint">已选 3 项</div>
+    </div>
+    <div class="pref-body">
+      <div class="pref-head">
+        <span class="pref-lbl like">我喜欢</span>
+        <div class="pref-head-line"></div>
+      </div>
+      <div class="ptags">
+        <button class="ptag sm">
+          <svg width="9" height="9" viewBox="0 0 10 10" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"><polyline points="1.5,5 4,7.5 8.5,2.5"/></svg>
+          少排队
+        </button>
+        <button class="ptag">路程紧凑</button>
+        <button class="ptag sm">
+          <svg width="9" height="9" viewBox="0 0 10 10" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"><polyline points="1.5,5 4,7.5 8.5,2.5"/></svg>
+          人少景美
+        </button>
+        <button class="ptag">热门打卡</button>
+        <button class="ptag sm">
+          <svg width="9" height="9" viewBox="0 0 10 10" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"><polyline points="1.5,5 4,7.5 8.5,2.5"/></svg>
+          适合拍照
+        </button>
+        <button class="ptag">小众特色</button>
+        <button class="ptag">室内为主</button>
+      </div>
+
+      <div class="pref-head">
+        <span class="pref-lbl avoid">我想避开</span>
+        <div class="pref-head-line"></div>
+      </div>
+      <div class="ptags" style="margin-bottom:0">
+        <button class="ptag sa">人太多</button>
+        <button class="ptag sa">消费贵</button>
+        <button class="ptag">需要排队</button>
+        <button class="ptag">体力消耗大</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- ④ 对话卡片 -->
+  <div class="cf">
+    <div class="ch">
+      <div class="ch-ico ico-sky">
+        <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="#1a5a90" stroke-width="2.2" stroke-linecap="round"><path d="M21 15a2 2 0 01-2 2H7l-4 4V5a2 2 0 012-2h14a2 2 0 012 2z"/></svg>
+      </div>
+      <div class="ch-title">AI 对话规划</div>
+      <div class="ch-right" style="display:flex;align-items:center;gap:4px">
+        <span style="width:6px;height:6px;border-radius:50%;background:var(--mint);display:inline-block"></span>
+        在线
+      </div>
+    </div>
+    <div class="chat-body">
+      <div class="buser">周末想在上海半天 citywalk，2个人，预算200，少排队</div>
+      <div class="bai">好的！结合你的偏好 <span class="hm">少排队</span>、<span class="hm">人少景美</span>，已锁定几条冷门但很出片的路线</div>
+      <div class="typing">
+        <div class="td"></div><div class="td"></div><div class="td"></div>
+      </div>
+    </div>
+    <div class="ibar">
+      <input class="ifield" placeholder="继续描述，比如「不想走太多路」" />
+      <button class="isend">
+        <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="white" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><line x1="22" y1="2" x2="11" y2="13"/><polygon points="22 2 15 22 11 13 2 9 22 2"/></svg>
+      </button>
+    </div>
+  </div>
+
+  <!-- ⑤ 路线结果卡片 -->
+  <div class="cf">
+    <div class="ch">
+      <div class="ch-ico ico-yellow">
+          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="#b88a00" stroke-width="2.2" stroke-linecap="round"><path d="M21 10c0 7-9 13-9 13S3 17 3 10a9 9 0 0118 0z"/><circle cx="12" cy="10" r="3"/></svg>
+        </div>
+        <div class="ch-title">路线方案</div>
+        <div class="ch-right" style="display:flex;align-items:center;gap:5px">
+          <span style="width:5px;height:5px;border-radius:50%;background:var(--yolk);display:inline-block"></span>A
+        <span style="width:5px;height:5px;border-radius:50%;background:var(--ink4);display:inline-block;margin-left:1px"></span>B
+        <span style="width:5px;height:5px;border-radius:50%;background:var(--ink4);display:inline-block"></span>C
+      </div>
+    </div>
+
+    <div class="route-body">
+      <div class="rbadge"><div class="rbadge-dot"></div>推荐路线 A</div>
+      <div class="rtitle">上海滨江 · 静安<br>艺术半日游</div>
+
+      <!-- meta 块 -->
+      <div class="rmeta">
+        <div class="rmi">
+          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="var(--ink3)" stroke-width="2" stroke-linecap="round"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
+          <span class="rmv">4.5h</span>
+          <span class="rmk">时长</span>
+        </div>
+        <div class="rmi">
+          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="var(--ink3)" stroke-width="2" stroke-linecap="round"><line x1="12" y1="1" x2="12" y2="23"/><path d="M17 5H9.5a3.5 3.5 0 000 7h5a3.5 3.5 0 010 7H6"/></svg>
+          <span class="rmv">¥180</span>
+          <span class="rmk">人均</span>
+        </div>
+        <div class="rmi">
+          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="var(--mint)" stroke-width="2" stroke-linecap="round"><polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/></svg>
+          <span class="rmv mint">低峰</span>
+          <span class="rmk">少排队</span>
+        </div>
+        <div class="rmi">
+          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="var(--ink3)" stroke-width="2" stroke-linecap="round"><polygon points="3 11 22 2 13 21 11 13 3 11"/></svg>
+          <span class="rmv">3站</span>
+          <span class="rmk">节点</span>
+        </div>
+      </div>
+
+      <!-- 时间轴 -->
+      <div class="tline">
+        <div class="ti">
+          <div class="tidot"><div class="tidot-in"></div></div>
+          <div class="tic">
+            <div class="titime">09:30</div>
+            <div class="tiname">外滩源 · 圆明园路</div>
+            <div class="tidesc">历史建筑街区 + 独立咖啡馆，约 1h</div>
+            <div class="titags">
+              <span class="titag m">人少</span>
+              <span class="titag y">适合拍照</span>
+            </div>
+          </div>
+        </div>
+        <div class="ti">
+          <div class="tidot"><div class="tidot-in"></div></div>
+          <div class="tic">
+            <div class="titime">11:00</div>
+            <div class="tiname">苏州河滨江步道</div>
+            <div class="tidesc">沿河散步 + 打卡网红观景点，约 1h</div>
+            <div class="titags">
+              <span class="titag m">步行友好</span>
+              <span class="titag y">出片率高</span>
+            </div>
+          </div>
+        </div>
+        <div class="ti">
+          <div class="tidot"><div class="tidot-in"></div></div>
+          <div class="tic" style="padding-bottom:0">
+            <div class="titime">12:30</div>
+            <div class="tiname">四行仓库周边小馆</div>
+            <div class="tidesc">本地午餐，人均 ¥60，无需排队</div>
+            <div class="titags">
+              <span class="titag c">不排队</span>
+              <span class="titag m">性价比高</span>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- 评分 -->
+      <div class="ssec">
+        <div class="ssec-title">路线评分</div>
+        <div class="srow">
+          <div class="schip best"><span class="sval">9.2</span><span class="skey">综合</span></div>
+          <div class="schip best2"><span class="sval">9.5</span><span class="skey">少排队</span></div>
+          <div class="schip"><span class="sval">8.8</span><span class="skey">性价比</span></div>
+          <div class="schip"><span class="sval">9.1</span><span class="skey">体验感</span></div>
+        </div>
+      </div>
+    </div>
+
+    <!-- ActionBar -->
+    <div class="cdiv"></div>
+    <div class="asec">
+      <div class="asec-title">快速调整</div>
+      <div class="achips">
+        <button class="achip ac">
+          <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><polyline points="1 4 1 10 7 10"/><path d="M3.51 15a9 9 0 102.13-9.36L1 10"/></svg>
+          换一家餐厅
+        </button>
+        <button class="achip ay">
+          <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><line x1="12" y1="1" x2="12" y2="23"/><path d="M17 5H9.5a3.5 3.5 0 000 7h5a3.5 3.5 0 010 7H6"/></svg>
+          更省钱版
+        </button>
+        <button class="achip am">
+          <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/></svg>
+          少排队优先
+        </button>
+        <button class="achip as">
+          <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><path d="M17 21v-2a4 4 0 00-4-4H5a4 4 0 00-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 00-3-3.87M16 3.13a4 4 0 010 7.75"/></svg>
+          亲子友好
+        </button>
+      </div>
+    </div>
+
+    <!-- 保存按钮 -->
+    <button class="bsave">
+      <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="white" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M19 21H5a2 2 0 01-2-2V5a2 2 0 012-2h11l5 5v11a2 2 0 01-2 2z"/><polyline points="17 21 17 13 7 13 7 21"/><polyline points="7 3 7 8 15 8"/></svg>
+      保存到我的行程
+    </button>
+  </div>
+
+  <!-- ⑥ 我的行程预览 -->
+  <div class="c">
+    <div class="ch">
+      <div class="ch-ico ico-yellow">
+        <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="#8a6800" stroke-width="2.2" stroke-linecap="round"><rect x="3" y="4" width="18" height="18" rx="2" ry="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/></svg>
+      </div>
+      <div class="ch-title">我的行程</div>
+      <div class="ch-right">共 3 条</div>
+    </div>
+
+    <div class="sec-title">
+      <div class="sec-bar mint"></div>
+      <div class="sec-text">进行中</div>
+      <div class="sec-count">1</div>
+    </div>
+    <div class="trip">
+      <div class="trip-dot on"></div>
+      <div class="trip-info">
+        <div class="trip-name">上海滨江·静安艺术半日游</div>
+        <div class="trip-meta">今天 · 进行中 · 当前节点 苏州河步道</div>
+      </div>
+      <div class="tbadge on">进行中</div>
+    </div>
+
+    <div class="cdiv"></div>
+    <div class="sec-title">
+      <div class="sec-bar yellow"></div>
+      <div class="sec-text">待出发</div>
+      <div class="sec-count">1</div>
+    </div>
+    <div class="trip">
+      <div class="trip-dot pl"></div>
+      <div class="trip-info">
+        <div class="trip-name">外滩夜景·豫园美食之旅</div>
+        <div class="trip-meta">计划 06/08 · 2人</div>
+      </div>
+      <div class="tbadge pl">待出发</div>
+    </div>
+
+    <div class="cdiv"></div>
+    <div class="sec-title">
+      <div class="sec-bar" style="background:var(--ink4)"></div>
+      <div class="sec-text">已完成</div>
+      <div class="sec-count">1</div>
+    </div>
+    <div class="trip" style="padding-bottom:14px">
+      <div class="trip-dot dn"></div>
+      <div class="trip-info">
+        <div class="trip-name">武康路·衡山路法租界半日游</div>
+        <div class="trip-meta">05/28 · 已完成 · 好评</div>
+      </div>
+      <div class="tbadge dn">已完成</div>
+    </div>
+  </div>
+
+  <div style="height:8px"></div>
+</div>
+
+<!-- 底部决策栏 -->
+<div class="dbar" id="dbar">
+  <button class="dbtn pick" onclick="pick()">用这套风格改造项目</button>
+  <button class="dbtn" onclick="reject()">再调整一下</button>
+</div>
+
+<script>
+  function pick() {
+    document.getElementById('dbar').innerHTML = '<span style="background:linear-gradient(135deg,#38c98a,#f5c842);-webkit-background-clip:text;-webkit-text-fill-color:transparent;background-clip:text;font-size:13px;padding:5px 14px;font-weight:800">✓ 确认！薄荷绿+蛋黄，开始改造项目吧</span>';
+  }
+  function reject() {
+    document.getElementById('dbar').innerHTML = '<span style="color:rgba(255,255,255,0.5);font-size:13px;padding:5px 14px">好的，说说想怎么调</span>';
+  }
+</script>
+</body>
+</html>

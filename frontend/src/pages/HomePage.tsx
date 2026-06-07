@@ -1,135 +1,25 @@
-import { FormEvent, useEffect, useRef, useState } from "react";
-import { Clock, MapPin, Users, Wallet, Sun, Star, ArrowLeft } from "lucide-react";
+import { FormEvent, useEffect, useMemo, useRef, useState } from "react";
+import { Cloud, CloudRain, MapPin, Moon, Star, Sun, Wind, ArrowLeft, Clock, Users, Wallet } from "lucide-react";
 import logoSvg from "../assets/logo.svg";
 import type { OnboardingProfile } from "../hooks/useOnboarding";
 import { PhoneStatusBar } from "../App";
 import { RouteCard } from "../components/RouteCard";
 import type { Route, RouteStop } from "../api/types";
+import { getMockWeather, getDailyRecommendedRoutes } from "../utils/mockData";
+import type { PoiCategory, PoiDetail, PresetRoute } from "../utils/mockData";
+import { waitForGps, coordsToLocationLabel, setGpsCache, reverseGeocodeNominatim } from "../utils/gpsCache";
 
-// ── 类型定义 ──────────────────────────────────────────────────
-export type PoiCategory = "景点" | "美食" | "购物" | "娱乐" | "运动" | "文化" | "自然";
+// ── 重新导出类型，保持向后兼容 ────────────────────────────────
+export type { PoiCategory, PoiDetail, PresetRoute };
 
-export interface PoiDetail {
-  name: string;
-  img: string;
-  duration: string;
-  durationMin: number;   // 停留分钟数
-  category: PoiCategory; // 地点分类
-  travelMin?: number;    // 到下一个地点的交通分钟数
+// ── 天气图标组件 ──────────────────────────────────────────────
+function WeatherIcon({ condition, size = 11 }: { condition: string; size?: number }) {
+  if (condition === "night_clear") return <Moon size={size} className="home-weather-inline-icon" />;
+  if (condition === "rainy")       return <CloudRain size={size} className="home-weather-inline-icon" />;
+  if (condition === "cloudy")      return <Cloud size={size} className="home-weather-inline-icon" />;
+  if (condition === "hot")         return <Wind size={size} className="home-weather-inline-icon" />;
+  return <Sun size={size} className="home-weather-inline-icon" />;
 }
-
-export interface PresetRoute {
-  id: string;
-  title: string;
-  subtitle: string;
-  theme: string;
-  emoji: string;
-  pois: string[];
-  poi_details: PoiDetail[];
-  start_time: string;
-  end_time: string;
-  per_person_cost: string;
-  district: string;
-  tags: string[];
-  hot?: boolean;
-  isNew?: boolean;
-  label?: string;
-  labelColor?: [string, string]; // [浅色, 深色] 渐变
-  reason?: string; // 推荐理由
-}
-
-// ── Mock 精选路线数据 ─────────────────────────────────────────
-const FEATURED_ROUTES: PresetRoute[] = [
-  {
-    id: "feat_1",
-    title: "朝阳半日 Citywalk",
-    subtitle: "从望京出发，穿三里屯到工体，感受北京最年轻的街头气息",
-    theme: "citywalk",
-    emoji: "🚶",
-    pois: ["望京 SOHO", "三里屯太古里", "工人体育场"],
-    poi_details: [
-      { name: "望京 SOHO", img: "https://images.unsplash.com/photo-1480714378408-67cf0d13bc1b?w=600&q=80", duration: "约45分钟", durationMin: 45, category: "景点", travelMin: 15 },
-      { name: "三里屯太古里", img: "https://images.unsplash.com/photo-1555396273-367ea4eb4db5?w=600&q=80", duration: "约1小时", durationMin: 60, category: "购物", travelMin: 10 },
-      { name: "工人体育场", img: "https://images.unsplash.com/photo-1546519638-68e109498ffc?w=600&q=80", duration: "约45分钟", durationMin: 45, category: "娱乐" },
-    ],
-    start_time: "10:00",
-    end_time: "13:00",
-    per_person_cost: "¥60~120",
-    district: "朝阳区",
-    tags: ["citywalk", "打卡", "街头"],
-    hot: true,
-    label: "猜你喜欢",
-    labelColor: ["#38c98a", "#1a9e68"],
-    reason: "街头氛围一绝，拍照超出片，不踩雷",
-  },
-  {
-    id: "feat_2",
-    title: "北京文化艺术半日游",
-    subtitle: "798 艺术区到鼓楼，一条沉浸式文艺路线",
-    theme: "culture",
-    emoji: "🎨",
-    pois: ["798 艺术区", "南锣鼓巷", "鼓楼"],
-    poi_details: [
-      { name: "798 艺术区", img: "https://images.unsplash.com/photo-1578301978693-85fa9c0320b9?w=600&q=80", duration: "约1.5小时", durationMin: 90, category: "文化", travelMin: 20 },
-      { name: "南锣鼓巷", img: "https://images.unsplash.com/photo-1508804185872-d7badad00f7d?w=600&q=80", duration: "约1小时", durationMin: 60, category: "景点", travelMin: 15 },
-      { name: "鼓楼", img: "https://images.unsplash.com/photo-1563492065599-3520f775eeed?w=600&q=80", duration: "约45分钟", durationMin: 45, category: "文化" },
-    ],
-    start_time: "13:00",
-    end_time: "17:00",
-    per_person_cost: "¥100~200",
-    district: "朝阳/东城",
-    tags: ["艺术", "展览", "文化"],
-    label: "人少景美",
-    labelColor: ["#845EC2", "#5c3d99"],
-    reason: "人少不挤，文艺感满满，强烈推荐",
-  },
-  {
-    id: "feat_3",
-    title: "美食探店下午茶",
-    subtitle: "三里屯到国贸，咖啡馆加网红餐厅连环打卡",
-    theme: "foodie",
-    emoji: "🍜",
-    pois: ["三里屯咖啡街", "SKP RENDEZ-VOUS", "国贸商城 B1"],
-    poi_details: [
-      { name: "三里屯咖啡街", img: "https://images.unsplash.com/photo-1509042239860-f550ce710b93?w=600&q=80", duration: "约1小时", durationMin: 60, category: "美食", travelMin: 10 },
-      { name: "SKP RENDEZ-VOUS", img: "https://images.unsplash.com/photo-1414235077428-338989a2e8c0?w=600&q=80", duration: "约1小时", durationMin: 60, category: "购物", travelMin: 10 },
-      { name: "国贸商城 B1", img: "https://images.unsplash.com/photo-1579783902614-a3fb3927b6a5?w=600&q=80", duration: "约1小时", durationMin: 60, category: "美食" },
-    ],
-    start_time: "14:00",
-    end_time: "17:00",
-    per_person_cost: "¥150~300",
-    district: "朝阳区",
-    tags: ["美食", "咖啡", "下午茶"],
-    isNew: true,
-    label: "新店打卡",
-    labelColor: ["#FF7A4D", "#cc3d1a"],
-    reason: "新开的店都在这，一条街全打完",
-  },
-  {
-    id: "feat_4",
-    title: "亲子一日游·自然放松",
-    subtitle: "奥林匹克森林公园漫步，绿色休闲路线",
-    theme: "nature",
-    emoji: "🌿",
-    pois: ["奥森北园入口", "龙形水系", "奥森南园"],
-    poi_details: [
-      { name: "奥森北园入口", img: "https://images.unsplash.com/photo-1501854140801-50d01698950b?w=600&q=80", duration: "约1小时", durationMin: 60, category: "自然", travelMin: 10 },
-      { name: "龙形水系", img: "https://images.unsplash.com/photo-1418065460487-3e41a6c84dc5?w=600&q=80", duration: "约1.5小时", durationMin: 90, category: "自然", travelMin: 10 },
-      { name: "奥森南园", img: "https://images.unsplash.com/photo-1441974231531-c6227db76b6e?w=600&q=80", duration: "约1小时", durationMin: 60, category: "运动" },
-    ],
-    start_time: "09:00",
-    end_time: "14:00",
-    per_person_cost: "¥30~80",
-    district: "朝阳区",
-    tags: ["亲子", "自然", "公园"],
-    label: "高性价比",
-    labelColor: ["#F59E0B", "#b45309"],
-    reason: "带娃出门首选，花费少玩得开心",
-  },
-];
-
-const MOCK_WEATHER = { condition: "晴", tempHigh: 28, tempLow: 17, tip: "适合户外出行" };
-const MOCK_LOCATION = "北京市朝阳区望京";
 
 const THEME_COLORS: Record<string, string> = {
   citywalk: "#4FA8E8",
@@ -637,6 +527,63 @@ export function HomePage({ profile, onStartPlanning, onProfileClick }: HomePageP
   const [viewRoute, setViewRoute] = useState<PresetRoute | null>(null);
   const [inputText, setInputText] = useState("");
   const textareaRef = useRef<HTMLTextAreaElement>(null);
+  // "locating" 正在获取 | "ok" 成功 | "denied" 被拒绝 | "unavailable" 不支持/超时
+const [locState, setLocState] = useState<"locating" | "ok" | "denied" | "unavailable">("ok");
+const [locationLabel, setLocationLabel] = useState<string | null>("北京市西城区西单");
+
+  // ── 请求 GPS 并更新位置状态 ─────────────────────────────────────
+  function requestLocation() {
+    if (!navigator.geolocation) {
+      setLocState("unavailable");
+      return;
+    }
+    setLocState("locating");
+    navigator.geolocation.getCurrentPosition(
+      (pos) => {
+        const { latitude: lat, longitude: lng } = pos.coords;
+        setGpsCache(lat, lng);
+        // 先用本地规则快速显示（毫秒级），再异步调 Nominatim 精确逆地理编码
+        const quickLabel = coordsToLocationLabel(lat, lng);
+        setLocationLabel(quickLabel ?? "定位成功");
+        setLocState("ok");
+        // 异步获取精确地址，回来后静默更新
+        reverseGeocodeNominatim(lat, lng).then((label) => {
+          if (label) setLocationLabel(label);
+        });
+      },
+      (err) => {
+        // err.code 1 = PERMISSION_DENIED, 2 = UNAVAILABLE, 3 = TIMEOUT
+        setLocState(err.code === 1 ? "denied" : "unavailable");
+      },
+      { enableHighAccuracy: false, maximumAge: 300000, timeout: 8000 },
+    );
+  }
+
+  // ── 挂载时等待 App 层 GPS 结果（已禁用，默认使用西单作为起点） ──
+  // useEffect(() => {
+  //   waitForGps(3000).then((coords) => {
+  //     if (coords) {
+  //       const quickLabel = coordsToLocationLabel(coords.lat, coords.lng);
+  //       setLocationLabel(quickLabel ?? "定位成功");
+  //       setLocState("ok");
+  //       reverseGeocodeNominatim(coords.lat, coords.lng).then((label) => {
+  //         if (label) setLocationLabel(label);
+  //       });
+  //     } else {
+  //       requestLocation();
+  //     }
+  //   });
+  // // eslint-disable-next-line react-hooks/exhaustive-deps
+  // }, []);
+
+  // ── 天气数据（根据当前定位城市）───────────────────────────────
+  const weather = useMemo(() => getMockWeather("北京"), []);
+
+  // ── 猜你喜欢：每天动态生成 3 条（天气建议 + 用户偏好加权）───────────
+  const recommendedRoutes = useMemo(
+    () => getDailyRecommendedRoutes(profile, weather.suggested_preferences),
+    [profile, weather.suggested_preferences]
+  );
 
   const greeting = (() => {
     const h = new Date().getHours();
@@ -707,11 +654,49 @@ export function HomePage({ profile, onStartPlanning, onProfileClick }: HomePageP
 
         {/* ── 定位 + 天气信息条（同一行，居中） ── */}
         <div className="home-location-bar">
-          <MapPin size={12} className="home-location-icon" />
-          <span>{MOCK_LOCATION}</span>
-          <span className="home-location-sep">·</span>
-          <Sun size={11} className="home-weather-inline-icon" />
-          <span>{MOCK_WEATHER.condition} {MOCK_WEATHER.tempHigh}°</span>
+          {locState === "locating" && (
+            <>
+              <MapPin size={12} className="home-location-icon" style={{ opacity: 0.4 }} />
+              <span style={{ opacity: 0.4 }}>定位中…</span>
+              <span className="home-location-sep">·</span>
+            </>
+          )}
+          {locState === "ok" && locationLabel && (
+            <>
+              <MapPin size={12} className="home-location-icon" />
+              <span>{locationLabel}</span>
+              <span className="home-location-sep">·</span>
+            </>
+          )}
+          {locState === "denied" && (
+            <>
+              <MapPin size={12} className="home-location-icon" style={{ opacity: 0.35 }} />
+              <button
+                type="button"
+                className="home-loc-retry-btn"
+                onClick={requestLocation}
+                title="在浏览器地址栏允许位置权限后点击重试"
+              >
+                位置已拒绝，点击重试
+              </button>
+              <span className="home-location-sep">·</span>
+            </>
+          )}
+          {locState === "unavailable" && (
+            <>
+              <MapPin size={12} className="home-location-icon" style={{ opacity: 0.35 }} />
+              <button
+                type="button"
+                className="home-loc-retry-btn"
+                onClick={requestLocation}
+              >
+                无法定位，点击重试
+              </button>
+              <span className="home-location-sep">·</span>
+            </>
+          )}
+          <WeatherIcon condition={weather.condition} size={11} />
+          <span>{weather.label} {weather.temperature_c}°</span>
         </div>
 
       {/* ── 主输入卡片 ── */}
@@ -755,7 +740,7 @@ export function HomePage({ profile, onStartPlanning, onProfileClick }: HomePageP
             </h2>
           </div>
           <div className="home-featured-scroll">
-            {FEATURED_ROUTES.map((route) => (
+            {recommendedRoutes.map((route) => (
               <FeaturedRouteCard
                 key={route.id}
                 route={route}
@@ -773,14 +758,10 @@ export function HomePage({ profile, onStartPlanning, onProfileClick }: HomePageP
           onClose={() => setViewRoute(null)}
           onCopy={() => {
             setViewRoute(null);
-            onStartPlanning(
-              viewRoute.tags
-                .filter((t) =>
-                  ["citywalk","foodie","culture","nature","show_event","shopping","landmark","family"].includes(t)
-                )
-                .concat([viewRoute.theme]),
-              viewRoute.title
-            );
+            // 构建包含路线信息的提示词，发送到聊天框启动新规划
+            const poisStr = viewRoute.poi_details.map((p) => p.name).join("、");
+            const msg = `我想参考「${viewRoute.title}」这条路线（经过${poisStr}，${viewRoute.start_time}–${viewRoute.end_time}，${viewRoute.district}），帮我安排今天的行程`;
+            onStartPlanning(undefined, undefined, msg);
           }}
         />
       )}

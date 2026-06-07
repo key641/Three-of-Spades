@@ -11,6 +11,7 @@ import type { OnboardingProfile, TripConstraints } from "../hooks/useOnboarding"
 import type { PoiAction } from "../components/RouteTimeline";
 import { DEFAULT_TRIP_CONSTRAINTS } from "../hooks/useOnboarding";
 import { useChat } from "../hooks/useChat";
+import { setGpsCache } from "../utils/gpsCache";
 
 // 当前显示哪个 Sheet：对话 or 方案
 // ── 路线编辑 Sheet ────────────────────────────────────────────
@@ -264,6 +265,8 @@ async function detectCity(): Promise<string> {
       const pos = await new Promise<GeolocationPosition>((resolve, reject) =>
         navigator.geolocation.getCurrentPosition(resolve, reject, { timeout: 5000 })
       );
+      // 缓存坐标，供后续发请求时直接使用（见 utils/gpsCache.ts）
+      setGpsCache(pos.coords.latitude, pos.coords.longitude);
       const city = coordsToCity(pos.coords.latitude, pos.coords.longitude);
       if (city) return city;
     } catch {
@@ -1345,7 +1348,7 @@ export function PlannerPage({ profile, onResetProfile, preset, onPresetConsumed,
           messages={messages}
           loading={loading}
           error={error}
-          onClarify={(answer) => answerClarify(answer, localProfile, trip ?? DEFAULT_TRIP_CONSTRAINTS)}
+          onClarify={(answer, labelSummary, clarifyValues) => answerClarify(answer, localProfile, trip ?? DEFAULT_TRIP_CONSTRAINTS, labelSummary, clarifyValues)}
           afterFirstUserMessage={
             // TripSetupPanel 路径追问（由前端本地规则生成）
             (followUp && !loading) ? (
@@ -1356,7 +1359,11 @@ export function PlannerPage({ profile, onResetProfile, preset, onPresetConsumed,
             ) : undefined
           }
           beforeLoadingBubble={
-            <AgentTrace steps={response?.agent_trace ?? []} loading={loading} />
+            <AgentTrace
+              steps={liveTrace}
+              loading={loading}
+              userInput={[...messages].reverse().find((m) => m.role === "user")?.content}
+            />
           }
           afterLastAssistant={
             hasRoutes ? (
@@ -1465,6 +1472,7 @@ export function PlannerPage({ profile, onResetProfile, preset, onPresetConsumed,
         onClick={() => setShowDebug(v => !v)}
         title="调试面板"
         style={{
+          display: "none",
           position: "fixed",
           right: 16,
           bottom: 96,
@@ -1477,7 +1485,6 @@ export function PlannerPage({ profile, onResetProfile, preset, onPresetConsumed,
           boxShadow: "0 4px 16px rgba(0,0,0,0.35)",
           cursor: "pointer",
           fontSize: 20,
-          display: "flex",
           alignItems: "center",
           justifyContent: "center",
           backdropFilter: "blur(6px)",

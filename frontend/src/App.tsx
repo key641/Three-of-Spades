@@ -1,6 +1,7 @@
 import { useState, useEffect } from "react";
 import type { OnboardingProfile } from "./hooks/useOnboarding";
 import { loadProfile } from "./hooks/useOnboarding";
+import { setGpsCache, getGpsCache } from "./utils/gpsCache";
 import { OnboardingPage } from "./pages/OnboardingPage";
 import { PlannerPage } from "./pages/PlannerPage";
 import { HomePage } from "./pages/HomePage";
@@ -162,6 +163,18 @@ export default function App() {
   // 行程历史记录
   const [tripHistory, setTripHistory] = useState<HistoryTrip[]>(() => loadHistory());
 
+  // ── 应用启动时立即发起 GPS 请求（最早时机，给用户最长等待时间）──
+  useEffect(() => {
+    if ("geolocation" in navigator && !getGpsCache()) {
+      navigator.geolocation.getCurrentPosition(
+        (pos) => setGpsCache(pos.coords.latitude, pos.coords.longitude),
+        () => { /* GPS 拒绝/不可用，忽略 */ },
+        { enableHighAccuracy: false, maximumAge: 300000, timeout: 10000 },
+      );
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
   // ── Onboarding 未完成 ──
   if (!profile) {
     return (
@@ -234,7 +247,7 @@ export default function App() {
           <ProfilePage
             profile={profile}
             onResetProfile={() => setProfile(null)}
-            onNewTrip={(goals) => handleStartPlanning(goals)}
+            onNewTrip={(goals, initialMsg) => handleStartPlanning(goals, undefined, initialMsg)}
             tripHistory={tripHistory}
             onBack={() => setActiveTab("home")}
           />

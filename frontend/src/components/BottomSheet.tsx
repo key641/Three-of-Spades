@@ -99,10 +99,11 @@ export function BottomSheet({
     window.addEventListener("mouseup", onMouseUp);
   }, [snap, onSnapChange]);
 
-  // 点击手柄 → 循环切换档位
+  // 点击手柄 → 在 peek ⟺ half 之间切换（full 由拖拽触达，点击不进入 full）
   const onHandleClick = useCallback(() => {
     if (dragging) return;
-    const next: Record<SheetSnap, SheetSnap> = { peek: "half", half: "full", full: "peek" };
+    // 当前是 full 时，点击收回到 half；否则 peek ⟺ half
+    const next: Record<SheetSnap, SheetSnap> = { peek: "half", half: "peek", full: "half" };
     onSnapChange(next[snap]);
   }, [snap, onSnapChange, dragging]);
 
