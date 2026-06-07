@@ -24,6 +24,7 @@ class ClarificationPolicy:
 
     规则：
     - 每次会话最多追问 1 次（clarification_count >= 1 时跳过所有追问）
+    - 单次追问最多合并 3 个问题，用换行分隔
     """
 
     ROUTING_CONFIDENCE_THRESHOLD = 0.5
@@ -37,6 +38,7 @@ class ClarificationPolicy:
         message_route: MessageRoute,
         session_state: SessionState,
     ) -> ClarificationDecision:
+        # ── 已追问过，不再追问 ───────────────────────────────────
         if session_state.clarification_count >= self.MAX_CLARIFICATION_ROUNDS:
             return ClarificationDecision()
 
@@ -47,10 +49,47 @@ class ClarificationPolicy:
         if not self._needs_route_generation(message_route):
             return ClarificationDecision()
 
-        new_plan_decision = self._new_plan_clarification_decision(request, intent, message_route, session_state)
-        if new_plan_decision.need_clarification:
-            return new_plan_decision
-        return ClarificationDecision()
+        # ── 收集所有缺失字段对应的问题（最多 MAX_QUESTIONS_PER_ROUND 个）──
+        questions: list[str] = []
+        missing_fields: list[str] = []
+
+        location_missing, location_question = self._is_missing_location(
+            request, intent, message_route, session_state
+        )
+        if location_missing:
+            questions.append(location_question)
+            missing_fields.append("location")
+
+        if self._is_too_generic_new_plan(request.message, intent, message_route):
+            questions.append("你这次主要想玩景点、吃美食，还是轻松 citywalk？")
+            missing_fields.append("trip_goal")
+
+        # 人数/时长/预算等软约束（仅作为补充问题）
+        if len(questions) < self.MAX_QUESTIONS_PER_ROUND:
+            soft_q = self._soft_constraint_questions(request, intent, message_route)
+            for q in soft_q:
+                if len(questions) >= self.MAX_QUESTIONS_PER_ROUND:
+                    break
+                questions.append(q)
+
+        if not questions:
+            return ClarificationDecision()
+
+        # 合并成一条追问（多问题用换行分隔，前缀数字）
+        if len(questions) == 1:
+            combined = questions[0]
+        else:
+            numbered = "\n".join(f"{i+1}. {q}" for i, q in enumerate(questions))
+            combined = f"出发前帮我确认几点：\n{numbered}"
+
+        return ClarificationDecision(
+            need_clarification=True,
+            clarification_type="missing_required_field",
+            missing_field=missing_fields[0] if missing_fields else None,
+            priority="required",
+            question=combined,
+            can_continue_with_defaults=False,
+        )
 
     # ── 软约束补充问题 ────────────────────────────────────────────
 
@@ -172,53 +211,6 @@ class ClarificationPolicy:
 
     # ── 地点信息充足性判断 ───────────────────────────────────────
 
-    def _is_missing_city(
-        self,
-        request: ChatRequest,
-        intent: Intent,
-        message_route: MessageRoute,
-        session_state: SessionState,
-    ) -> bool:
-        """
-        判断是否仍然缺少足够明确的城市/区域信息。
-
-        只要消息里已经包含具体地点、已有明确出发地，或者改写/重规划时能继承上一轮地点，
-        就不应再把城市信息视为缺失。
-        """
-        if not self._needs_route_generation(message_route):
-            return False
-
-        if message_route.inherit_previous or message_route.planning_mode != PlanningMode.NEW_PLAN:
-            last = session_state.last_intent
-            if last and (last.start_location_name or last.start_lat or last.city):
-                return False
-
-        if self._message_mentions_specific_location(request.message):
-            return False
-
-        if request.start_location_name and self._is_specific_location(request.start_location_name):
-            return False
-        if intent.start_location_name and self._is_specific_location(intent.start_location_name):
-            return False
-
-        if (request.city and self._is_specific_location(request.city)) or (
-            intent.city and intent.city_from_message and self._is_specific_location(intent.city)
-        ):
-            return False
-
-        has_city_only = (
-            (request.city and request.city.strip())
-            or self._message_mentions_city(request.message)
-            or (intent.city_from_message and intent.city)
-            or (
-                session_state.last_intent
-                and session_state.last_intent.city
-                and (message_route.inherit_previous or message_route.planning_mode != PlanningMode.NEW_PLAN)
-            )
-        )
-
-        return not has_city_only
-
     def _is_missing_location(
         self,
         request: ChatRequest,
@@ -243,7 +235,7 @@ class ClarificationPolicy:
             return False, ""
 
         # 继承上轮：modify/replan 且上一轮有地点信息 → 无需追问
-        if message_route.inherit_previous or message_route.planning_mode != PlanningMode.NEW_PLAN:
+        if message_route.planning_mode != PlanningMode.NEW_PLAN:
             last = session_state.last_intent
             if last and (last.start_location_name or last.start_lat or last.city):
                 return False, ""
@@ -272,7 +264,7 @@ class ClarificationPolicy:
             or self._message_mentions_city(request.message)
             or (intent.city_from_message and intent.city)
             or (session_state.last_intent and session_state.last_intent.city
-                and (message_route.inherit_previous or message_route.planning_mode != PlanningMode.NEW_PLAN))
+                and message_route.planning_mode != PlanningMode.NEW_PLAN)
         )
 
         has_gps = bool(
@@ -310,40 +302,9 @@ class ClarificationPolicy:
 
     def _message_mentions_city(self, message: str) -> bool:
         known_cities = [
-            "上海",
-            "北京",
-            "杭州",
-            "成都",
-            "广州",
-            "深圳",
-            "南京",
-            "苏州",
-            "重庆",
-            "武汉",
-            "西安",
-            "长沙",
-            "厦门",
-            "天津",
-            "青岛",
-            "大连",
-            "沈阳",
-            "郑州",
-            "合肥",
-            "济南",
-            "涓婃捣",
-            "鍖椾含",
-            "鏉窞",
-            "鎴愰兘",
-            "骞垮窞",
-            "娣卞湷",
-            "鍗椾含",
-            "鑻忓窞",
-            "閲嶅簡",
-            "姝︽眽",
-            "瑗垮畨",
-            "闀挎矙",
-            "鍘﹂棬",
-            "澶╂触",
+            "上海", "北京", "杭州", "成都", "广州", "深圳",
+            "南京", "苏州", "重庆", "武汉", "西安", "长沙",
+            "厦门", "天津", "青岛", "大连", "沈阳", "郑州",
         ]
         return any(city in message for city in known_cities)
 
