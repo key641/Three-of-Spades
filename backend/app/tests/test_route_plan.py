@@ -19,13 +19,26 @@ def _plan(intent: Intent, message: str = ""):
 
 def test_generate_route_candidates() -> None:
     response = _plan(Intent())
+    all_stop_ids = [stop.poi_id for route in response.routes for stop in route.stops]
 
     assert len(response.routes) == 3
     assert "balanced" in {route.objective for route in response.routes}
     assert len({route.objective for route in response.routes}) == len(response.routes)
-    assert all(1 <= len(route.stops) <= 5 for route in response.routes)
+    assert all(3 <= len(route.stops) <= 5 for route in response.routes)
+    assert len({tuple(sorted(stop.poi_id for stop in route.stops)) for route in response.routes}) == len(response.routes)
+    assert len(all_stop_ids) == len(set(all_stop_ids))
+    assert all(len({stop.primary_category or stop.category for stop in route.stops}) >= 2 for route in response.routes)
     assert all(0 < route.score <= 100 for route in response.routes)
     assert all(route.score_breakdown.preference > 0 for route in response.routes)
+    assert all(
+        stop.transport_mode_from_previous
+        and stop.travel_minutes_from_previous is not None
+        and stop.distance_km_from_previous is not None
+        and stop.polyline_from_previous
+        and stop.route_steps_from_previous
+        for route in response.routes
+        for stop in route.stops
+    )
 
 
 def test_empty_candidates_return_empty_routes() -> None:
@@ -43,7 +56,7 @@ def test_stop_count_follows_duration_window() -> None:
 
     assert short_routes
     assert long_routes
-    assert all(1 <= len(route.stops) <= 3 for route in short_routes)
+    assert all(2 <= len(route.stops) <= 3 for route in short_routes)
     assert all(3 <= len(route.stops) <= 5 for route in long_routes)
     assert all(route.total_duration_minutes <= 180 for route in short_routes)
     assert all(route.total_duration_minutes <= 480 for route in long_routes)
@@ -97,12 +110,13 @@ def test_photo_food_strong_intent_beats_low_queue_objective() -> None:
         message="饭店拍照必须好看，吃美食，也希望少排队",
     )
     objectives = [route.objective for route in response.routes]
+    all_stop_ids = [stop.poi_id for route in response.routes for stop in route.stops]
 
     assert "photo_food" in objectives
     assert "food_first" in objectives
-    assert "balanced" in objectives
     assert "low_queue" not in objectives
     assert objectives[0] != "balanced"
+    assert len(all_stop_ids) == len(set(all_stop_ids))
 
 
 def test_nature_intent_generates_nature_route_and_balanced() -> None:
@@ -117,9 +131,29 @@ def test_nature_intent_generates_nature_route_and_balanced() -> None:
 def test_returns_one_top_route_per_objective() -> None:
     response = _plan(Intent())
 
-    assert all(route.route_id == f"route_{route.objective}_best" for route in response.routes)
+    assert all(route.route_id.startswith(f"route_{route.objective}_") for route in response.routes)
     assert all("推荐" in route.title for route in response.routes)
     assert all("优势是" in route.summary for route in response.routes)
+
+
+def test_final_routes_do_not_share_any_pois() -> None:
+    response = _plan(Intent(preferences=["citywalk", "拍照", "吃好"]))
+    all_stop_ids = [stop.poi_id for route in response.routes for stop in route.stops]
+
+    assert len(all_stop_ids) == len(set(all_stop_ids))
+
+
+def test_simple_route_can_relax_to_two_stops_but_never_one() -> None:
+    profile = ProfileService().get_profile("user_demo")
+    intent = Intent(preferences=["简单点", "轻松"], duration_hours=4)
+    pois = POIService().search(intent, user_profile=profile, limit=3)
+    response = RouteService().generate_routes(
+        RoutePlanRequest(intent=intent, user_profile=profile, candidate_pois=pois),
+        allow_min_stops_fallback=True,
+    )
+
+    assert response.routes
+    assert all(2 <= len(route.stops) <= 3 for route in response.routes)
 
 
 def test_internal_candidate_generation_uses_more_than_four_routes_per_objective() -> None:
@@ -197,6 +231,8 @@ def test_route_stop_contains_enriched_poi_fields() -> None:
 
     assert first_stop.lat is not None
     assert first_stop.lng is not None
+    assert first_stop.district
+    assert first_stop.business_area
     assert first_stop.meal_type
     assert first_stop.open_hours
     assert first_stop.last_entry_time
@@ -215,6 +251,15 @@ def test_route_stop_contains_enriched_poi_fields() -> None:
     assert first_stop.route_leg_source_from_previous in {"amap", "fallback", "mock_map"}
     assert first_stop.route_steps_from_previous
     assert first_stop.reason
+
+
+def test_wukang_area_shopping_citywalk_uses_store_categories() -> None:
+    response = _plan(Intent(city="上海", preferences=["武康路", "逛店", "书店", "买手店", "citywalk"], duration_hours=4))
+    store_categories = {"boutique", "bookstore", "lifestyle_store", "toy_collectible", "sports_outdoor", "beauty_retail", "design_store"}
+
+    assert response.routes
+    assert any(stop.category in store_categories for route in response.routes for stop in route.stops)
+    assert any("武康路" in stop.business_area for route in response.routes for stop in route.stops)
 
 
 def test_citywalk_food_route_avoids_duplicate_coffee_and_keeps_main_activity() -> None:
@@ -272,13 +317,16 @@ def test_photo_citywalk_route_has_photo_or_main_activity_structure() -> None:
     assert any("main_activity" in stop.route_roles for stop in photo_route.stops)
 
 
-def test_multi_city_route_generation_has_usable_candidates() -> None:
+def test_unsupported_cities_do_not_generate_mock_routes() -> None:
     for city in ["北京", "杭州", "成都"]:
         response = _plan(Intent(city=city, preferences=["咖啡", "拍照"], duration_hours=6))
 
-        assert 1 <= len(response.routes) <= 3
-        assert all(route.stops for route in response.routes)
-        assert all(stop.district for route in response.routes for stop in route.stops)
+        if city == "北京":
+            assert 1 <= len(response.routes) <= 3
+            assert all(route.stops for route in response.routes)
+            assert all(stop.district for route in response.routes for stop in route.stops)
+        else:
+            assert response.routes == []
 
 
 def test_indoor_rainy_route_has_indoor_main_activity() -> None:
@@ -300,19 +348,13 @@ def test_rainy_hot_context_prefers_indoor_or_low_walking_stops() -> None:
     )
 
 
-def test_chongqing_half_day_defaults_to_one_meal_or_coffee_node() -> None:
+def test_chongqing_half_day_does_not_use_mock_fallback_routes() -> None:
     response = _plan(
         Intent(city="重庆", duration_hours=4, preferences=["室内", "拍照", "吃好", "citywalk"]),
         message="我打算下午和朋友在重庆半日游，不希望一直在室外，能够打卡地标景点还能出片，吃点重庆特色美食。",
     )
 
-    assert response.routes
-    for route in response.routes:
-        has_coffee = any(stop.category == "cafe" or stop.meal_type == "cafe" for stop in route.stops)
-        has_meal = any(stop.category == "restaurant" or stop.meal_type in {"local_food", "fine_dining"} for stop in route.stops)
-        assert not (has_coffee and has_meal)
-        if has_coffee or has_meal:
-            assert any("main_activity" in stop.route_roles or "photo_stop" in stop.route_roles for stop in route.stops)
+    assert response.routes == []
 
 
 def test_less_walking_transport_avoids_long_walks() -> None:

@@ -269,11 +269,15 @@ A 同学调试路线点评大模型使用。该接口不重新生成路线，只
   "event_label": "用户不想去第二个点，换一个",
   "event_payload": {
     "affected_poi_id": "poi_002",
+    "affected_poi_ids": ["poi_002", "poi_004"],
+    "replace_count": 2,
     "preserve_poi_ids": ["poi_001", "poi_003"],
     "replacement_category": "咖啡馆",
     "prefer_tags": ["安静", "咖啡"],
     "avoid_tags": ["商业化", "人多"],
-    "force_replace": true
+    "force_replace": true,
+    "allow_cross_category": true,
+    "allow_external_candidates": false
   }
 }
 ```
@@ -295,11 +299,14 @@ A 同学调试路线点评大模型使用。该接口不重新生成路线，只
 字段说明：
 
 - `affected_poi_id` / `affected_poi_ids`：需要替换或提醒的 POI。
+- `replace_count`：本次最多替换几个受影响 POI；不传时默认等于 `affected_poi_ids` 数量。
 - `preserve_poi_ids`：用户明确要求保留的 POI，优先级高于普通替换；闭店、不可达、售罄除外。
 - `avoid_tags`：本次调整额外避开的标签，例如“商业化”“人多”“太贵”。
 - `prefer_tags`：本次调整额外偏好的标签，例如“安静”“咖啡”“室内”。
 - `replacement_category`：用户指定替代类型，例如“咖啡馆”“餐厅”“室内展览”。
 - `force_replace`：用户明确说“换掉”时设为 `true`。
+- `allow_cross_category`：是否允许跨 category 但保持路线角色合理的替代；默认 `true`。
+- `allow_external_candidates`：本地候选不足时是否允许地图 provider 补外部候选。
 - `warning_only`：只做实时复核和提醒，不替换可用 POI。
 
 ### Response Additions

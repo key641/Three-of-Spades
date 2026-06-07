@@ -13,6 +13,8 @@ class Intent(BaseModel):
     city: str = "上海"
     people_count: int = 2
     start_location_name: str | None = None
+    target_district: str | None = None
+    target_business_area: str | None = None
     start_lat: float | None = None
     start_lng: float | None = None
     start_time: str = "14:00"

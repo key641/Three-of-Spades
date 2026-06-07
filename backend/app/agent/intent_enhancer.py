@@ -29,6 +29,24 @@ CITY_ALIASES: dict[str, list[str]] = {
     "天津": ["天津"],
 }
 
+KNOWN_BUSINESS_AREAS = [
+    "武康路",
+    "安福路",
+    "外滩",
+    "陆家嘴",
+    "南京路",
+    "淮海路",
+    "新天地",
+    "田子坊",
+    "三里屯",
+    "王府井",
+    "后海",
+    "什刹海",
+    "南锣鼓巷",
+    "国贸",
+    "西单",
+]
+
 PREFERENCE_ALIASES: dict[str, list[str]] = {
     "少排队": ["少排队", "别排队", "不排队", "不想排队", "排队少"],
     "吃好": ["吃好", "美食", "好吃", "好吃的", "餐厅", "吃饭", "小吃"],
@@ -103,6 +121,14 @@ def enhance_intent_from_message(intent: Intent, message: str) -> Intent:
     if start_time:
         data["start_time"] = start_time
 
+    district = _extract_district(text)
+    if district:
+        data["target_district"] = district
+
+    business_area = _extract_business_area(text)
+    if business_area:
+        data["target_business_area"] = business_area
+
     layers = extract_tag_layers(
         text,
         seed_preferences=[*intent.preferences, *intent.interest_tags, *intent.optimization_goals],
@@ -150,6 +176,12 @@ def extract_explicit_trip_fields(message: str) -> dict[str, object]:
     start_time = _extract_start_time(text)
     if start_time:
         fields["start_time"] = start_time
+    district = _extract_district(text)
+    if district:
+        fields["target_district"] = district
+    business_area = _extract_business_area(text)
+    if business_area:
+        fields["target_business_area"] = business_area
     return fields
 
 
@@ -180,6 +212,28 @@ def _extract_city(text: str) -> str | None:
     for city, aliases in CITY_ALIASES.items():
         if any(alias in text for alias in aliases):
             return city
+    return None
+
+
+def _extract_district(text: str) -> str | None:
+    non_district_endings = {"地区", "景区", "特区", "城区", "风景区", "保护区", "开发区", "区别", "区域"}
+    for match in re.finditer(r"[\u4e00-\u9fa5]{2,6}区|[\u4e00-\u9fa5]{2,6}县|[\u4e00-\u9fa5]{2,6}新区", text):
+        value = match.group(0)
+        if value in non_district_endings or value[-2:] in non_district_endings:
+            continue
+        return value
+    return None
+
+
+def _extract_business_area(text: str) -> str | None:
+    for area in KNOWN_BUSINESS_AREAS:
+        if area in text:
+            return area
+    match = re.search(r"[\u4e00-\u9fa5]{2,8}(?:路|街|巷|弄|大道|步行街|老街)", text)
+    if match:
+        value = match.group(0)
+        if value not in {"路线", "道路"}:
+            return value
     return None
 
 

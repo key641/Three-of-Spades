@@ -14,7 +14,7 @@
 | `models/fine_rank/*.joblib` | sklearn POI 精排模型，预测 click/like/skip | B |
 | `models/fine_rank/model_metadata.json` | 精排训练样本、指标和特征版本元信息 | B |
 
-`seed/pois.json` 当前覆盖上海、北京两城，共 1680 条 POI。召回相关 seed/model 文件可通过以下命令重建：
+`seed/pois.json` 当前覆盖上海、北京两城，共 2240 条 POI。召回相关 seed/model 文件可通过以下命令重建：
 
 ```bash
 python3 scripts/build_recall_assets.py

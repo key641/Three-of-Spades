@@ -170,6 +170,102 @@ def test_replace_poi_respects_replacement_category() -> None:
     assert stop.category == "cafe" or stop.meal_type == "cafe"
 
 
+def test_multi_poi_replace_builds_local_candidates_and_replaces_each_target() -> None:
+    route, intent, profile = _route_for_replan(["citywalk", "拍照"])
+    affected = route.stops[1:3]
+
+    response = ReplanService().replan(
+        ReplanRequest(
+            session_id="session_demo",
+            selected_route_id=route.route_id,
+            event_type="replace_poi",
+            event_label="这两个点都换成室内少走路",
+            current_routes=[route],
+            event_payload={
+                "affected_poi_ids": [stop.poi_id for stop in affected],
+                "replace_count": 2,
+                "force_replace": True,
+                "replacement_category": "室内展览",
+                "prefer_tags": ["室内", "少走路"],
+            },
+            intent=intent,
+            user_profile=profile,
+        )
+    )
+
+    updated = response.routes[0]
+    changed_from_ids = {change.from_poi_id for change in updated.changed_stops}
+    changed_to_ids = {change.to_poi_id for change in updated.changed_stops}
+    assert changed_from_ids == {stop.poi_id for stop in affected}
+    assert len(changed_to_ids) == len(updated.changed_stops)
+    assert all(stop.poi_id not in changed_from_ids for stop in updated.stops)
+    assert all(
+        stop.route_steps_from_previous
+        for stop in updated.stops
+        if stop.poi_id in changed_to_ids
+    )
+    assert all(
+        stop.indoor and stop.walking_intensity in {"low", "medium"}
+        for stop in updated.stops
+        if stop.poi_id in changed_to_ids
+    )
+
+
+def test_replace_count_limits_number_of_user_requested_replacements() -> None:
+    route, intent, profile = _route_for_replan(["citywalk", "拍照"])
+    affected = route.stops[1:3]
+
+    response = ReplanService().replan(
+        ReplanRequest(
+            session_id="session_demo",
+            selected_route_id=route.route_id,
+            event_type="replace_poi",
+            event_label="两个里先换一个",
+            current_routes=[route],
+            event_payload={
+                "affected_poi_ids": [stop.poi_id for stop in affected],
+                "replace_count": 1,
+                "force_replace": True,
+            },
+            intent=intent,
+            user_profile=profile,
+        )
+    )
+
+    updated = response.routes[0]
+    assert len(updated.changed_stops) == 1
+    assert len({stop.poi_id for stop in affected} & {stop.poi_id for stop in updated.stops}) == 1
+
+
+def test_evening_replacement_does_not_default_to_plain_cafe() -> None:
+    route, intent, profile = _route_for_replan(["晚上", "夜景"])
+    intent.start_time = "20:00"
+    affected = route.stops[1]
+
+    response = ReplanService().replan(
+        ReplanRequest(
+            session_id="session_demo",
+            selected_route_id=route.route_id,
+            event_type="replace_poi",
+            event_label="晚上换一个更合适的点",
+            current_routes=[route],
+            event_payload={
+                "affected_poi_id": affected.poi_id,
+                "force_replace": True,
+                "prefer_tags": ["晚上", "夜景"],
+                "avoid_tags": ["咖啡"],
+            },
+            intent=intent,
+            user_profile=profile,
+        )
+    )
+
+    replacement = response.routes[0].changed_stops[0]
+    stop = next(stop for stop in response.routes[0].stops if stop.poi_id == replacement.to_poi_id)
+    assert stop.category != "cafe"
+    assert stop.meal_type != "cafe"
+
+
 def test_preserve_poi_ids_prevents_user_requested_replacement() -> None:
     route, intent, profile = _route_for_replan(["citywalk", "吃好"])
     preserved = route.stops[1]

@@ -77,7 +77,7 @@ const TRANSIT_MODE_CONFIG: Record<string, { icon: React.ReactNode; label: string
 };
 
 // ── 更换交通方式的可选项（步行/骑行/公交/驾车） ──────────────
-type TransitMode = "walk" | "bike" | "bus" | "taxi";
+type TransitMode = "walk" | "bike" | "metro" | "bus" | "taxi";
 
 const TRANSIT_SWITCH_OPTIONS: {
   mode: TransitMode;
@@ -89,6 +89,7 @@ const TRANSIT_SWITCH_OPTIONS: {
 }[] = [
   { mode: "walk",  icon: <Footprints size={18} />, label: "步行", color: "#52C41A", speedKmPerMin: 0.083 }, // ~5 km/h
   { mode: "bike",  icon: <Bike size={18} />,       label: "骑行", color: "#13C2C2", speedKmPerMin: 0.25  }, // ~15 km/h
+  { mode: "metro", icon: <Train size={18} />,      label: "地铁", color: "#1677FF", speedKmPerMin: 0.45  }, // ~27 km/h (含进出站)
   { mode: "bus",   icon: <Bus size={18} />,         label: "公交", color: "#722ED1", speedKmPerMin: 0.35  }, // ~21 km/h (含等待)
   { mode: "taxi",  icon: <CarTaxiFront size={18} />, label: "驾车", color: "#FA8C16", speedKmPerMin: 0.5   }, // ~30 km/h (城市)
 ];
@@ -121,6 +122,64 @@ function formatDistance(m?: number): string {
   if (m == null) return "";
   if (m >= 1000) return `${(m / 1000).toFixed(1)}km`;
   return `${m}m`;
+}
+
+function normalizeTransitMode(mode?: string | null): TransitSegment["mode"] {
+  if (!mode) return "walk";
+  if (mode.includes("metro") || mode.includes("地铁")) return "metro";
+  if (mode.includes("bus") || mode.includes("公交")) return "bus";
+  if (mode.includes("taxi") || mode.includes("drive") || mode.includes("打车") || mode.includes("驾车")) return "taxi";
+  if (mode.includes("bike") || mode.includes("骑行")) return "bike";
+  return "walk";
+}
+
+function buildTransitDescription(stop: RouteStop): string | undefined {
+  const steps = stop.route_steps_from_previous?.filter(Boolean) ?? [];
+  if (steps.length > 0) return steps.join(" · ");
+  return undefined;
+}
+
+function withBackendTransitSegments(input: RouteStop[]): RouteStop[] {
+  const stops = input.map((stop) => ({ ...stop }));
+  for (let i = 0; i < stops.length - 1; i++) {
+    if (stops[i].transit_to_next) continue;
+    const next = stops[i + 1];
+    if (!next.transport_mode_from_previous && next.travel_minutes_from_previous == null && next.distance_km_from_previous == null) {
+      continue;
+    }
+    stops[i].transit_to_next = {
+      mode: normalizeTransitMode(next.transport_mode_from_previous),
+      duration_minutes: next.travel_minutes_from_previous ?? next.amap_duration_minutes_from_previous ?? 0,
+      distance_m: next.amap_distance_meters_from_previous ?? Math.round((next.distance_km_from_previous ?? 0) * 1000),
+      description: buildTransitDescription(next),
+    };
+  }
+  return stops;
+}
+
+function transitFromPreviousStop(stop: RouteStop): TransitSegment | undefined {
+  if (!stop.transport_mode_from_previous && stop.travel_minutes_from_previous == null && stop.distance_km_from_previous == null) {
+    return undefined;
+  }
+  return {
+    mode: normalizeTransitMode(stop.transport_mode_from_previous),
+    duration_minutes: stop.travel_minutes_from_previous ?? stop.amap_duration_minutes_from_previous ?? 0,
+    distance_m: stop.amap_distance_meters_from_previous ?? Math.round((stop.distance_km_from_previous ?? 0) * 1000),
+    description: buildTransitDescription(stop),
+  };
+}
+
+function startPlaceholderStop(): RouteStop {
+  return {
+    poi_id: "__start__",
+    name: "出发地",
+    category: "start",
+    start_time: "",
+    end_time: "",
+    estimated_cost: 0,
+    queue_minutes: 0,
+    tags: [],
+  };
 }
 
 // ── 时间工具 ─────────────────────────────────────────────────
@@ -547,7 +606,7 @@ function PoiCard({ stop, index, isRemoving, onPoiAction, stopsTotal }: PoiCardPr
 // ── 主导出 ────────────────────────────────────────────────────
 export function RouteTimeline({ stops: initialStops, onPoiAction, onInjectChat, onStopsChange }: RouteTimelineProps) {
   // 本地可编辑 stops 副本
-  const [stops, setStops] = useState<RouteStop[]>(initialStops);
+  const [stops, setStops] = useState<RouteStop[]>(() => withBackendTransitSegments(initialStops));
   // 正在重算 transit 的 index（fromStop index，即被删节点前一个节点的下标）
   const [recalcingIdx, setRecalcingIdx] = useState<number | null>(null);
   // 正在淡出删除的 poiId
@@ -555,7 +614,7 @@ export function RouteTimeline({ stops: initialStops, onPoiAction, onInjectChat, 
 
   // 当父组件传入 stops 发生变化（AI 重新规划）时，同步本地副本
   useEffect(() => {
-    setStops(initialStops);
+    setStops(withBackendTransitSegments(initialStops));
   }, [initialStops]);
 
   // ── 删除节点 ─────────────────────────────────────────────
@@ -658,6 +717,13 @@ export function RouteTimeline({ stops: initialStops, onPoiAction, onInjectChat, 
     <div className="poi-card-list">
       {stops.map((stop, idx) => (
         <div key={stop.poi_id}>
+          {idx === 0 && transitFromPreviousStop(stop) && (
+            <TransitBar
+              transit={transitFromPreviousStop(stop)!}
+              fromStop={startPlaceholderStop()}
+              toStop={stop}
+            />
+          )}
           <PoiCard
             stop={stop}
             index={idx}

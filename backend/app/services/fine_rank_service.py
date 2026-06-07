@@ -173,11 +173,13 @@ class FineRankService:
             p_skip = max(p_skip, min(0.95, 0.18 + over_budget * budget_sensitivity * 0.45))
             p_click -= min(0.18, over_budget * budget_sensitivity * 0.12)
         if walking_intensity == "high" and walking_tolerance < 0.35:
-            p_skip += 0.18
-            p_like -= 0.08
+            p_skip += 0.32
+            p_like -= 0.12
+            p_click -= 0.08
         elif walking_intensity == "low" and walking_tolerance < 0.35:
-            p_skip -= 0.08
-            p_like += 0.06
+            p_skip -= 0.18
+            p_like += 0.08
+            p_click += 0.04
         if queue_minutes >= 35 and crowd_tolerance < 0.45:
             p_skip += min(0.18, queue_minutes / 240)
         if live_crowd >= 0.75 and crowd_tolerance < 0.45:

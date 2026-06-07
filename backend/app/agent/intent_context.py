@@ -140,7 +140,16 @@ def apply_query_delta(
             data["implicit_needs"] = [item for item in data["implicit_needs"] if item != value]
 
     if understanding.inherit_previous:
-        for key in ("city", "people_count", "start_time", "duration_hours", "budget_per_person", "scenario"):
+        for key in (
+            "city",
+            "people_count",
+            "target_district",
+            "target_business_area",
+            "start_time",
+            "duration_hours",
+            "budget_per_person",
+            "scenario",
+        ):
             if key not in summary.changed:
                 summary.kept.append(key)
 
@@ -182,7 +191,16 @@ def _apply_hard_constraint_changes(data: dict, delta: IntentDelta, summary: Stat
 
     changes = delta.added_hard_constraints | delta.modified_hard_constraints
     for key, value in changes.items():
-        if key not in {"city", "people_count", "start_time", "duration_hours", "budget_per_person", "scenario"}:
+        if key not in {
+            "city",
+            "people_count",
+            "target_district",
+            "target_business_area",
+            "start_time",
+            "duration_hours",
+            "budget_per_person",
+            "scenario",
+        }:
             data["hard_constraints"][key] = value
             continue
         previous = data.get(key)

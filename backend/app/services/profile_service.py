@@ -152,6 +152,10 @@ class ProfileService:
             data["city"] = request.city
         if request.start_location_name:
             data["start_location_name"] = request.start_location_name
+        if request.target_district:
+            data["target_district"] = request.target_district
+        if request.target_business_area:
+            data["target_business_area"] = request.target_business_area
         if request.start_time:
             data["start_time"] = request.start_time
         if request.duration_hours is not None:
@@ -389,6 +393,14 @@ class ProfileService:
             "咖啡": ["cafe"],
             "拍照": ["landmark", "night_view"],
             "citywalk": ["landmark", "market"],
+            "逛店": ["boutique", "bookstore", "lifestyle_store", "toy_collectible", "design_store"],
+            "购物": ["shopping", "boutique", "lifestyle_store"],
+            "书店": ["bookstore"],
+            "买手店": ["boutique"],
+            "潮玩": ["toy_collectible"],
+            "美妆": ["beauty_retail"],
+            "户外": ["sports_outdoor"],
+            "文创": ["design_store"],
             "室内": ["museum", "gallery", "shopping"],
             "雨天": ["museum", "gallery", "shopping"],
             "亲子": ["park", "museum"],
@@ -403,6 +415,8 @@ class ProfileService:
             "咖啡": ["coffee_break", "rest_stop"],
             "拍照": ["photo_stop"],
             "citywalk": ["main_activity", "photo_stop"],
+            "逛店": ["main_activity", "photo_stop", "rest_stop"],
+            "购物": ["main_activity", "rest_stop"],
             "少走路": ["transit_anchor", "rest_stop"],
             "室内": ["main_activity", "rest_stop"],
             "夜景": ["night_end"],
@@ -414,6 +428,13 @@ class ProfileService:
             "美食": ["本地", "老字号"],
             "拍照": ["拍照", "经典"],
             "citywalk": ["文艺", "本地"],
+            "逛店": ["小众", "文艺"],
+            "购物": ["小众", "高性价比"],
+            "书店": ["安静", "文艺"],
+            "买手店": ["小众", "设计"],
+            "潮玩": ["小众"],
+            "美妆": ["香氛"],
+            "文创": ["文艺", "设计"],
             "室内": ["雨天", "展览"],
             "安静": ["安静", "小众"],
             "亲子": ["亲子"],
@@ -431,6 +452,12 @@ class ProfileService:
 
     def _transport_modes_from_terms(self, terms: list[str]) -> list[str]:
         mapping = {
+            "公共交通": ["metro", "bus"],
+            "公交优先": ["bus", "metro"],
+            "地铁优先": ["metro", "bus"],
+            "公交": ["bus", "metro"],
+            "地铁": ["metro", "bus"],
+            "不打车": ["metro", "bus", "walk"],
             "少走路": ["metro", "taxi"],
             "省钱": ["metro", "bus", "walk"],
             "亲子": ["taxi", "metro"],
