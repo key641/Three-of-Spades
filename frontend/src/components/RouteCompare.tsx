@@ -23,6 +23,10 @@ export interface RouteCompareProps {
   onInjectChat?: (text: string) => void;
   /** 行程完结并关闭总结页时回调（保存记录+回首页） */
   onTripFinished?: (route: Route, avgScore: number) => void;
+  /** 当用户切换预览的路线时回调（路线 id），用于同步地图 */
+  onRoutePreview?: (routeId: string) => void;
+  /** 已选方案的 stops 被本地编辑后，把最新 stops 传给父级（用于地图同步） */
+  onLiveStopsChange?: (routeId: string, stops: RouteStop[]) => void;
 }
 
 // ── 骨架屏 ──────────────────────────────────────────────────
@@ -77,6 +81,8 @@ interface ActiveTripBarProps {
   onPoiAction?: (action: PoiAction, routeId: string) => void;
   onInjectChat?: (text: string) => void;
   onTripFinished?: (route: Route, avgScore: number) => void;
+  /** stops 被本地编辑（删除/排序/插入）后回调，用于同步地图 */
+  onStopsChange?: (stops: RouteStop[]) => void;
 }
 
 // ── 行程结束后的轻量评价卡片 ─────────────────────────────────
@@ -247,7 +253,7 @@ function makeRestStop(after: RouteStop, restMin: number): RouteStop {
 const EXTEND_OPTIONS = [15, 30, 45, 60] as const;
 
 
-function ActiveTripBar({ route, onUnselect, onAction, onInjectChat, onTripFinished }: ActiveTripBarProps) {
+function ActiveTripBar({ route, onUnselect, onAction, onInjectChat, onTripFinished, onStopsChange }: ActiveTripBarProps) {
   // 本地可编辑 stops 列表
   const [stops, setStops] = useState<RouteStop[]>(route.stops);
   // 当前所在节点
@@ -297,14 +303,20 @@ function ActiveTripBar({ route, onUnselect, onAction, onInjectChat, onTripFinish
 
   function applyStops(newStops: RouteStop[], fromIdx = 0) {
     saveSnapshot(stops);
-    setStops(recalcTimes(newStops, fromIdx));
+    const recalculated = recalcTimes(newStops, fromIdx);
+    setStops(recalculated);
+    onStopsChange?.(recalculated);
   }
 
   // ── 标记到达 ─────────────────────────────────────────────
   function handleArrived(idx: number) {
     if (idx === activeIdx && idx !== stops.length - 1) return;
     setActiveIdx(idx);
-    if (idx === stops.length - 1 && activeIdx !== stops.length - 1) {
+    // 到达末站时触发评价卡片
+    // 注意：删节点后 activeIdx 可能已被 clamp 到末站，此时 activeIdx === stops.length - 1，
+    // 所以不能用 activeIdx !== stops.length - 1 作为判断条件，
+    // 改为：只要到达末站且评价卡片还未展示，就展示
+    if (idx === stops.length - 1 && !showFeedback && !tripEnded) {
       setShowFeedback(true);
       // 等待 DOM 渲染后自动滚动到评价卡片
       setTimeout(() => {
@@ -410,6 +422,7 @@ function ActiveTripBar({ route, onUnselect, onAction, onInjectChat, onTripFinish
     setStops(prev);
     setUndoStack((s) => s.slice(0, -1));
     setActiveIdx((idx) => Math.min(idx, prev.length - 1));
+    onStopsChange?.(prev);
   }
 
   // ── 跟 AI 说（注入聊天框） ────────────────────────────────
@@ -464,13 +477,15 @@ function ActiveTripBar({ route, onUnselect, onAction, onInjectChat, onTripFinish
 
         <div className="vtl-menu-divider" />
 
-        {/* 删除当前节点 */}
+        {/* 删除当前节点（只剩 1 个时不可删）*/}
         <button
           className="vtl-menu-item vtl-menu-item--danger"
+          disabled={stops.length <= 1}
           onClick={() => handleDeleteStop(idx)}
+          style={stops.length <= 1 ? { opacity: 0.38, cursor: "not-allowed" } : undefined}
         >
           <X size={13} />
-          删除当前节点
+          {stops.length <= 1 ? "至少保留 1 个节点" : "删除当前节点"}
         </button>
       </div>
     );
@@ -728,6 +743,7 @@ interface RouteSummaryCardProps {
   route: Route;
   index: number;
   onExpand: (routeId: string) => void;
+  onPreview?: (routeId: string) => void;
 }
 
 const CATEGORY_EMOJI: Record<string, string> = {
@@ -768,7 +784,7 @@ const LABEL_GRADIENTS: [string, string][] = [
   ["#F59E0B", "#b45309"],
 ];
 
-function RouteSummaryCard({ route, index, onExpand }: RouteSummaryCardProps) {
+function RouteSummaryCard({ route, index, onExpand, onPreview }: RouteSummaryCardProps) {
   const [imgIndex, setImgIndex] = useState(0);
   const stops = route.stops ?? [];
 
@@ -826,7 +842,7 @@ function RouteSummaryCard({ route, index, onExpand }: RouteSummaryCardProps) {
   }
 
   return (
-    <div className="route-summary-card" onClick={() => onExpand(route.route_id)}>
+    <div className="route-summary-card" onClick={() => { onExpand(route.route_id); onPreview?.(route.route_id); }}>
       {/* 左侧：图片 + 标签 + 圆点 */}
       <div className="rsc-left">
         <div
@@ -948,24 +964,33 @@ function RouteSummaryCard({ route, index, onExpand }: RouteSummaryCardProps) {
 }
 
 // ── 主组件 ──────────────────────────────────────────────────
-export function RouteCompare({ routes, loading = false, onAction, onPoiAction, onInjectChat, onTripFinished }: RouteCompareProps) {
+export function RouteCompare({ routes, loading = false, onAction, onPoiAction, onInjectChat, onTripFinished, onRoutePreview, onLiveStopsChange }: RouteCompareProps) {
   const [expandedRouteId, setExpandedRouteId] = useState<string | null>(null);
   // 保存用户选中的完整路线（含编辑后的 stops）
   const [selectedRoute, setSelectedRoute] = useState<Route | null>(null);
 
-  // 当 routes 更新（AI 重新规划）时，清除已选和展开状态
+  // 当 AI 重新规划（route_id 集合变化）时才清除已选和展开状态。
+  // 注意：不能用 routes 引用，因为 patchRouteStops 也会改变 routes 引用（修改 stops），
+  // 那样会导致每次删节点都把 selectedRoute 清空。
+  const routeIdsKey = routes.map((r) => r.route_id).join(",");
   useEffect(() => {
     setSelectedRoute(null);
     setExpandedRouteId(null);
-  }, [routes]);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [routeIdsKey]);
 
   const showSkeletons = loading && routes.length === 0;
   const showRoutes    = routes.length > 0;
   const expandedRoute = routes.find((r) => r.route_id === expandedRouteId) ?? null;
+  // 从最新 routes 中取选中路线的最新数据（patchRouteStops 会更新 routes，确保 stops 最新）
+  const liveSelectedRoute = selectedRoute
+    ? (routes.find((r) => r.route_id === selectedRoute.route_id) ?? selectedRoute)
+    : null;
 
   function handleSelect(route: Route) {
     setSelectedRoute(route);
     setExpandedRouteId(null);
+    onRoutePreview?.(route.route_id);
   }
 
   return (
@@ -1002,6 +1027,7 @@ export function RouteCompare({ routes, loading = false, onAction, onPoiAction, o
                   route={route}
                   index={i}
                   onExpand={setExpandedRouteId}
+                  onPreview={onRoutePreview}
                 />
               ))}
             </div>
@@ -1029,19 +1055,21 @@ export function RouteCompare({ routes, loading = false, onAction, onPoiAction, o
             onAction={onAction}
             onPoiAction={onPoiAction}
             onInjectChat={onInjectChat}
+            onStopsChange={(routeId, newStops) => onLiveStopsChange?.(routeId, newStops)}
           />
         </div>
       )}
 
       {/* ── 已选方案行程轨道（展示在最底部） ── */}
-      {selectedRoute && (
+      {liveSelectedRoute && (
         <ActiveTripBar
-          route={selectedRoute}
+          route={liveSelectedRoute}
           onUnselect={() => setSelectedRoute(null)}
           onAction={onAction}
           onPoiAction={onPoiAction}
           onInjectChat={onInjectChat}
           onTripFinished={onTripFinished}
+          onStopsChange={(newStops) => onLiveStopsChange?.(liveSelectedRoute.route_id, newStops)}
         />
       )}
     </section>

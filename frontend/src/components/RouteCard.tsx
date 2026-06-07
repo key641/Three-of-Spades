@@ -15,6 +15,8 @@ interface RouteCardProps {
   onAction?: (action: string, routeId: string) => void;
   onPoiAction?: (action: PoiAction, routeId: string) => void;
   onInjectChat?: (text: string) => void;
+  /** stops 被本地编辑后回调（用于地图同步） */
+  onStopsChange?: (routeId: string, stops: RouteStop[]) => void;
 }
 
 function formatDuration(minutes: number): string {
@@ -82,7 +84,7 @@ function buildTripTips(route: Route): string[] {
   return tips;
 }
 
-export function RouteCard({ route, selected, onSelect, onAction, onPoiAction, onInjectChat }: RouteCardProps) {
+export function RouteCard({ route, selected, onSelect, onAction, onPoiAction, onInjectChat, onStopsChange }: RouteCardProps) {
   const [localStops, setLocalStops] = useState<RouteStop[]>(route.stops ?? []);
   const tripTips = buildTripTips(route);
   const stopCount = localStops.length;
@@ -136,7 +138,10 @@ export function RouteCard({ route, selected, onSelect, onAction, onPoiAction, on
             ? (action) => onPoiAction(action, route.route_id)
             : undefined}
           onInjectChat={onInjectChat}
-          onStopsChange={setLocalStops}
+          onStopsChange={(newStops) => {
+            setLocalStops(newStops);
+            onStopsChange?.(route.route_id, newStops);
+          }}
         />
       )}
 
@@ -157,7 +162,7 @@ export function RouteCard({ route, selected, onSelect, onAction, onPoiAction, on
         ) : (
           <>
             <Circle size={15} />
-            选这条，出发！
+            选这条
           </>
         )}
       </button>

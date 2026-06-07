@@ -55,6 +55,105 @@
 
 ---
 
+## 2026-06-06 - `8ed898f` - `feat(frontend): 地图节点联动、行程结束评价修复及交互优化`
+
+负责人：前端 / UI / C 同学
+
+### 更新概览
+
+本次提交集中解决了「删节点后地图不响应」的问题，修复了「行程结束」评价弹窗在删节点后无法触发的 bug，同时完成了追问体验优化、方案选择重构和总结页地图一致性改造。
+
+用户可感知的变化：
+- 在展开详情视图或行程轨道里删除任意节点后，地图立即同步移除对应标点并重绘路线连线。
+- 每条方案最少保留 1 个节点，删除按钮在只剩 1 个节点时显示"至少保留 1 个节点"并禁用。
+- 删节点后点击「行程结束」按钮，评价卡片正常弹出，不再静默失效。
+- AI 回复前统一显示"理解！正在规划"或"我想知道这些信息帮助规划"前置引导语。
+- 首页「猜你喜欢」和「我的行程」中的「选这条」按钮，点击后生成包含路线信息的提示词注入聊天框，启动基于该参考的新规划，而非直接跳转。
+- 地图不再在结束行程、切换方案等操作时自动全屏（peek），只有手动上划面板才触发地图全屏。
+- 总结页地图替换为与规划页一致的高德瓦片 Leaflet 地图，展示真实路线节点和连线。
+
+### 主要变更
+
+- **地图数据流重构（核心）**：
+  - `PlannerPage` 新增 `mapStops` state，作为驱动 `MapPanel` 的唯一数据源，完全与 `response.routes` 解耦。
+  - 用户点击「选这条」或「查看地图」时，`setMapStops([...route.stops])` 立即初始化地图。
+  - 删节点时，`setMapStops(newStops)` 直接更新地图，不经过 `routes` 引用变化链路。
+  - `MapPanel.useEffect` 依赖简化，停止 fallback 到 `routes`，只响应 `liveStops`。
+
+- **修复展开详情视图删节点地图不响应**：
+  - 根因：`RouteCard → RouteTimeline` 的 `onStopsChange` 只更新 `RouteCard` 内部 `localStops`，不会冒泡到父级。
+  - 修复：`RouteCard` 新增 `onStopsChange` prop（签名 `(routeId, stops) => void`），在本地 state 更新的同时向上回调。
+  - `RouteCompare` 展开详情里的 `RouteCard` 接入 `onStopsChange={(routeId, newStops) => onLiveStopsChange?.(routeId, newStops)}`，打通完整冒泡链路。
+
+- **删除按钮最少 1 节点限制**：
+  - `RouteTimeline` 的 `PoiPopover` 删除按钮新增 `disabled={stopsTotal <= 1}` 和"至少保留 1 个节点"文案。
+  - `ActiveTripBar` 节点操作菜单删除按钮同样加入 `disabled` 和文案保护。
+
+- **修复删节点后「行程结束」评价不弹出**：
+  - 根因：`handleDeleteStop` 会把 `activeIdx` clamp 到新末站（`Math.min(prev, newStops.length - 1)`），导致 `handleArrived` 里的条件 `activeIdx !== stops.length - 1` 为 false，`setShowFeedback(true)` 无法执行。
+  - 修复：将条件改为 `!showFeedback && !tripEnded`，只要评价卡片未展示过，到达末站就触发。
+
+- **追问体验优化**：
+  - `useChat` 拦截后端响应，根据 `need_clarification` 状态动态在正文前插入引导消息。
+  - 不需要追问时显示"理解！正在规划"；需要追问时显示"我想知道这些信息帮助规划"。
+  - 后端 `ClarificationPolicy` 同步优化：每轮会话最多追问 1 次，单次最多合并 3 个问题。
+
+- **方案选择重构**：
+  - 首页和「我的行程」的「选这条，出发！」改为「选这条」。
+  - 点击后构造包含路线标题、节点和偏好的自然语言提示词，注入 `PlannerPage` 聊天框，触发基于参考的新规划。
+
+- **总结页地图替换**：
+  - `TripSummaryOverlay` 新增 `SummaryMap` 组件，使用 Leaflet + 高德瓦片渲染。
+  - 复用 `MapPanel` 的坐标解析、颜色和标记逻辑，与规划页地图完全一致。
+
+- **地图自动全屏行为移除**：
+  - `onRoutePreview`、`onLiveStopsChange` 等回调中移除了 `setSheetSnap("peek")` 调用。
+  - 地图全屏仅由用户手动上划面板触发。
+
+### 涉及文件
+
+- `frontend/src/pages/PlannerPage.tsx`
+- `frontend/src/components/MapPanel.tsx`
+- `frontend/src/components/RouteCard.tsx`
+- `frontend/src/components/RouteCompare.tsx`（含 `ActiveTripBar`）
+- `frontend/src/components/RouteTimeline.tsx`
+- `frontend/src/components/TripSummaryOverlay.tsx`
+- `frontend/src/hooks/useChat.ts`
+- `frontend/src/hooks/useOnboarding.ts`
+- `frontend/src/api/chatApi.ts`
+- `frontend/src/components/AgentTrace.tsx`
+- `frontend/src/components/ChatPanel.tsx`
+- `frontend/src/styles/globals.css`
+- `backend/app/agent/clarification_policy.py`
+- `backend/app/agent/orchestrator.py`
+- `backend/app/main.py`
+
+### 协作影响
+
+| 角色 | 影响 | 需要关注 |
+| --- | --- | --- |
+| A 同学：Agent / 后端 | `ClarificationPolicy` 新增最多追问 1 次、单次合并 3 个问题的限制。 | 后续调整追问策略时修改 `MAX_CLARIFICATION_ROUNDS` 和 `MAX_QUESTIONS_PER_ROUND` 常量；`clarification_count` 由 `SessionState` 维护，确保多轮正确累加。 |
+| B 同学：POI / 路线策略 | 本次不涉及 POI 召回、路线生成或评分算法。 | 无需关注。 |
+| C 同学：前端 / UI | 地图数据流已解耦为独立 `mapStops` state；删节点操作同时更新地图和底层 `response.routes`（通过 `patchRouteStops`）。 | 后续新增地图操作时，直接调用 `setMapStops` 即可驱动地图，无需关心 `routes` 引用变化；`activeRouteIndex < 0` 时地图不渲染任何标记，需确保操作前已调用 `setMapRouteIndex`。 |
+
+### 风险与注意事项
+
+- `mapStops` state 与 `response.routes` 已解耦，删节点后两者都会更新（`setMapStops` + `patchRouteStops`），但若只更新其中一个会导致地图与底层数据不一致，后续修改时需保持同步。
+- `RouteTimeline` 删节点有约 1080ms 动画延迟（280ms 淡出 + 800ms 重算），地图更新会在这之后触发，属正常行为。
+- `TripSummaryOverlay` 的 `SummaryMap` 使用高德瓦片，依赖网络，离线环境下会退化为空白底图但标记仍可显示。
+- 追问前置引导语通过前端拦截插入，不是后端返回的消息，重置会话时需注意清理。
+
+### 建议验证
+
+- 展开任意方案详情 → 点击节点 `···` → 删除该节点 → 确认地图同步移除对应标点并重绘连线。
+- 选择方案后在行程轨道中删除节点 → 确认地图同步更新。
+- 方案只剩 1 个节点时，确认删除按钮显示"至少保留 1 个节点"并不可点击。
+- 到达末站后删除某节点，再点击「行程结束」→ 确认评价卡片正常弹出。
+- 首页点击「选这条」→ 确认跳转规划页并在聊天框预填路线相关提示词。
+- 完成行程后进入总结页 → 确认地图与规划页一致，显示高德底图和路线节点。
+
+---
+
 ## 2026-06-05 - `uncommitted` - `feat(route): 增加路线常识约束和交通步骤兜底`
 
 负责人：路线策略 / Mock 地图 / B 同学

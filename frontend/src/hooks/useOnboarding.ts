@@ -38,8 +38,8 @@ export interface TripConstraints {
 }
 
 export const DEFAULT_TRIP_CONSTRAINTS: TripConstraints = {
-  city: "北京",
-  location: "北京市朝阳区望京",
+  city: "",          // 不预设城市，由后端追问或从消息中提取
+  location: "",      // 不预设出发地，由后端追问或 GPS 获取
   people: 2,
   duration: 3,
   start_time: "",

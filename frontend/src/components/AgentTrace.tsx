@@ -20,7 +20,7 @@ export function AgentTrace({ steps, loading = false }: AgentTraceProps) {
   if (!loading && steps.length === 0) return null;
 
   return (
-    <div className="trace-panel" style={{ marginTop: "12px" }}>
+    <div className="trace-panel">
       {/* 折叠切换按钮 */}
       <button
         className="trace-toggle"
