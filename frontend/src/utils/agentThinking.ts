@@ -22,17 +22,17 @@ const STEP_SUMMARY: Record<string, string> = {
 };
 
 const NEXT_STEP_HINTS: Record<string, string> = {
-  route_message: "等待后端解析结构化出行需求",
-  parse_intent: "等待后端合并上一轮上下文",
-  apply_session_context: "等待后端确认本轮状态变化",
-  apply_query_delta: "等待后端读取用户画像",
-  get_user_profile: "等待后端生成偏好权重",
-  build_strategy_weights: "等待后端召回候选地点",
-  search_pois: "等待后端生成候选路线",
-  generate_routes: "等待后端总结路线方案",
-  summarize_routes: "等待最终回复返回",
-  clarify_intent: "等待澄清问题返回",
-  direct_llm_chat: "等待最终回复返回",
+  route_message: "正在思考",
+  parse_intent: "正在思考",
+  apply_session_context: "正在思考",
+  apply_query_delta: "正在思考",
+  get_user_profile: "正在思考",
+  build_strategy_weights: "正在思考",
+  search_pois: "正在思考",
+  generate_routes: "正在思考",
+  summarize_routes: "正在思考",
+  clarify_intent: "正在思考",
+  direct_llm_chat: "正在思考",
 };
 
 const FIELD_LABELS: Record<string, string> = {
@@ -104,7 +104,7 @@ export function buildThinkingSummary(steps: AgentTraceStep[], loading = false): 
 
   return {
     headline: "Agent 思考过程",
-    statusText: issueCount > 0 ? `${issueCount} 项需要关注` : `已记录 ${steps.length} 个处理步骤`,
+    statusText: issueCount > 0 ? "处理过程中遇到了一些问题" : "思考完毕",
     items,
     issueCount,
   };
@@ -130,8 +130,6 @@ function summarizeDetails(step: AgentTraceStep): string | null {
     if (details.inherit_previous === true) parts.push("继承上一轮出行上下文");
     if (details.preserve_scenario === true) parts.push("保留原来的出行场景");
     if (details.references_previous_route === true) parts.push("会基于上一轮路线回答");
-    const confidence = asNumber(details.confidence);
-    if (confidence !== null) parts.push(`置信度 ${Math.round(confidence * 100)}%`);
     return parts.join("，");
   }
 
@@ -252,10 +250,9 @@ function labelValue(value: string): string {
 
 export function getLiveProgressLabel(steps: AgentTraceStep[]): string {
   const last = steps[steps.length - 1];
-  if (!last) return "正在等待后端开始处理";
-  if (last.status === "fallback") return "后端正在使用兜底逻辑继续处理";
-  if (last.status === "error") return "后端处理遇到异常，正在收尾";
-  return NEXT_STEP_HINTS[last.step] ?? "等待后端返回下一步进度";
+  if (!last) return "正在思考";
+  if (last.status === "fallback" || last.status === "error") return "正在整理结果…";
+  return NEXT_STEP_HINTS[last.step] ?? "正在思考";
 }
 
 function asText(value: unknown): string | null {
@@ -273,4 +270,139 @@ function asTextList(value: unknown): string[] {
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
+/**
+ * 将 agent trace steps 串联成一段自然语言叙述，供用户阅读。
+ * 格式例：用户说「…」→ 依据原话「…」，判定为新规划 → 出行状态：上海 · 2人 … → 筛选周边候选地点 → 生成候选路线。
+ */
+export function buildNarrativeText(steps: AgentTraceStep[], userInput?: string): string {
+  const sentences: string[] = [];
+
+  // 1. 用户输入开场
+  if (userInput && userInput.trim()) {
+    sentences.push(`用户说「${userInput.trim()}」`);
+  }
+
+  for (const step of steps) {
+    const d = step.details ?? {};
+
+    // ── 意图路由 ────────────────────────────────────────────
+    if (step.step === "route_message") {
+      const turnLabel = asText(d.turn_type_label) ?? asText(d.intent_type_label);
+      const evidence = asText(d.evidence);
+      const reason = asText(d.reason);
+
+      const parts: string[] = [];
+      if (evidence) parts.push(`依据原话「${evidence}」`);
+      if (reason) parts.push(reason);
+      if (turnLabel) parts.push(`判定为**${turnLabel}**`);
+      if (d.inherit_previous === true) parts.push("继承上一轮出行上下文");
+      if (d.preserve_scenario === true) parts.push("保留原来的出行场景");
+
+      if (parts.length) sentences.push(parts.join("，"));
+      continue;
+    }
+
+    // ── 意图解析 ────────────────────────────────────────────
+    if (step.step === "parse_intent" || step.step === "apply_session_context") {
+      const city = asText(d.city);
+      const people = asNumber(d.people_count);
+      const duration = asNumber(d.duration_hours);
+      const budget = asNumber(d.budget_per_person);
+      const startTime = asText(d.start_time);
+      const scenario = asText(d.scenario);
+      const preferences = asTextList(d.preferences).slice(0, 4);
+
+      const stateParts: string[] = [];
+      if (city) stateParts.push(city);
+      if (people !== null) stateParts.push(`${people}人`);
+      if (startTime) stateParts.push(`${startTime}出发`);
+      if (duration !== null) stateParts.push(`${duration}小时`);
+      if (budget !== null) stateParts.push(`人均${budget}元`);
+      if (scenario) stateParts.push(labelValue(scenario));
+      if (preferences.length) stateParts.push(`偏好${preferences.map(labelValue).join("、")}`);
+
+      if (stateParts.length) {
+        const prefix = step.step === "apply_session_context" ? "继承后出行状态" : "出行状态";
+        sentences.push(`${prefix}：${stateParts.join(" · ")}`);
+      }
+      continue;
+    }
+
+    // ── 状态变更 ────────────────────────────────────────────
+    if (step.step === "apply_query_delta") {
+      const kept = asTextList(d.kept);
+      const added = asTextList(d.added);
+      const removed = asTextList(d.removed);
+      const changed = isRecord(d.changed) ? Object.keys(d.changed) : [];
+
+      const parts: string[] = [];
+      if (kept.length) parts.push(`保留 ${kept.map(labelValue).join("、")}`);
+      if (added.length) parts.push(`新增 ${added.map(labelValue).join("、")}`);
+      if (changed.length) parts.push(`修改 ${changed.map(labelValue).join("、")}`);
+      if (removed.length) parts.push(`移除 ${removed.map(labelValue).join("、")}`);
+
+      if (parts.length) sentences.push(`本轮状态变更：${parts.join("；")}`);
+      continue;
+    }
+
+    // ── 用户画像 ────────────────────────────────────────────
+    if (step.step === "get_user_profile") {
+      const preferences = asTextList(d.preferences).slice(0, 4);
+      const avoidTags = asTextList(d.avoid_tags).slice(0, 3);
+      const parts: string[] = [];
+      if (preferences.length) parts.push(`偏好 ${preferences.join("、")}`);
+      if (avoidTags.length) parts.push(`避开 ${avoidTags.join("、")}`);
+      if (parts.length) sentences.push(`读取画像：${parts.join("，")}`);
+      else sentences.push("读取画像：无额外偏好记录");
+      continue;
+    }
+
+    // ── 策略权重 ────────────────────────────────────────────
+    if (step.step === "build_strategy_weights") {
+      sentences.push("正在根据你的偏好生成路线排序策略");
+      continue;
+    }
+
+    // ── 召回 POI ────────────────────────────────────────────
+    if (step.step === "search_pois") {
+      const names = asTextList(d.names).slice(0, 4);
+      const nameStr = names.length ? `（含 ${names.join("、")} 等）` : "";
+      sentences.push(`筛选周边候选地点${nameStr}`);
+      continue;
+    }
+
+    // ── 生成路线 ────────────────────────────────────────────
+    if (step.step === "generate_routes") {
+      const titles = asTextList(d.route_titles).slice(0, 3);
+      const titleStr = titles.length ? `：${titles.join("、")}` : "";
+      sentences.push(`生成候选路线${titleStr}`);
+      continue;
+    }
+
+    // ── 追问 ────────────────────────────────────────────────
+    if (step.step === "clarify_intent") {
+      const missing = asText(d.missing_field);
+      const question = asText(d.question);
+      if (missing) sentences.push(`信息不足（缺少${labelValue(missing)}），需要向你确认`);
+      else if (question) sentences.push(`需要向你确认：${question}`);
+      else sentences.push("需要向你进一步确认出行信息");
+      continue;
+    }
+
+    // ── 直接回复 ────────────────────────────────────────────
+    if (step.step === "direct_llm_chat") {
+      sentences.push("识别为非路线规划问题，直接回复");
+      continue;
+    }
+
+    // ── 兜底：用 label（fallback/error 步骤静默，不展示内部错误）───────────
+    if (step.status === "fallback" || step.status === "error") continue;
+    if (step.label && step.label.trim()) {
+      sentences.push(humanizeLabel(step.label));
+    }
+  }
+
+  return sentences.join(" → ");
 }
