@@ -4,6 +4,7 @@ from enum import StrEnum
 
 from pydantic import BaseModel
 
+from app.agent.prompts import MESSAGE_ROUTER_SYSTEM_PROMPT
 from app.agent.schemas import SessionState
 
 
@@ -87,23 +88,7 @@ class MessageRouter:
             [
                 {
                     "role": "system",
-                    "content": (
-                        "你是路线规划 Agent 的消息路由器，只输出 JSON。"
-                        "intent_type 只能是 new_plan、modify_plan、replan、route_detail_question、general_chat。"
-                        "turn_type 只能是 new_plan、add_constraint、modify_constraint、remove_constraint、route_detail、general_chat。"
-                        "planning_mode 只能是 new_plan、full_replan、partial_replan、route_detail、general_chat。"
-                        "必须输出 confidence、reason、evidence。evidence 是用户原话里的关键短语数组。"
-                        "candidate_planning_modes 只在用户原话确实无法区分多个规划方式时输出；如果原话已经明确，不要输出候选。"
-                        "route_detail_question 表示用户在问上一轮已生成路线的细节，例如两点之间怎么去、某站排队多久、费用多少。"
-                        "modify_plan 表示用户要修改上一轮路线并重新规划。"
-                        "full_replan 表示基于偏好或整体目标重新生成一组候选方案，例如重新生成路线、重新规划、换一条路线、更省钱、少排队、整体不满意。"
-                        "partial_replan 表示保留原方案并局部替换或调整，例如只替换这个地点、换一家、不喜欢这家、第二站换掉、下雨、堵车、关门、排队90分钟。"
-                        "add_constraint 表示用户在上一轮基础上追加需求，例如“还要吃饭”“也想拍照”“加一个餐厅”，必须 inherit_previous=true。"
-                        "如果只是追加需求而不是切换主题，preserve_scenario=true；只有“改成美食路线”“只想吃吃喝喝”这类明确切换才 preserve_scenario=false。"
-                        "示例1：用户说“重新生成路线”，输出 planning_mode=full_replan，candidate_planning_modes=[]，confidence>=0.8。"
-                        "示例2：用户说“只替换这个地点”，输出 intent_type=replan，planning_mode=partial_replan，candidate_planning_modes=[]，confidence>=0.8。"
-                        "示例3：用户说“换个便宜点的”，可能是全量重规划也可能是局部替换，输出 candidate_planning_modes=[\"full_replan\",\"partial_replan\"]，confidence<0.5。"
-                    ),
+                    "content": MESSAGE_ROUTER_SYSTEM_PROMPT,
                 },
                 {
                     "role": "user",
