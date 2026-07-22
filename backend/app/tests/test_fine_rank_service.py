@@ -18,7 +18,9 @@ def test_fine_rank_model_artifacts_exist_and_have_metadata() -> None:
     assert (model_dir / "click_model.joblib").exists()
     assert (model_dir / "like_model.joblib").exists()
     assert (model_dir / "skip_model.joblib").exists()
-    assert metadata["sample_count"] == 16000
+    assert metadata["sample_count"] >= 16000
+    assert metadata["hard_negative_count"] > 0
+    assert metadata["split_strategy"] == "chronological_80_20"
     assert metadata["model_type"] == "DictVectorizer+LogisticRegression"
     assert set(metadata["label_positive_rates"]) == {"click", "like", "skip"}
     assert schema["feature_schema_version"] == metadata["feature_schema_version"]

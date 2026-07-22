@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 from pydantic import BaseModel, Field
 
 from app.agent.tag_taxonomy import (
@@ -24,6 +26,8 @@ class Intent(BaseModel):
     interest_tags: list[str] = Field(default_factory=list)
     optimization_goals: list[str] = Field(default_factory=list)
     avoid_tags: list[str] = Field(default_factory=list)
+    must_include_poi_ids: list[str] = Field(default_factory=list)
+    must_include_roles: list[str] = Field(default_factory=list)
     scenario: str = "friends_citywalk"
     need_clarification: bool = False
     city_from_message: bool = False

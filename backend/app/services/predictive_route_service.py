@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 import json
 from pathlib import Path
 from typing import Any
@@ -64,8 +66,38 @@ class PredictiveRouteService:
         intent = self._intent_for_request(request, planning_profile if has_profile else None, weather_preferences)
         strategy_tags = self.strategy_service.infer_tags(" ".join(intent.interest_tags + intent.optimization_goals + intent.preferences), intent, planning_profile)
         strategy_weights = self.profile_service.build_strategy_weights(intent, planning_profile, strategy_tags)
+<<<<<<< Updated upstream
         if not self.poi_service.has_city_data(intent.city):
             return RoutePlanResponse(routes=[])
+=======
+        pois = self.poi_service.search(intent, user_profile=planning_profile, strategy_tags=strategy_tags, limit=48)
+        objectives = self._profile_objectives(planning_profile, weather_preferences, pois) if has_profile else self.ALL_OBJECTIVES
+        scores_by_objective: dict[str, dict[str, float]] = {}
+        details_by_objective: dict[str, dict[str, dict[str, float]]] = {}
+        for objective in objectives:
+            scores, details = self.fine_rank_service.score_map(
+                pois,
+                intent,
+                planning_profile,
+                strategy_tags=strategy_tags,
+                objective=objective,
+            )
+            scores_by_objective[objective] = scores
+            details_by_objective[objective] = details
+        poi_relevance_scores = scores_by_objective.get("balanced", next(iter(scores_by_objective.values()), {}))
+        poi_fine_rank_details = details_by_objective.get("balanced", next(iter(details_by_objective.values()), {}))
+        plan_request = RoutePlanRequest(
+            intent=intent,
+            user_profile=planning_profile,
+            strategy_weights=strategy_weights,
+            strategy_tags=strategy_tags,
+            candidate_pois=pois,
+            poi_relevance_scores=poi_relevance_scores,
+            poi_fine_rank_details=poi_fine_rank_details,
+            poi_relevance_scores_by_objective=scores_by_objective,
+            poi_fine_rank_details_by_objective=details_by_objective,
+        )
+>>>>>>> Stashed changes
 
         for limit, relax_preferences in [(60, False), (90, True), (120, True)]:
             pois = self.poi_service.search(

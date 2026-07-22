@@ -1,5 +1,9 @@
+from __future__ import annotations
+
 import math
-from datetime import UTC, datetime, timedelta
+from datetime import datetime, timedelta, timezone
+
+UTC = timezone.utc
 from typing import Any, Protocol
 
 from app.schemas.map import ExternalPOICandidate, ExternalPOIStatus, GeoPoint, LiveLegEstimate

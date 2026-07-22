@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 from pathlib import Path
 
 from pydantic_settings import BaseSettings, SettingsConfigDict
@@ -18,6 +20,11 @@ class Settings(BaseSettings):
     deepseek_base_url: str = "https://api.deepseek.com/v1"
     amap_web_service_key: str = ""
     map_route_provider: str = "mock"
+    planning_pipeline_mode: str = ""
+    planning_pipeline_rollout_percent: int = 100
+    planning_pipeline_v2: bool | None = None
+    planning_pipeline_shadow: bool | None = None
+    route_model_enabled: bool = False
     cors_origins: list[str] = [
         "http://localhost:5173",
         "http://127.0.0.1:5173",
@@ -40,7 +47,7 @@ class Settings(BaseSettings):
         dotenv_settings,
         file_secret_settings,
     ):
-        return init_settings, dotenv_settings, env_settings, file_secret_settings
+        return init_settings, env_settings, dotenv_settings, file_secret_settings
 
 
 settings = Settings()

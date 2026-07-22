@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 from app.agent.schemas import IntentDelta, QueryUnderstanding, SessionState, StateChangeSummary, TripState
 from app.agent.message_router import MessageRoute, TurnType
 from app.agent.intent_enhancer import (

@@ -26,10 +26,11 @@ dist/
 *.sqlite
 *.sqlite3
 *.log
+data/runtime/
+artifacts/
 
 # OS / editor
 .DS_Store
 Thumbs.db
 .idea/
 .vscode/
-

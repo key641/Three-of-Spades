@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 from app.schemas.intent import Intent
 from app.schemas.route import ReplanRequest, RoutePlanRequest
 from app.services.poi_service import POIService

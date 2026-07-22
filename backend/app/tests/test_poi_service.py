@@ -365,6 +365,7 @@ def test_key_city_searches_do_not_return_empty_results() -> None:
     for city in ["上海", "北京"]:
         pois = service.search(Intent(city=city))
 
+<<<<<<< Updated upstream
         assert len(pois) == 60
         assert all(poi.city == city for poi in pois)
 
@@ -380,6 +381,42 @@ def test_strong_filters_still_fill_to_sixty_when_possible() -> None:
     pois = POIService().search(Intent(city="上海", preferences=["少排队", "拍照"], avoid_tags=["人流密集"]))
 
     assert len(pois) == 60
+=======
+        assert len(pois) == 160
+        assert all(poi.city == city for poi in pois)
+
+
+def test_default_search_uses_adaptive_half_day_funnel() -> None:
+    service = POIService()
+
+    assert len(service.search(Intent(city="上海"))) == 160
+    assert len(service.search(Intent(city="北京"))) == 160
+
+
+def test_default_search_runs_weighted_rrf_and_coarse_rank() -> None:
+    service = POIService()
+    service.search(Intent(city="上海", preferences=["拍照", "咖啡"]))
+
+    diagnostics = service.last_diagnostics
+    assert diagnostics["pipeline"] == "v2"
+    assert diagnostics["recall"]["fusion"] == "weighted_rrf"
+    assert diagnostics["recall"]["channel_counts"]["content"] > 0
+    assert diagnostics["coarse_count"] >= diagnostics["output_count"]
+
+
+def test_adaptive_funnel_changes_with_scope_and_duration() -> None:
+    service = POIService()
+
+    assert service._funnel_sizes(Intent(duration_hours=3, target_business_area="新天地")) == (180, 100)
+    assert service._funnel_sizes(Intent(duration_hours=6)) == (320, 160)
+    assert service._funnel_sizes(Intent(duration_hours=10)) == (420, 220)
+
+
+def test_strong_filters_still_fill_adaptive_pool_when_possible() -> None:
+    pois = POIService().search(Intent(city="上海", preferences=["少排队", "拍照"], avoid_tags=["人流密集"]))
+
+    assert len(pois) == 160
+>>>>>>> Stashed changes
     assert all(poi.city == "上海" for poi in pois)
 
 

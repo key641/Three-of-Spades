@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 from pydantic import BaseModel
 from pydantic import Field
 from typing import Any
@@ -49,6 +51,7 @@ class ChatRequest(BaseModel):
     disliked_poi_ids: list[str] = Field(default_factory=list)
     skipped_categories: list[str] = Field(default_factory=list)
     common_adjust_actions: list[str] = Field(default_factory=list)
+    debug: bool = False
 
 
 class AgentTraceStep(BaseModel):

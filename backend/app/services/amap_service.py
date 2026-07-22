@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 import math
 import threading
 from dataclasses import dataclass, field
@@ -43,6 +45,7 @@ class AmapService:
         self._route_leg_cache: dict[tuple[str, str, str, str], RouteLeg] = {}
         self._route_leg_cache_lock = threading.Lock()
         self._route_leg_inflight: dict[tuple[str, str, str, str], threading.Event] = {}
+<<<<<<< Updated upstream
         self._mock_route_map_service = None
 
     def route_leg(self, origin: GeoPoint, destination: GeoPoint, mode: str = "walk", departure_time: str | None = None) -> RouteLeg:
@@ -53,18 +56,27 @@ class AmapService:
                 self._mock_route_map_service = MockRouteMapService()
             return self._mock_route_map_service.route_leg(origin, destination, mode=mode, departure_time=departure_time)
 
+=======
+        self._mock_service: Any | None = None
+        self.cache_hits = 0
+        self.cache_misses = 0
+
+    def route_leg(self, origin: GeoPoint, destination: GeoPoint, mode: str = "walk", departure_time: str | None = None) -> RouteLeg:
+>>>>>>> Stashed changes
         cache_key = (
             self._format_point(origin),
             self._format_point(destination),
-            self._endpoint_mode(mode),
-            departure_time or "",
+            mode.lower(),
+            (departure_time or "")[:2],
         )
         inflight_event: threading.Event | None = None
         should_fetch = False
         with self._route_leg_cache_lock:
             cached = self._route_leg_cache.get(cache_key)
             if cached is not None:
+                self.cache_hits += 1
                 return cached
+            self.cache_misses += 1
             inflight_event = self._route_leg_inflight.get(cache_key)
             if inflight_event is None:
                 inflight_event = threading.Event()
@@ -78,6 +90,15 @@ class AmapService:
             if cached is not None:
                 return cached
             return self._fallback_leg(origin, destination, mode)
+
+        if self.route_provider == "mock" or (not self.api_key and self.route_provider != "fallback"):
+            if self._mock_service is None:
+                from app.services.mock_route_map_service import MockRouteMapService
+
+                self._mock_service = MockRouteMapService()
+            leg = self._mock_service.route_leg(origin, destination, mode=mode, departure_time=departure_time)
+            self._store_route_leg(cache_key, leg)
+            return leg
 
         if not self.api_key:
             leg = self._fallback_leg(origin, destination, mode)

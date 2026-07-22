@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 from pydantic import BaseModel, Field
 
 from typing import Any
@@ -33,6 +35,7 @@ class RouteStop(BaseModel):
     highlight_text: str = ""
     ugc_tip: str = ""
     indoor: bool = False
+    need_booking: bool = False
     recommended_transport: list[str] = Field(default_factory=list)
     travel_minutes_from_previous: int | None = None
     distance_km_from_previous: float | None = None
@@ -80,6 +83,13 @@ class Route(BaseModel):
     changed_stops: list[RouteChange] = Field(default_factory=list)
     live_warnings: list[str] = Field(default_factory=list)
     data_sources: list[str] = Field(default_factory=list)
+    p50_duration_minutes: int | None = None
+    p80_duration_minutes: int | None = None
+    buffer_minutes: int = 0
+    reliability_score: float = 1.0
+    risk_level: str = "low"
+    warnings: list[str] = Field(default_factory=list)
+    degradation_level: int = 0
 
 
 class RoutePlanRequest(BaseModel):
@@ -90,10 +100,15 @@ class RoutePlanRequest(BaseModel):
     candidate_pois: list[POI] = Field(default_factory=list)
     poi_relevance_scores: dict[str, float] = Field(default_factory=dict)
     poi_fine_rank_details: dict[str, dict[str, float]] = Field(default_factory=dict)
+    poi_relevance_scores_by_objective: dict[str, dict[str, float]] = Field(default_factory=dict)
+    poi_fine_rank_details_by_objective: dict[str, dict[str, dict[str, float]]] = Field(default_factory=dict)
+    poi_candidate_ids_by_objective: dict[str, list[str]] = Field(default_factory=dict)
+    debug: bool = False
 
 
 class RoutePlanResponse(BaseModel):
     routes: list[Route]
+    diagnostics: dict[str, Any] = Field(default_factory=dict)
 
 
 class RouteEvaluationRequest(BaseModel):

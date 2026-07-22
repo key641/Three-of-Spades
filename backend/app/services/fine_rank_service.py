@@ -1,7 +1,9 @@
+from __future__ import annotations
+
 import json
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any
+from typing import Any, ClassVar
 
 from app.schemas.intent import Intent
 from app.schemas.poi import POI
@@ -22,12 +24,15 @@ class FineRankResult:
 class FineRankService:
     """Online fine ranker backed by offline-trained sklearn models."""
 
+    _MODEL_CACHE: ClassVar[dict[str, dict[str, Any]]] = {}
+    _EVENT_CACHE: ClassVar[dict[str, list[dict[str, Any]]]] = {}
+
     def __init__(self, model_dir: Path | None = None, interaction_path: Path | None = None) -> None:
         root = Path(__file__).resolve().parents[3]
         self.model_dir = model_dir or root / "data" / "models" / "fine_rank"
         self.interaction_path = interaction_path or root / "data" / "seed" / "interaction_events.json"
         self._models = self._load_models()
-        self._stats_cache: FineRankStats | None = None
+        self._stats_cache: dict[tuple[str, ...], FineRankStats] = {}
 
     def rank(
         self,
@@ -37,10 +42,34 @@ class FineRankService:
         strategy_tags: list[StrategyTag] | None = None,
         objective: str = "balanced",
     ) -> list[FineRankResult]:
-        results = [
-            self.score(poi, intent, user_profile, strategy_tags=strategy_tags, objective=objective, poi_universe=pois)
-            for poi in pois
-        ]
+        stats = self._stats(pois)
+        feature_rows = [build_features(poi, intent, user_profile, strategy_tags or [], objective, stats) for poi in pois]
+        if self._models and feature_rows:
+            probability_rows = {
+                label: self._predict_probabilities(label, feature_rows)
+                for label in ("click", "like", "skip")
+            }
+        else:
+            probability_rows = {"click": [], "like": [], "skip": []}
+        results: list[FineRankResult] = []
+        for index, (poi, features) in enumerate(zip(pois, feature_rows)):
+            if self._models:
+                p_click = probability_rows["click"][index]
+                p_like = probability_rows["like"][index]
+                p_skip = probability_rows["skip"][index]
+            else:
+                p_click, p_like, p_skip = self._fallback_probabilities(features)
+            p_click, p_like, p_skip = self._calibrate_probabilities(features, p_click, p_like, p_skip)
+            results.append(
+                FineRankResult(
+                    poi=poi,
+                    p_click=p_click,
+                    p_like=p_like,
+                    p_skip=p_skip,
+                    poi_relevance_score=self.relevance_score(p_click, p_like, p_skip),
+                    features=features,
+                )
+            )
         return sorted(results, key=lambda result: result.poi_relevance_score, reverse=True)
 
     def score(
@@ -102,6 +131,9 @@ class FineRankService:
             "like": self.model_dir / "like_model.joblib",
             "skip": self.model_dir / "skip_model.joblib",
         }
+        cache_key = str(self.model_dir.resolve())
+        if cache_key in self._MODEL_CACHE:
+            return self._MODEL_CACHE[cache_key]
         if not all(path.exists() for path in paths.values()):
             return {}
         try:
@@ -109,7 +141,9 @@ class FineRankService:
         except ImportError:
             return {}
         try:
-            return {name: joblib.load(path) for name, path in paths.items()}
+            models = {name: joblib.load(path) for name, path in paths.items()}
+            self._MODEL_CACHE[cache_key] = models
+            return models
         except (OSError, ValueError, AttributeError):
             return {}
 
@@ -121,21 +155,37 @@ class FineRankService:
             return 0.0
         return self._clip(float(probabilities[classes.index(1)]))
 
+    def _predict_probabilities(self, label: str, features: list[dict[str, Any]]) -> list[float]:
+        model = self._models[label]
+        probabilities = model.predict_proba(features)
+        classes = list(model.classes_)
+        if 1 not in classes:
+            return [0.0] * len(features)
+        index = classes.index(1)
+        return [self._clip(float(row[index])) for row in probabilities]
+
     def _stats(self, pois: list[POI]) -> FineRankStats:
-        if self._stats_cache is not None:
-            return self._stats_cache
+        cache_key = tuple(sorted(poi.id for poi in pois))
+        if cache_key in self._stats_cache:
+            return self._stats_cache[cache_key]
         events = self._read_events()
         poi_by_id = {poi.id: poi for poi in pois}
-        self._stats_cache = build_stats(events, poi_by_id)
-        return self._stats_cache
+        stats = build_stats(events, poi_by_id)
+        self._stats_cache[cache_key] = stats
+        return stats
 
     def _read_events(self) -> list[dict[str, Any]]:
+        cache_key = str(self.interaction_path.resolve())
+        if cache_key in self._EVENT_CACHE:
+            return self._EVENT_CACHE[cache_key]
         try:
             with self.interaction_path.open(encoding="utf-8") as file:
                 payload = json.load(file)
         except (OSError, json.JSONDecodeError):
             return []
-        return payload if isinstance(payload, list) else []
+        events = payload if isinstance(payload, list) else []
+        self._EVENT_CACHE[cache_key] = events
+        return events
 
     def _fallback_probabilities(self, features: dict[str, Any]) -> tuple[float, float, float]:
         preference = float(features.get("preference_match", 0))
