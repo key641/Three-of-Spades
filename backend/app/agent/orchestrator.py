@@ -2,9 +2,11 @@ import asyncio
 import inspect
 import json
 import logging
+import math
 import re
 from collections.abc import Awaitable, Callable
 
+from app.agent.demo_mock import build_mock_trace, build_mock_routes, build_demo_clarification, is_demo_trigger, stream_mock_trace
 from app.agent.memory import SessionMemory
 from app.agent.intent_context import apply_query_delta, apply_session_context
 from app.agent.intent_enhancer import (
@@ -104,7 +106,18 @@ class AgentOrchestrator:
         if self._is_structured_replan_request(request, session_state):
             return self._handle_structured_replan(request, session_state, trace)
 
-        message_route = await self.message_router.classify(request.message, session_state)
+        # ── 并行加速：首轮新对话时，route_message 分类和 parse_intent 可以同时跑 ──────
+        # 非首轮（有 last_intent）时仍串行，因为 parse_intent 需要等 route 结果决定是否继承上下文。
+        is_first_turn = session_state.last_intent is None
+        if is_first_turn:
+            message_route, intent_prefetch = await asyncio.gather(
+                self.message_router.classify(request.message, session_state),
+                self._llm_parse_intent_safe(request.message, request),
+            )
+        else:
+            message_route = await self.message_router.classify(request.message, session_state)
+            intent_prefetch = None
+
         trace.append(
             AgentTraceStep(
                 step="route_message",
@@ -114,7 +127,6 @@ class AgentOrchestrator:
             )
         )
         await emit_pending_trace()
-
 
         if message_route.intent_type == MessageIntentType.ROUTE_DETAIL_QUESTION:
             response = self.route_detail_handler.answer(request.message, request.session_id, session_state)
@@ -129,7 +141,8 @@ class AgentOrchestrator:
             if partial_response:
                 return partial_response
 
-        intent = await self._parse_intent(request.message, trace)
+        # 使用预取到的 intent（首轮），或重新解析（非首轮）
+        intent = await self._parse_intent(request.message, trace, request, prefetched=intent_prefetch)
         await emit_pending_trace()
         intent = enhance_intent_from_message(intent, request.message)
         contextual_intent = apply_session_context(intent, request.message, session_state, message_route)
@@ -171,6 +184,82 @@ class AgentOrchestrator:
             )
         )
         await emit_pending_trace()
+        logger.info("chat intent session_id=%s intent=%s", request.session_id, intent.model_dump())
+
+        # ── Demo 追问拦截：第一轮命中触发词且无 target_district 时，直接返回预设追问卡片 ──
+        # 这样不依赖 clarification_policy（会被 GPS 起点绕过），保证 demo 流程必问区域
+        _demo_clarify_msg = request.message or ""
+        _demo_has_district = bool(intent.target_district or request.target_district)
+        _demo_is_new_plan = (not session_state) or (
+            not session_state.recent_messages
+        ) or message_route.planning_mode == PlanningMode.NEW_PLAN
+        _demo_clarify_city = intent.city or request.city or "北京"
+        if (
+            is_demo_trigger(_demo_clarify_msg)
+            and not _demo_has_district
+            and _demo_clarify_city == "北京"
+        ):
+            logger.info(
+                "demo_clarification session_id=%s msg=%s",
+                request.session_id,
+                _demo_clarify_msg[:30],
+            )
+            # 从 GPS 或起点名称推断当前区
+            _gps_district = "西城区"
+            if request.start_location_name and "西城" in request.start_location_name:
+                _gps_district = "西城区"
+            elif request.start_location_name and "朝阳" in request.start_location_name:
+                _gps_district = "朝阳区"
+            elif request.start_location_name and "海淀" in request.start_location_name:
+                _gps_district = "海淀区"
+            return build_demo_clarification(
+                session_id=request.session_id,
+                message=_demo_clarify_msg,
+                city=_demo_clarify_city,
+                current_district=_gps_district,
+                trace=trace,
+            )
+
+        # ── 追问判断必须在应用默认起点之前执行 ──────────────────────────────
+        # 若先执行 _apply_default_city_start，会把 intent.start_location_name 设为"西单站"等默认值，
+        # 导致 _is_missing_city 误判为"用户已提供具体地点"而跳过城市/区域追问。
+        clarification = self.clarification_policy.evaluate(
+            request=request,
+            intent=intent,
+            message_route=message_route,
+            session_state=session_state,
+        )
+        if clarification.need_clarification:
+            return self._handle_clarification(request, session_state, trace, clarification, intent)
+
+        # ── 追问通过后再应用起点：优先 GPS，兜底默认商圈 ────────────────────
+        # 优先使用前端传来的 GPS 坐标作为起点（LLM 不会输出具体坐标）
+        # 但若 GPS 距城市 POI 过远（> 8km），则 fallback 到默认商圈起点，避免时间窗口不足
+        if intent.start_lat is None and intent.start_lng is None:
+            if request.start_lat is not None and request.start_lng is not None:
+                city_pois = self.poi_service.search(Intent(city=intent.city), limit=5)
+                min_dist = self._min_distance_to_pois(request.start_lat, request.start_lng, city_pois)
+                if min_dist is not None and min_dist <= 8.0:
+                    intent = intent.model_copy(update={
+                        "start_lat": request.start_lat,
+                        "start_lng": request.start_lng,
+                        "start_location_name": intent.start_location_name or "当前位置",
+                    })
+                    trace.append(
+                        AgentTraceStep(
+                            step="apply_gps_start",
+                            label=f"使用GPS坐标作为起点：({request.start_lat:.4f}, {request.start_lng:.4f})",
+                            status="done",
+                            details={
+                                "start_lat": request.start_lat,
+                                "start_lng": request.start_lng,
+                                "min_dist_to_poi_km": round(min_dist, 1) if min_dist is not None else None,
+                                "reason": "使用前端传入的 GPS 坐标作为规划起点。",
+                            },
+                        )
+                    )
+                    await emit_pending_trace()
+                # else: GPS 距 POI 太远，走下面的默认商圈逻辑
         intent, default_start = self._apply_default_city_start(intent)
         if default_start:
             trace.append(
@@ -188,16 +277,6 @@ class AgentOrchestrator:
                 )
             )
             await emit_pending_trace()
-        logger.info("chat intent session_id=%s intent=%s", request.session_id, intent.model_dump())
-
-        clarification = self.clarification_policy.evaluate(
-            request=request,
-            intent=intent,
-            message_route=message_route,
-            session_state=session_state,
-        )
-        if clarification.need_clarification:
-            return self._handle_clarification(request, session_state, trace, clarification, intent)
 
         user_profile = self._profile_for_turn(request, session_state, intent)
         trace.append(
@@ -257,6 +336,64 @@ class AgentOrchestrator:
             request.session_id,
             strategy_weights.model_dump(),
         )
+
+        # ── Demo Mock 拦截：触发词命中时直接返回预设路线，绕过真实 POI 搜索 ─────────────────
+        # 触发条件：消息或上轮消息中含有 demo 触发词（聚餐/餐厅/吃饭等）
+        # 且 intent.city == 北京 且 intent.target_district 有值（已完成追问）
+        _demo_source_msg = request.message or ""
+        # 从 recent_messages 找上一轮用户消息（角色为 user 的最后一条，不含当前轮）
+        _last_msg = next(
+            (m.content for m in reversed(session_state.recent_messages) if m.role == "user"),
+            "",
+        ) if session_state and session_state.recent_messages else ""
+        _demo_district = intent.target_district or request.target_district
+        _demo_city = intent.city or request.city or "北京"
+        if (
+            (is_demo_trigger(_demo_source_msg) or is_demo_trigger(_last_msg))
+            and _demo_city == "北京"
+            and _demo_district
+        ):
+            logger.info("demo_mock session_id=%s district=%s", request.session_id, _demo_district)
+            mock_routes = build_mock_routes(_demo_district)
+            full_trace = build_mock_trace(
+                _demo_source_msg or _last_msg,
+                district=_demo_district,
+                city=_demo_city,
+                people_count=intent.people_count or 6,
+            )
+            # 流式逐步推送 trace（带延迟，约 10s 完成），路线在 generate_routes 步骤后推送
+            await stream_mock_trace(
+                steps=full_trace,
+                emit=progress_callback,
+                routes_at_step="generate_routes",
+                routes=mock_routes,
+                emit_routes=routes_callback,
+            )
+            reply = (
+                f"好的！根据你在**{_demo_city}{_demo_district}**附近的需求，"
+                f"我为你规划了 {len(mock_routes)} 条适合 {intent.people_count or 6} 人聚餐的路线，"
+                f"从轻松老字号到精致宴请都有覆盖，你看哪条更符合心意？"
+            )
+            self.memory.save_turn_result(
+                session_id=request.session_id,
+                user_message=request.message,
+                assistant_message=reply,
+                intent=intent,
+                user_profile=user_profile,
+                routes=mock_routes,
+                trip_state=trip_state,
+            )
+            return ChatResponse(
+                session_id=request.session_id,
+                message=reply,
+                need_clarification=False,
+                clarifying_question=None,
+                intent=intent,
+                user_profile=user_profile,
+                routes=mock_routes,
+                agent_trace=full_trace,
+            )
+        # ── Demo Mock 拦截结束 ──────────────────────────────────────────────────────
 
         pois = self.poi_service.search(intent, user_profile=user_profile, strategy_tags=strategy_tags)
         trace.append(
@@ -413,6 +550,23 @@ class AgentOrchestrator:
             routes=routes,
             agent_trace=trace,
         )
+
+    def _min_distance_to_pois(self, lat: float, lng: float, pois: list[POI]) -> float | None:
+        """计算给定坐标到 POI 列表中最近一个的距离（km），无 POI 时返回 None。"""
+        if not pois:
+            return None
+        min_dist = float("inf")
+        for poi in pois:
+            dlat = math.radians(poi.lat - lat)
+            dlng = math.radians(poi.lng - lng)
+            a = (
+                math.sin(dlat / 2) ** 2
+                + math.cos(math.radians(lat)) * math.cos(math.radians(poi.lat)) * math.sin(dlng / 2) ** 2
+            )
+            dist = 6371 * 2 * math.atan2(math.sqrt(a), math.sqrt(1 - a))
+            if dist < min_dist:
+                min_dist = dist
+        return min_dist if min_dist != float("inf") else None
 
     def _apply_default_city_start(self, intent: Intent) -> tuple[Intent, dict[str, object] | None]:
         if intent.start_lat is not None and intent.start_lng is not None:
@@ -1052,61 +1206,47 @@ class AgentOrchestrator:
             return f"当前在{intent.city}可用候选点不足，还没有生成可执行路线。你可以换一个城市，或者补充更具体的区域、景点类型和预算偏好，我再继续规划。"
 
         try:
+            # 只给 LLM 发精简摘要，避免 token 过多拖慢推理
+            intent_summary = {
+                k: v for k, v in {
+                    "city": intent.city,
+                    "start_time": intent.start_time,
+                    "duration_hours": intent.duration_hours,
+                    "people_count": intent.people_count,
+                    "budget_per_person": intent.budget_per_person,
+                    "interest_tags": intent.interest_tags,
+                    "scenario": intent.scenario,
+                }.items() if v
+            }
             summary_input = {
-                "intent": intent.model_dump(),
-                "candidate_pois": [
-                    {
-                        "name": poi.name,
-                        "city": poi.city,
-                        "category": poi.category,
-                        "avg_price": poi.avg_price,
-                        "rating": poi.rating,
-                        "queue_minutes": poi.queue_minutes,
-                        "visit_duration_minutes": poi.visit_duration_minutes,
-                        "tags": poi.tags,
-                        "negative_tags": poi.negative_tags,
-                    }
-                    for poi in pois[:8]
-                ],
+                "intent": intent_summary,
                 "routes": [
                     {
                         "title": route.title,
-                        "objective": route.objective,
                         "summary": route.summary,
-                        "total_duration_minutes": route.total_duration_minutes,
                         "total_cost_per_person": route.total_cost_per_person,
-                        "total_queue_minutes": route.total_queue_minutes,
-                        "total_travel_minutes": route.total_travel_minutes,
                         "total_distance_km": route.total_distance_km,
-                        "score": route.score,
+                        "total_travel_minutes": route.total_travel_minutes,
+                        "total_queue_minutes": route.total_queue_minutes,
                         "stops": [
                             {
                                 "name": stop.name,
-                                "category": stop.category,
-                                "district": stop.district,
-                                "address": stop.address,
                                 "start_time": stop.start_time,
                                 "end_time": stop.end_time,
                                 "estimated_cost": stop.estimated_cost,
-                                "queue_minutes": stop.queue_minutes,
-                                "travel_minutes_from_previous": stop.travel_minutes_from_previous,
-                                "distance_km_from_previous": stop.distance_km_from_previous,
                                 "transport_mode_from_previous": stop.transport_mode_from_previous,
-                                "walking_intensity": stop.walking_intensity,
-                                "recommended_transport": stop.recommended_transport,
+                                "travel_minutes_from_previous": stop.travel_minutes_from_previous,
                                 "highlight_text": stop.highlight_text,
                                 "ugc_tip": stop.ugc_tip,
                                 "reason": stop.reason,
-                                "tags": stop.tags,
                             }
                             for stop in route.stops
                         ],
-                        "reasons": route.reasons,
                     }
                     for route in routes[:3]
                 ],
             }
-            logger.info("summarize_routes input=%s", summary_input)
+            logger.info("summarize_routes input=%s", self._preview(json.dumps(summary_input, ensure_ascii=False)))
             response = await self.llm_client.complete(
                 [
                     {
@@ -1304,10 +1444,57 @@ class AgentOrchestrator:
 
         return bool(re.search(r"\d+\s*(人|个|点|小时|分钟|元|块)", text))
 
-    async def _parse_intent(self, message: str, trace: list[AgentTraceStep]) -> Intent:
+    def _gps_city_from_request(self, request: "ChatRequest | None") -> str:
+        """从 request GPS 坐标推断城市名，无坐标/无匹配时返回空字符串。"""
+        if not request:
+            return ""
+        lat = request.current_lat or request.start_lat
+        lng = request.current_lng or request.start_lng
+        if lat and lng:
+            return self.clarification_policy._coords_to_city(lat, lng)
+        return ""
+
+    async def _llm_parse_intent_safe(self, message: str, request: "ChatRequest | None" = None) -> Intent | None:
+        """并行预取时使用：LLM 解析意图，失败返回 None（不写 trace）。"""
+        try:
+            intent = await self._llm_parse_intent(message)
+            gps_city = self._gps_city_from_request(request)
+            if gps_city and not intent.city_from_message:
+                intent = intent.model_copy(update={"city": gps_city})
+            return intent
+        except Exception as exc:
+            logger.warning("prefetch parse_intent failed error=%s", type(exc).__name__)
+            return None
+
+    async def _parse_intent(
+        self,
+        message: str,
+        trace: list[AgentTraceStep],
+        request: "ChatRequest | None" = None,
+        prefetched: "Intent | None" = None,
+    ) -> Intent:
+        gps_city = self._gps_city_from_request(request)
+
+        # 有预取结果时直接使用，省去一次串行 LLM 调用
+        if prefetched is not None:
+            trace.append(
+                AgentTraceStep(
+                    step="parse_intent",
+                    label="LLM 解析用户意图（并行预取）",
+                    status="done",
+                    details=self._intent_trace_details(prefetched),
+                )
+            )
+            logger.info("step done step=parse_intent mode=llm_prefetch")
+            return prefetched
+
         try:
             logger.info("step start step=parse_intent mode=llm")
             intent = await self._llm_parse_intent(message)
+            # 如果 LLM 只是猜的城市（city_from_message=False），且 GPS 推断出了城市，则用 GPS 城市覆盖
+            if gps_city and not intent.city_from_message:
+                intent = intent.model_copy(update={"city": gps_city})
+                logger.info("intent gps_city_override city=%s", gps_city)
             trace.append(
                 AgentTraceStep(
                     step="parse_intent",
@@ -1321,6 +1508,10 @@ class AgentOrchestrator:
         except Exception as exc:
             logger.exception("step failed step=parse_intent mode=llm fallback=true error=%s", type(exc).__name__)
             intent = self._mock_parse_intent(message)
+            # fallback 时同样用 GPS 城市覆盖默认上海
+            if gps_city:
+                intent = intent.model_copy(update={"city": gps_city})
+                logger.info("intent fallback gps_city_override city=%s", gps_city)
             trace.append(
                 AgentTraceStep(
                     step="parse_intent",
@@ -1334,7 +1525,7 @@ class AgentOrchestrator:
 
     async def _llm_parse_intent(self, message: str) -> Intent:
         schema_fields = {
-            "city": "string, default 上海 when omitted",
+            "city": "string, 如果消息中有地名/城市/景点可推断则填写，否则返回空字符串（不要猜测默认值）",
             "people_count": "integer",
             "start_time": "HH:MM string",
             "duration_hours": "integer",
@@ -1350,6 +1541,7 @@ class AgentOrchestrator:
             "avoid_tags": "array, avoid items: 人流密集/排队久/太贵/需要预约/商业街/拍照打卡/步行多/辣",
             "scenario": "short snake_case string",
             "need_clarification": "boolean",
+            "city_from_message": "boolean, true only if city can be clearly inferred from the message content or context (e.g. user mentioned a place, landmark, or city name); false if city is just a default guess",
         }
         response = await self.llm_client.complete(
             [
@@ -1482,7 +1674,7 @@ class AgentOrchestrator:
             avoid_tags.append("太贵")
 
         return Intent(
-            city="上海",
+            city="",
             people_count=3 if "三" in message or "3" in message else 2,
             start_time="14:00",
             duration_hours=6,

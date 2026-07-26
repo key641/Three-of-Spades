@@ -38,6 +38,7 @@ class ClarificationPolicy:
         message_route: MessageRoute,
         session_state: SessionState,
     ) -> ClarificationDecision:
+        # ── 已追问过，不再追问 ───────────────────────────────────
         if session_state.clarification_count >= self.MAX_CLARIFICATION_ROUNDS:
             return ClarificationDecision()
 

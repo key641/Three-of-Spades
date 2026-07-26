@@ -677,7 +677,9 @@ class RouteService:
 
     def _stop_bounds(self, request: RoutePlanRequest, min_stops_floor: int | None = None) -> tuple[int, int]:
         hours = request.intent.duration_hours
-        if hours <= 3:
+        if hours <= 2:
+            min_stops, max_stops = 2, 3
+        elif hours <= 3:
             min_stops, max_stops = 3, 3
         elif hours <= 6:
             min_stops, max_stops = 3, 4
@@ -692,7 +694,10 @@ class RouteService:
         if min_stops_floor is not None:
             min_stops = max(self.RELAXED_MIN_ROUTE_STOPS, min(min_stops, min_stops_floor))
         else:
-            min_stops = max(min_stops, self.DEFAULT_MIN_ROUTE_STOPS)
+            # 仅当 hours > 2 时才强制 DEFAULT_MIN_ROUTE_STOPS，
+            # 短时行程（≤2h）允许 2 站路线
+            if hours > 2:
+                min_stops = max(min_stops, self.DEFAULT_MIN_ROUTE_STOPS)
         max_stops = max(max_stops, min_stops)
         return min_stops, max_stops
 

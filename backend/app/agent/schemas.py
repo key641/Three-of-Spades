@@ -124,6 +124,7 @@ class SessionState(BaseModel):
     trip_state: TripState | None = None
     current_routes: list[Route] = Field(default_factory=list)
     user_profile: UserProfile | None = None
+    # 本会话已追问次数：最多追问 1 次，之后直接规划
     clarification_count: int = 0
 
 

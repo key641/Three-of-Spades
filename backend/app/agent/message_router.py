@@ -71,6 +71,12 @@ class MessageRouter:
         self.llm_client = llm_client
 
     async def classify(self, message: str, state: SessionState) -> MessageRoute:
+        # 先跑规则，高信心时直接返回，跳过 LLM（节省 3~5 秒）
+        rule_route = self._fallback_classify(message, state)
+        calibrated_rule = self._calibrator().calibrate(rule_route, message, state, source="rule_fast")
+        if calibrated_rule.confidence >= 0.75:
+            return calibrated_rule
+
         try:
             route = await self._classify_with_llm(message, state)
             return self._calibrator().calibrate(route, message, state, source="llm")
