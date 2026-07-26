@@ -1345,6 +1345,8 @@ export function PlannerPage({ profile, onResetProfile, preset, onPresetConsumed,
           messages={messages}
           loading={loading}
           error={error}
+          clarifyingQuestion={response?.clarifying_question ?? null}
+          clarificationGroups={response?.clarification_groups}
           onClarify={(answer) => answerClarify(answer, localProfile, trip ?? DEFAULT_TRIP_CONSTRAINTS)}
           afterFirstUserMessage={
             // TripSetupPanel 路径追问（由前端本地规则生成）

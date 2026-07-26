@@ -115,18 +115,6 @@ class AgentOrchestrator:
         )
         await emit_pending_trace()
 
-        route_clarification = self.clarification_policy.evaluate(
-            request=request,
-            intent=Intent(),
-            message_route=message_route,
-            session_state=session_state,
-        )
-        # 路由歧义 或 消息级缺失（城市/目标）在 LLM 解析前即可判断，直接追问无需等 intent 解析
-        if route_clarification.need_clarification:
-            return self._handle_clarification(
-                request, session_state, trace, route_clarification,
-                intent=session_state.last_intent or Intent(),
-            )
 
         if message_route.intent_type == MessageIntentType.ROUTE_DETAIL_QUESTION:
             response = self.route_detail_handler.answer(request.message, request.session_id, session_state)

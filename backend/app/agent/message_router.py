@@ -163,6 +163,17 @@ class MessageRouter:
                 preserve_scenario=True,
             )
         if self._looks_like_route_related(text):
+            # 没有已生成路线 且 消息像独立新规划 → NEW_PLAN，不继承脏上下文
+            has_routes = bool(state.current_routes)
+            looks_standalone = self._looks_like_new_plan_spec(text)
+            if not has_routes and (looks_standalone or not state.last_intent):
+                return MessageRoute(
+                    intent_type=MessageIntentType.NEW_PLAN,
+                    turn_type=TurnType.NEW_PLAN,
+                    planning_mode=PlanningMode.NEW_PLAN,
+                    confidence=0.55 if looks_standalone else 0.45,
+                    inherit_previous=False,
+                )
             intent_type = MessageIntentType.MODIFY_PLAN if state.last_intent else MessageIntentType.NEW_PLAN
             return MessageRoute(
                 intent_type=intent_type,
@@ -172,6 +183,24 @@ class MessageRouter:
                 references_previous_route=state.last_intent is not None,
                 inherit_previous=state.last_intent is not None,
             )
+
+    def _looks_like_new_plan_spec(self, text: str) -> bool:
+        """判断消息是否像独立新规划（含城市+目标或时间）。"""
+        # 有城市名
+        cities = [
+            "上海", "北京", "杭州", "成都", "广州", "深圳",
+            "南京", "苏州", "重庆", "武汉", "西安", "长沙",
+        ]
+        has_city = any(c in text for c in cities)
+        # 有出行目标
+        goal_terms = ["游", "玩", "逛", "吃", "拍照", "打卡", "景点", "citywalk",
+                      "一日", "半日", "周末", "今天", "明天", "户外", "漫步"]
+        has_goal = any(t in text for t in goal_terms)
+        # 有时间
+        import re
+        has_time = bool(re.search(r"\d{1,2}\s*[点:：]|上午|下午|晚上|小时", text))
+        return has_city or has_goal or has_time
+
         return MessageRoute(
             intent_type=MessageIntentType.GENERAL_CHAT,
             turn_type=TurnType.GENERAL_CHAT,
@@ -237,6 +266,18 @@ class MessageRouter:
             "旅行",
             "游玩",
             "citywalk",
+            "半日游",
+            "一日游",
+            "半日",
+            "一日",
+            "周末",
+            "今天",
+            "明天",
+            "今晚",
+            "打卡",
+            "网红",
+            "吃",
+            "游",
             "逛",
             "玩",
             "景点",

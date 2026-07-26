@@ -63,33 +63,77 @@ def apply_session_context(intent: Intent, message: str, state: SessionState, rou
     if not should_inherit:
         return intent
 
-    base = state.last_intent.model_dump()
     current = intent.model_dump()
-    merged = base | {
-        "interest_tags": normalize_interest_preferences([*state.last_intent.interest_tags, *intent.interest_tags, *state.last_intent.preferences, *intent.preferences]),
-        "optimization_goals": normalize_goal_preferences([*state.last_intent.optimization_goals, *intent.optimization_goals, *state.last_intent.preferences, *intent.preferences]),
-        "avoid_tags": normalize_avoid_tags([*state.last_intent.avoid_tags, *intent.avoid_tags]),
-        "need_clarification": False,
-    }
-    merged["preferences"] = normalize_preferences([*state.last_intent.preferences, *intent.preferences])
+    previous = state.last_intent.model_dump()
+    default = Intent().model_dump()
 
+    # ---- 核心变更：当前消息为 BASE，上一轮只补缺 ----
+    merged = dict(current)
+
+    # 显式字段：从消息原文直接提取的值，优先级最高
+    explicit_fields = extract_explicit_trip_fields(message) | extract_standard_unit_fields(message)
+
+    # 硬约束继承规则：
+    # 1. explicit_fields 中有 → 用 explicit_fields（消息原文提取，最可靠）
+    # 2. 上一轮有 → 继承上一轮
+    # 3. 都没有 → 保持当前 LLM 解析值
+    hard_keys = (
+        "city", "people_count", "target_district", "target_business_area",
+        "start_time", "duration_hours", "budget_per_person",
+    )
+    for key in hard_keys:
+        if key in explicit_fields:
+            merged[key] = explicit_fields[key]
+        elif key in previous:
+            merged[key] = previous[key]
+        # else: keep current
+
+    # 城市特殊处理：当前消息明确提到了城市 → 用当前的
     if intent.city_from_message:
         merged["city"] = intent.city
         merged["city_from_message"] = True
 
+    # 场景：继承上一轮
+    if "scenario" in previous:
+        merged["scenario"] = previous["scenario"]
+
+    # 偏好/兴趣处理：
+    # - ADD_CONSTRAINT 或 is_adjustment_message（无 route 时的兜底）：UNION 合并
+    # - 其他模式且当前有偏好：当前覆盖上一轮
+    # - 其他模式且当前无偏好：继承上一轮
     is_add_constraint = bool(route and route.turn_type == TurnType.ADD_CONSTRAINT)
-    is_local_route_edit = _is_local_route_edit(message, route)
-    explicit_fields = extract_explicit_trip_fields(message) | extract_standard_unit_fields(message)
-    for key in ("budget_per_person", "people_count", "start_time", "duration_hours"):
-        if key in explicit_fields:
-            merged[key] = explicit_fields[key]
-        elif not is_add_constraint and not is_local_route_edit and current.get(key) != Intent().model_dump().get(key):
-            merged[key] = current[key]
+    is_local_edit = _is_local_route_edit(message, route)
+    is_merge_mode = is_add_constraint or is_local_edit or (route is None and is_adjustment_message(message))
+    has_current_prefs = bool(intent.preferences or intent.interest_tags or intent.optimization_goals)
 
-    preserve_scenario = bool((is_add_constraint or is_local_route_edit) and route and route.preserve_scenario)
-    if not preserve_scenario and current.get("scenario") != Intent().model_dump().get("scenario"):
-        merged["scenario"] = current["scenario"]
+    if is_merge_mode:
+        # 真正追加场景（"还要吃饭"、"预算低一点"）：合并新旧偏好
+        merged["interest_tags"] = normalize_interest_preferences([
+            *state.last_intent.interest_tags, *state.last_intent.preferences,
+            *intent.interest_tags, *intent.preferences,
+        ])
+        merged["optimization_goals"] = normalize_goal_preferences([
+            *state.last_intent.optimization_goals, *state.last_intent.preferences,
+            *intent.optimization_goals, *intent.preferences,
+        ])
+        merged["preferences"] = normalize_preferences([
+            *state.last_intent.preferences, *intent.preferences,
+        ])
+    elif has_current_prefs:
+        # 当前消息自带偏好 → 当前覆盖上一轮
+        merged["interest_tags"] = normalize_interest_preferences(intent.interest_tags)
+        merged["optimization_goals"] = normalize_goal_preferences(intent.optimization_goals)
+        merged["preferences"] = normalize_preferences(intent.preferences)
+    else:
+        # 当前无偏好 → 继承上一轮
+        merged["interest_tags"] = normalize_interest_preferences(state.last_intent.interest_tags)
+        merged["optimization_goals"] = normalize_goal_preferences(state.last_intent.optimization_goals)
+        merged["preferences"] = normalize_preferences(state.last_intent.preferences)
 
+    # avoid_tags 始终合并（否定偏好是累积的）
+    merged["avoid_tags"] = normalize_avoid_tags([*state.last_intent.avoid_tags, *intent.avoid_tags])
+
+    merged["need_clarification"] = False
     return Intent.model_validate(merged)
 
 
