@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 from app.agent.message_router import MessageIntentType, MessageRoute, PlanningMode, TurnType
 from app.agent.schemas import SessionState
 

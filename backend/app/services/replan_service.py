@@ -1,9 +1,12 @@
+from __future__ import annotations
+
 from app.schemas.intent import Intent
 from app.schemas.map import ExternalPOICandidate, ExternalPOIStatus, GeoPoint
 from app.schemas.poi import POI
 from app.schemas.route import ReplanRequest, Route, RouteChange, RoutePlanRequest, RoutePlanResponse, RouteScoreBreakdown, RouteStop
 from app.schemas.user import UserProfile
 from app.services.fine_rank_service import FineRankService
+from app.services.constraint_evaluator import ConstraintEvaluator
 from app.services.map_provider import MapProvider, MockMapProvider
 from app.services.poi_service import POIService
 from app.services.route_rerank_service import RouteRerankService
@@ -32,6 +35,7 @@ class ReplanService:
         self.scoring_service = ScoringService()
         self.fine_rank_service = FineRankService()
         self.rerank_service = RouteRerankService()
+        self.constraint_evaluator = ConstraintEvaluator()
 
     def replan(self, request: ReplanRequest) -> RoutePlanResponse:
         if not request.current_routes:
@@ -51,6 +55,8 @@ class ReplanService:
         completed_ids = set(request.completed_poi_ids)
         locked_ids = set(request.locked_poi_ids)
         event_payload = {**request.event_payload, "event_type": request.event_type, "event_label": request.event_label}
+        event_payload.setdefault("remaining_buffer_minutes", route.buffer_minutes)
+        request = request.model_copy(update={"event_payload": event_payload})
         preserve_ids = set(self._as_list(event_payload.get("preserve_poi_ids")))
         poi_by_id = {poi.id: poi for poi in self.poi_service.all_pois()}
 
@@ -196,7 +202,9 @@ class ReplanService:
                 return True
             if {"室内", "雨天", "下雨"} & prefer_tags and not stop.indoor:
                 return True
-        if request.event_type == "queue_spike" and poi.queue_minutes >= self.QUEUE_REPLACE_THRESHOLD:
+        remaining_buffer = int(request.event_payload.get("remaining_buffer_minutes", 0) or 0)
+        queue_threshold = max(30, min(60, remaining_buffer + 20))
+        if request.event_type == "queue_spike" and poi.queue_minutes >= queue_threshold:
             return True
         if request.event_type == "user_tired" and stop.walking_intensity == "high":
             return True
@@ -559,6 +567,7 @@ class ReplanService:
             highlight_text=poi.highlight_text,
             ugc_tip=poi.ugc_tip,
             indoor=poi.indoor,
+            need_booking=poi.need_booking,
             recommended_transport=poi.recommended_transport,
             travel_minutes_from_previous=travel_minutes,
             distance_km_from_previous=distance_km,
@@ -579,6 +588,14 @@ class ReplanService:
         plan_request = self._plan_request_for_replan(route, request, poi_by_id)
         route.score_breakdown = self.scoring_service.score(route.stops, route.objective, plan_request, poi_by_id)
         route.score = self.scoring_service.overall_score(route.score_breakdown, route.objective, route.stops, plan_request, poi_by_id)
+        constraints = self.constraint_evaluator.evaluate_route(route, plan_request, poi_by_id)
+        p80, buffer_minutes, reliability, risk_level = self.constraint_evaluator.reliability(route, plan_request, constraints)
+        route.p50_duration_minutes = route.total_duration_minutes
+        route.p80_duration_minutes = p80
+        route.buffer_minutes = buffer_minutes
+        route.reliability_score = reliability
+        route.risk_level = risk_level
+        route.warnings = list(dict.fromkeys([*route.warnings, *constraints.warnings]))
 
     def _plan_request_for_replan(self, route: Route, request: ReplanRequest, poi_by_id: dict[str, POI]) -> RoutePlanRequest:
         intent = request.intent or Intent(

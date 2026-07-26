@@ -40,6 +40,7 @@ export interface RouteStop {
   highlight_text?: string;
   ugc_tip?: string;
   indoor?: boolean;
+  need_booking?: boolean;
   recommended_transport?: string[];
   travel_minutes_from_previous?: number | null;
   distance_km_from_previous?: number | null;
@@ -134,6 +135,13 @@ export interface Route {
   }>;
   live_warnings?: string[];
   data_sources?: string[];
+  p50_duration_minutes?: number | null;
+  p80_duration_minutes?: number | null;
+  buffer_minutes?: number;
+  reliability_score?: number;
+  risk_level?: "low" | "medium" | "high" | string;
+  warnings?: string[];
+  degradation_level?: number;
 }
 
 export interface UserProfile {

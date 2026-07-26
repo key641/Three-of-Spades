@@ -10,6 +10,9 @@
 - `check_contract.py`: 检查前后端 JSON 字段是否一致
 - `build_recall_assets.py`: 重建 B 侧召回资产，包括扩充 POI mock、生成 interaction events、协同过滤相似度和双塔 embedding
 - `train_fine_rank_model.py`: 基于 interaction events 训练 sklearn 精排模型，生成 click/like/skip 三个模型产物
+- `evaluate_route_strategy.py`: 运行 120 个北京/上海固定案例，输出候选规模消融、成功率、约束、多样性和 P95 延迟
+- `train_route_rank_model.py`: 路线曝光达到准入门槛后训练路线级模型
+- `export_route_signals.py`: 将 SQLite 路线事件导出为 JSONL
 
 ## B 侧召回资产重建
 
@@ -35,6 +38,26 @@ python3 scripts/build_recall_assets.py
 ```bash
 PYTHONPATH=backend backend/.venv/bin/python scripts/train_fine_rank_model.py
 ```
+
+## B 侧路线策略离线评测
+
+```bash
+PYTHONPATH=backend backend/.venv/bin/python scripts/evaluate_route_strategy.py \
+  --candidate-limits '' --adaptive --runs 3 --assert-gates \
+  --output-dir artifacts/route-strategy
+```
+
+候选规模消融使用 `--candidate-limits 40,80,120,160,220 --adaptive`；模块消融使用
+`--candidate-limits '' --adaptive --all-ablations`。报告同时输出 JSON、Markdown、分桶和逐案例诊断。
+
+路线事件与模型准入：
+
+```bash
+PYTHONPATH=backend backend/.venv/bin/python scripts/export_route_signals.py artifacts/route-events.jsonl
+PYTHONPATH=backend backend/.venv/bin/python scripts/train_route_rank_model.py
+```
+
+曝光不足 10,000、选择不足 1,000 或时间跨度不足 7 天时，训练脚本会拒绝训练。
 
 脚本会更新：
 

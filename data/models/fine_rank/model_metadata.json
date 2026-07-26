@@ -1,33 +1,41 @@
 {
   "model_type": "DictVectorizer+LogisticRegression",
   "feature_schema_version": "fine_rank_features_v1",
-  "trained_at": "2026-06-03T17:24:50.373091+00:00",
-  "sample_count": 16000,
+  "trained_at": "2026-07-21T11:55:28.458059+00:00",
+  "sample_count": 16997,
+  "hard_negative_count": 997,
+  "split_strategy": "chronological_80_20",
   "missing_users": 0,
   "missing_pois": 0,
   "label_positive_rates": {
-    "click": 0.318,
-    "like": 0.194875,
-    "skip": 0.375937
+    "click": 0.282991,
+    "like": 0.174796,
+    "skip": 0.433782
   },
   "metrics": {
     "click": {
-      "train_samples": 12800,
-      "test_samples": 3200,
-      "accuracy": 0.61125,
-      "auc": 0.66015
+      "train_samples": 13598,
+      "test_samples": 3399,
+      "accuracy": 0.608414,
+      "auc": 0.679875,
+      "brier_score": 0.231849,
+      "calibration_error": 0.192593
     },
     "like": {
-      "train_samples": 12800,
-      "test_samples": 3200,
-      "accuracy": 0.573125,
-      "auc": 0.610773
+      "train_samples": 13598,
+      "test_samples": 3399,
+      "accuracy": 0.58782,
+      "auc": 0.649896,
+      "brier_score": 0.23743,
+      "calibration_error": 0.284624
     },
     "skip": {
-      "train_samples": 12800,
-      "test_samples": 3200,
-      "accuracy": 0.686562,
-      "auc": 0.757341
+      "train_samples": 13598,
+      "test_samples": 3399,
+      "accuracy": 0.699323,
+      "auc": 0.779153,
+      "brier_score": 0.190079,
+      "calibration_error": 0.057336
     }
   }
 }

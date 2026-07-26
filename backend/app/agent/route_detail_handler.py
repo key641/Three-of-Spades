@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 from app.agent.schemas import SessionState
 from app.schemas.chat import AgentTraceStep, ChatResponse
 from app.schemas.route import RouteStop
