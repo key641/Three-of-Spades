@@ -3,7 +3,7 @@ from __future__ import annotations
 from enum import Enum
 from typing import Any, Literal
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
 
 
 class ConstraintSource(str, Enum):
@@ -58,6 +58,13 @@ class StatePatch(BaseModel):
     relaxability: Relaxability | None = None
 
 
+class AmbiguitySignal(BaseModel):
+    field: str | None = None
+    kind: Literal["missing", "conflict", "vague", "unsupported"] = "vague"
+    description: str
+    candidate_values: list[Any] = Field(default_factory=list)
+
+
 class TurnUnderstanding(BaseModel):
     turn_type: Literal[
         "new_plan", "add", "modify", "remove", "route_question", "replan", "select", "chat"
@@ -66,9 +73,21 @@ class TurnUnderstanding(BaseModel):
     route_id: str | None = None
     stop_id: str | None = None
     scope: str = "current_trip"
-    ambiguities: list[str] = Field(default_factory=list)
+    ambiguities: list[AmbiguitySignal] = Field(default_factory=list)
     confidence: float = Field(default=0.0, ge=0, le=1)
     mode: Literal["llm", "fallback", "hybrid"] = "fallback"
+
+    @field_validator("ambiguities", mode="before")
+    @classmethod
+    def normalize_legacy_ambiguities(cls, value):
+        if not value:
+            return []
+        return [
+            {"kind": "vague", "description": item}
+            if isinstance(item, str)
+            else item
+            for item in value
+        ]
 
 
 class StateEvent(BaseModel):

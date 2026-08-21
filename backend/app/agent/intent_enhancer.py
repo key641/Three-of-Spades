@@ -252,9 +252,12 @@ def _extract_business_area(text: str) -> str | None:
     for area in KNOWN_BUSINESS_AREAS:
         if area in text:
             return area
-    match = re.search(r"[\u4e00-\u9fa5]{2,8}(?:路|街|巷|弄|大道|步行街|老街)", text)
+    match = re.search(
+        r"(?:在|去|到|逛|想去|前往)\s*([\u4e00-\u9fa5]{2,8}(?:路|街|巷|弄|大道|步行街|老街))",
+        text,
+    )
     if match:
-        value = match.group(0)
+        value = match.group(1)
         if value not in {"路线", "道路"}:
             return value
     return None

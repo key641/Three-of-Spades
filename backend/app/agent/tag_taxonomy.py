@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field
+import re
 
 
 INTEREST_ALIASES: dict[str, list[str]] = {
@@ -104,6 +105,10 @@ def extract_tag_layers(
         _append_unique(layers.optimization_goals, "省钱")
         _append_unique(layers.avoid_tags, "太贵")
     if any(term in text for term in ["不要太累", "别太累", "太累", "走路多", "步行多"]):
+        _append_unique(layers.optimization_goals, "少走路")
+        _append_unique(layers.optimization_goals, "轻松")
+        _append_unique(layers.avoid_tags, "步行多")
+    if re.search(r"(?:少|少点|少些|别|不要|不想)\s*(?:走|步行).{0,3}(?:路|距离)?", text):
         _append_unique(layers.optimization_goals, "少走路")
         _append_unique(layers.optimization_goals, "轻松")
         _append_unique(layers.avoid_tags, "步行多")

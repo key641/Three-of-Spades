@@ -23,12 +23,18 @@ class AgentDecision(BaseModel):
 
 
 class AgentPolicy:
+    PROTECTED_CONFLICT_FIELDS = {
+        "city", "start_location", "start_time", "duration_minutes",
+        "budget_per_person", "must_include",
+    }
+
     def decide(self, state: TripStateV2, understanding: TurnUnderstanding) -> AgentDecision:
-        if understanding.ambiguities:
+        blocking = self._blocking_ambiguities(state, understanding)
+        if blocking:
             return AgentDecision(
                 decision=DecisionType.CLARIFY,
-                blocking_fields=list(understanding.ambiguities),
-                question="我还需要确认一下：" + "、".join(understanding.ambiguities),
+                blocking_fields=[item.field or "constraint_conflict" for item in blocking],
+                question="我还需要确认一下：" + "、".join(item.description for item in blocking),
                 reason="blocking_ambiguity",
             )
         if understanding.turn_type == "chat":
@@ -59,3 +65,16 @@ class AgentPolicy:
                 )
             return AgentDecision(decision=DecisionType.REPLAN, reason="explicit_replan")
         return AgentDecision(decision=DecisionType.PLAN, reason="state_ready")
+
+    def _blocking_ambiguities(
+        self, state: TripStateV2, understanding: TurnUnderstanding
+    ) -> list:
+        blocking = []
+        for ambiguity in understanding.ambiguities:
+            if ambiguity.kind == "conflict" and (
+                ambiguity.field is None or ambiguity.field in self.PROTECTED_CONFLICT_FIELDS
+            ):
+                blocking.append(ambiguity)
+            elif ambiguity.kind == "missing" and ambiguity.field == "city" and state.city is None:
+                blocking.append(ambiguity)
+        return blocking

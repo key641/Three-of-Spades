@@ -79,6 +79,9 @@ class BoundedPlanningExecutor:
                 )
             if time.perf_counter() - started >= self.SOFT_TIMEOUT_SECONDS:
                 break
+            if allow_fallback and min_stops_floor == 2:
+                min_stops_floor = 1
+                continue
             diagnosis = await self.toolset.gateway.execute(
                 "diagnose_infeasibility", {"diagnostics": planned.diagnostics}
             )

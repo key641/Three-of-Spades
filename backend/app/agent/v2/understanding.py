@@ -17,6 +17,7 @@ from app.agent.v2.models import (
     TripStateV2,
     TurnUnderstanding,
 )
+from app.agent.v2.contextual_needs import ContextualNeedEngine
 from app.schemas.chat import ChatRequest
 from app.schemas.intent import Intent
 
@@ -26,13 +27,13 @@ logger = logging.getLogger("app.agent.v2.understanding")
 
 SYSTEM_PROMPT = """你是出行规划系统的单轮理解器。只输出 JSON，不生成路线或回复。
 输出字段：turn_type、state_patch、route_id、stop_id、scope、ambiguities、confidence。
+ambiguities 每项使用 {field, kind, description, candidate_values}；kind 只能是 missing/conflict/vague/unsupported。
 turn_type 只能是 new_plan/add/modify/remove/route_question/replan/select/chat。
 state_patch 每项包含 op(add/replace/remove)、path、value、source(user_explicit/inferred)、confidence、evidence。
 只提取用户本轮明确表达或明确修改的字段，不补系统默认值，不输出隐藏推理。
-唯一允许主动推断的是用餐需求：结合本轮字段和 state_summary 计算行程时间窗；如果覆盖午餐
-（11:30-13:30）或晚餐（17:30-20:00）时段，在 implicit_needs 中 add "meal"，source 为 inferred，
-evidence 写明覆盖的饭点。若用户明确表示不吃饭、不安排餐饮、已经吃过或跳过午/晚饭，不得新增；
-若历史 implicit_needs 已有 meal，则输出 remove。不要把咖啡或下午茶当作正餐。
+用餐时间需求由系统根据标准化时间窗确定，不要根据时间主动写 implicit_needs。
+用户明确要求正餐时写 must_include add "meal"；用户明确表示不吃饭、不安排餐饮、已经吃过
+或跳过午/晚饭时，从 must_include 和 implicit_needs remove "meal"。不要把咖啡或下午茶当作正餐。
 字段路径仅限：city、people_count、start_location、start_time、duration_minutes、budget_per_person、
 target_district、target_business_area、scenario、preferences、avoidances、must_include、implicit_needs。"""
 
@@ -40,6 +41,7 @@ target_district、target_business_area、scenario、preferences、avoidances、m
 class TurnUnderstandingService:
     def __init__(self, llm_client=None) -> None:
         self.llm_client = llm_client
+        self.contextual_needs = ContextualNeedEngine()
 
     async def understand(
         self,
@@ -172,7 +174,15 @@ class TurnUnderstandingService:
     def _merge_request_context(
         self, understanding: TurnUnderstanding, request: ChatRequest, state: TripStateV2
     ) -> TurnUnderstanding:
-        paths = {patch.path.strip("/") for patch in understanding.state_patch}
+        model_patches = [
+            patch for patch in understanding.state_patch
+            if not (
+                patch.path.strip("/") == "implicit_needs"
+                and patch.source == ConstraintSource.INFERRED
+                and "meal" in (patch.value if isinstance(patch.value, list) else [patch.value])
+            )
+        ]
+        paths = {patch.path.strip("/") for patch in model_patches}
         extra: list[StatePatch] = []
         if "city" not in paths and request.city and state.city is None:
             extra.append(
@@ -203,8 +213,39 @@ class TurnUnderstandingService:
                     evidence="request GPS",
                 )
             )
-        extra.extend(self._meal_context_patches(request, state, [*understanding.state_patch, *extra]))
-        return understanding.model_copy(update={"state_patch": [*understanding.state_patch, *extra], "mode": "hybrid" if extra else understanding.mode})
+        explicit_preferences = enhance_intent_from_message(Intent(city=""), request.message).preferences
+        removed_preferences = {
+            str(value)
+            for patch in model_patches
+            if patch.path.strip("/") == "preferences" and patch.op == "remove"
+            for value in (patch.value if isinstance(patch.value, list) else [patch.value])
+        }
+        model_preferences = {
+            str(value)
+            for patch in model_patches
+            if patch.path.strip("/") == "preferences" and patch.op != "remove"
+            for value in (patch.value if isinstance(patch.value, list) else [patch.value])
+        }
+        validated_preferences = [
+            value for value in explicit_preferences
+            if value not in model_preferences and value not in removed_preferences
+        ]
+        if validated_preferences:
+            extra.append(StatePatch(
+                op="add",
+                path="/preferences",
+                value=validated_preferences,
+                source=ConstraintSource.USER_EXPLICIT,
+                confidence=0.98,
+                evidence=request.message[:120],
+            ))
+        extra.extend(self._meal_context_patches(request, state, [*model_patches, *extra]))
+        normalized_patches = [*model_patches, *extra]
+        changed = normalized_patches != understanding.state_patch
+        return understanding.model_copy(update={
+            "state_patch": normalized_patches,
+            "mode": "hybrid" if changed else understanding.mode,
+        })
 
     def _meal_context_patches(
         self,
@@ -243,14 +284,7 @@ class TurnUnderstandingService:
         except (TypeError, ValueError):
             return []
         end_minutes = start_minutes + duration_minutes
-        covered = [
-            label
-            for label, window_start, window_end in [
-                ("午餐", 11 * 60 + 30, 13 * 60 + 30),
-                ("晚餐", 17 * 60 + 30, 20 * 60),
-            ]
-            if min(end_minutes, window_end) - max(start_minutes, window_start) >= 30
-        ]
+        covered = self.contextual_needs.required_meal_windows(start_minutes, duration_minutes)
         if not covered:
             return []
         return [StatePatch(

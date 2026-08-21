@@ -116,12 +116,11 @@ class DiagnoseInfeasibilityTool(AgentTool):
         candidate_count = int(diagnostics.get("candidate_poi_count") or 0)
         if candidate_count < 20:
             actions = ["expand_recall"]
-        elif dominant in {"duration_exceeded", "insufficient_combinations"}:
+        elif dominant in {
+            "duration_exceeded", "insufficient_combinations", "closed_at_arrival",
+            "extreme_budget_exceeded", "budget_exceeded",
+        }:
             actions = ["reduce_min_stops"]
-        elif dominant == "closed_at_arrival":
-            actions = ["adjust_schedule_or_clarify"]
-        elif dominant in {"extreme_budget_exceeded", "budget_exceeded"}:
-            actions = ["lower_cost_or_clarify"]
         else:
             actions = ["clarify_constraints"]
         return ToolResult(

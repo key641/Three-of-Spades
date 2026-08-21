@@ -12,6 +12,7 @@ class EvaluationExpectation(BaseModel):
     expected_start_source: str | None = None
     expected_preferences: list[str] = Field(default_factory=list)
     expected_avoid_tags: list[str] = Field(default_factory=list)
+    expected_required_roles: list[str] = Field(default_factory=list)
     min_routes: int = Field(default=0, ge=0)
     max_routes: int | None = Field(default=None, ge=0)
     expect_trace: bool = True

@@ -41,6 +41,21 @@ def test_explicit_start_is_not_overwritten_by_gps() -> None:
     assert "start_location" in summary.ignored
 
 
+def test_reducer_coerces_named_location_string_at_the_boundary() -> None:
+    state, _, _ = reduce_state(
+        TripStateV2(session_id="named-location"),
+        TurnUnderstanding(state_patch=[StatePatch(
+            op="replace",
+            path="/start_location",
+            value="国贸",
+            source=ConstraintSource.USER_EXPLICIT,
+        )]),
+        "t1",
+    )
+
+    assert state.start_location.value == LocationRef(name="国贸", precision="exact")
+
+
 def test_reducer_only_changes_fields_in_patch() -> None:
     state = TripStateV2(session_id="s1")
     initial = TurnUnderstanding(

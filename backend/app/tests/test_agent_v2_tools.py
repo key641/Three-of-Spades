@@ -79,3 +79,45 @@ def test_executor_uses_diagnostics_instead_of_expanding_sufficient_recall() -> N
     assert [call[0] for call in executor.toolset.gateway.calls].count("search_pois") == 1
     route_calls = [call for call in executor.toolset.gateway.calls if call[0] == "generate_routes"]
     assert route_calls == [("generate_routes", None, None), ("generate_routes", 2, None)]
+
+
+class ThreeStageGateway(FakeGateway):
+    async def execute(self, name, payload):
+        if name != "generate_routes":
+            return await super().execute(name, payload)
+        self.calls.append((name, payload.get("min_stops_floor"), payload.get("limit")))
+        self.route_attempts += 1
+        if self.route_attempts < 3:
+            return ToolResult(
+                call_id=f"r{self.route_attempts}", tool_name=name,
+                status=ToolStatus.INFEASIBLE,
+                diagnostics={"candidate_poi_count": 51},
+            )
+        return ToolResult(
+            call_id="r3", tool_name=name, status=ToolStatus.PARTIAL,
+            data=[Route(
+                route_id="single", title="single", objective="balanced", summary="ok",
+                total_duration_minutes=60, total_cost_per_person=0, total_queue_minutes=0,
+                score=80, score_breakdown=RouteScoreBreakdown(
+                    quality=80, queue=80, budget=80, distance=80, preference=80,
+                ), stops=[], reasons=["test"],
+            )],
+        )
+
+
+class ThreeStageToolset:
+    def __init__(self) -> None:
+        self.gateway = ThreeStageGateway()
+
+
+def test_executor_reduces_minimum_stops_from_three_to_two_to_one() -> None:
+    executor = BoundedPlanningExecutor(ThreeStageToolset())
+    outcome = asyncio.run(executor.execute(Intent(), UserProfile(user_id="u")))
+
+    assert outcome.status == "partial"
+    route_calls = [call for call in executor.toolset.gateway.calls if call[0] == "generate_routes"]
+    assert route_calls == [
+        ("generate_routes", None, None),
+        ("generate_routes", 2, None),
+        ("generate_routes", 1, None),
+    ]

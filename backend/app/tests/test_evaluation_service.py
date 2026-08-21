@@ -58,6 +58,18 @@ class V2TraceOrchestrator:
         )
 
 
+class InfeasibleOrchestrator:
+    async def handle_message(self, request):
+        return ChatResponse(
+            session_id=request.session_id,
+            message="No feasible route under the current hard constraints.",
+            need_clarification=False,
+            routes=[],
+            agent_trace=[],
+            planning_outcome="infeasible",
+        )
+
+
 def test_default_evaluation_suite_has_broad_layered_coverage() -> None:
     assert len(DEFAULT_EVALUATION_CASES) == 20
     categories = {case.category for case in DEFAULT_EVALUATION_CASES}
@@ -170,3 +182,15 @@ def test_eval_v3_checks_golden_patch_state_and_tool_calls() -> None:
 
     assert response.results[0].passed is True
     assert response.results[0].observed_tool_calls == ["search_pois"]
+
+
+def test_eval_treats_explicit_infeasible_as_terminal_planning_outcome() -> None:
+    service = EvaluationService(orchestrator_factory=InfeasibleOrchestrator)
+    response = asyncio.run(service.run(EvaluationRunRequest(cases=[EvaluationCase(
+        name="infeasible",
+        message="Plan an impossible route",
+        expectation=EvaluationExpectation(min_routes=0, expect_trace=False),
+    )])))
+
+    assert response.results[0].passed is True
+    assert "no_planning_outcome" not in response.results[0].failure_codes

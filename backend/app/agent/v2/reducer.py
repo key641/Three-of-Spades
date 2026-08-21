@@ -125,7 +125,14 @@ def _apply_list(state: TripStateV2, field: str, patch: StatePatch, turn_id: str)
 
 def _coerce_value(field: str, value):
     if field == "start_location":
-        return value if isinstance(value, LocationRef) else LocationRef.model_validate(value)
+        if isinstance(value, LocationRef):
+            return value
+        if isinstance(value, str):
+            name = value.strip()
+            if not name:
+                raise ValueError("start_location cannot be empty")
+            return LocationRef(name=name, precision="exact")
+        return LocationRef.model_validate(value)
     if field in {"people_count", "duration_minutes", "budget_per_person"}:
         return int(value)
     return value

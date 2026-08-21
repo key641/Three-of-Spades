@@ -5,7 +5,7 @@ import time
 from collections import Counter, defaultdict
 from collections.abc import Callable
 
-from app.agent.orchestrator import AgentOrchestrator
+from app.agent.v2.runtime import AgentRuntimeRouter
 from app.schemas.chat import ChatRequest, ChatResponse
 from app.schemas.evaluation import (
     EvaluationCase,
@@ -209,11 +209,12 @@ ISSUE_META = {
     "wrong_golden_state": ("最终权威状态不匹配", "reduce_state"),
     "missing_tool_call": ("缺少预期工具调用", "tool_gateway"),
     "missing_recovery_action": ("缺少预期恢复动作", "diagnose_infeasibility"),
+    "missing_required_role": ("缺少必需路线角色", "understand_turn"),
 }
 
 
 class EvaluationService:
-    def __init__(self, orchestrator_factory: Callable[[], AgentOrchestrator] = AgentOrchestrator) -> None:
+    def __init__(self, orchestrator_factory: Callable[[], object] = AgentRuntimeRouter) -> None:
         self.orchestrator_factory = orchestrator_factory
 
     async def run(self, request: EvaluationRunRequest) -> EvaluationRunResponse:
@@ -348,6 +349,7 @@ class EvaluationService:
         checks: list[tuple[str, str, bool, str]] = []
         intent = response.intent
         trace_steps = [step.step for step in response.agent_trace]
+        observed_patch, observed_state, observed_tools, observed_recovery = self._v3_observations(response)
 
         def add(dimension: str, code: str, passed: bool, failure: str) -> None:
             checks.append((dimension, code, passed, failure))
@@ -363,6 +365,12 @@ class EvaluationService:
             add("understanding", "missing_preference", value in actual_preferences, f"偏好遵循：缺少“{value}”")
         for value in exp.expected_avoid_tags:
             add("understanding", "missing_avoid_tag", bool(intent and value in intent.avoid_tags), f"避雷条件：缺少“{value}”")
+        for value in exp.expected_required_roles:
+            add(
+                "understanding", "missing_required_role",
+                bool(intent and value in intent.must_include_roles),
+                f"必需路线角色：缺少“{value}”",
+            )
 
         if exp.expected_start_location_name:
             actual = intent.start_location_name if intent else None
@@ -371,7 +379,15 @@ class EvaluationService:
         if exp.expected_start_source:
             source_steps = {"named": "apply_named_start", "gps": "apply_gps_start", "default": "apply_default_start"}
             expected_step = source_steps.get(exp.expected_start_source, exp.expected_start_source)
-            add("grounding", "wrong_start_source", expected_step in trace_steps, f"起点来源：期望 {exp.expected_start_source}，实际步骤 {', '.join(trace_steps) or '空'}")
+            start_patches = [patch for patch in observed_patch if str(patch.get("path", "")).strip("/") == "start_location"]
+            patch_sources = {patch.get("source") for patch in start_patches}
+            if exp.expected_start_source == "named":
+                source_ok = "user_explicit" in patch_sources or expected_step in trace_steps
+            elif exp.expected_start_source == "gps":
+                source_ok = "gps" in patch_sources or expected_step in trace_steps
+            else:
+                source_ok = expected_step in trace_steps
+            add("grounding", "wrong_start_source", source_ok, f"起点来源：期望 {exp.expected_start_source}，实际来源 {', '.join(str(item) for item in patch_sources) or '空'}")
 
         if exp.expect_clarification is not None:
             add("dialog", "wrong_clarification", response.need_clarification == exp.expect_clarification, f"追问判断：期望 {exp.expect_clarification}，实际 {response.need_clarification}")
@@ -380,7 +396,12 @@ class EvaluationService:
         if exp.max_routes is not None:
             add("planning", "too_many_routes", len(response.routes) <= exp.max_routes, f"路线生成：期望至多 {exp.max_routes} 条，实际 {len(response.routes)} 条")
         if exp.require_planning_outcome:
-            add("planning", "no_planning_outcome", bool(response.routes or response.need_clarification), "规划结果：既没有路线，也没有有效追问")
+            has_terminal_outcome = bool(
+                response.routes
+                or response.need_clarification
+                or response.planning_outcome in {"complete", "partial", "infeasible", "degraded"}
+            )
+            add("planning", "no_planning_outcome", has_terminal_outcome, "规划结果：既没有路线，也没有有效追问")
         for route in response.routes:
             valid = bool(route.stops and route.total_duration_minutes > 0 and route.total_cost_per_person >= 0)
             add("planning", "invalid_route", valid, f"路线结构：{route.route_id} 缺少站点或时间成本无效")
@@ -392,7 +413,6 @@ class EvaluationService:
         for step in exp.forbidden_trace_steps:
             add("observability", "forbidden_trace_step", step not in trace_steps, f"过程追踪：不应执行步骤 {step}")
         add("reliability", "empty_output", bool(response.message.strip()), "最终输出：回复为空")
-        observed_patch, observed_state, observed_tools, observed_recovery = self._v3_observations(response)
         if exp.golden_patch:
             expected = {
                 (item.get("op"), item.get("path"), self._stable_value(item.get("value")))
