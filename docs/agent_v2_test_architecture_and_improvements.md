@@ -243,7 +243,7 @@ npm.cmd run build
 
 ## 8. 合并说明
 
-- 本版本计划从 `codex/agent-v2-optimization` 合并回 `keykii`。
+- 本版本已从 `codex/agent-v2-optimization` 合并回 `keykii`。
 - 默认配置仍为 `v1`，不会因为合并自动全量开启 V2。
 - 当前本地验证服务可用环境变量临时启用 V2。
 - 合并保留 LYNN 及当前工作区已有优化，不执行 reset 或覆盖式 checkout。

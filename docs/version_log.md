@@ -55,7 +55,7 @@
 
 ---
 
-## 2026-08-21 - `uncommitted` - `feat(agent): Agent V2 稳定性、评测与诊断架构升级`
+## 2026-08-21 - `15d1667` - `feat(agent): Agent V2 稳定性、评测与诊断架构升级`
 
 负责人：Agent / 后端 / 评测
 
