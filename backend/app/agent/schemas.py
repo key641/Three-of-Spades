@@ -59,6 +59,9 @@ class TripState(BaseModel):
     people_count: int = 2
     target_district: str | None = None
     target_business_area: str | None = None
+    start_location_name: str | None = None
+    start_lat: float | None = None
+    start_lng: float | None = None
     start_time: str = "14:00"
     duration_hours: int = 6
     budget_per_person: int = 300
@@ -81,6 +84,9 @@ class TripState(BaseModel):
             "people_count": intent.people_count,
             "target_district": intent.target_district,
             "target_business_area": intent.target_business_area,
+            "start_location_name": intent.start_location_name,
+            "start_lat": intent.start_lat,
+            "start_lng": intent.start_lng,
             "start_time": intent.start_time,
             "duration_hours": intent.duration_hours,
             "budget_per_person": intent.budget_per_person,
@@ -90,6 +96,9 @@ class TripState(BaseModel):
             people_count=intent.people_count,
             target_district=intent.target_district,
             target_business_area=intent.target_business_area,
+            start_location_name=intent.start_location_name,
+            start_lat=intent.start_lat,
+            start_lng=intent.start_lng,
             start_time=intent.start_time,
             duration_hours=intent.duration_hours,
             budget_per_person=intent.budget_per_person,
@@ -108,6 +117,9 @@ class TripState(BaseModel):
             people_count=self.people_count,
             target_district=self.target_district,
             target_business_area=self.target_business_area,
+            start_location_name=self.start_location_name,
+            start_lat=self.start_lat,
+            start_lng=self.start_lng,
             start_time=self.start_time,
             duration_hours=self.duration_hours,
             budget_per_person=self.budget_per_person,

@@ -55,8 +55,57 @@
 
 ---
 
-<<<<<<< Updated upstream
-=======
+## 2026-08-21 - `uncommitted` - `feat(agent): Agent V2 稳定性、评测与诊断架构升级`
+
+负责人：Agent / 后端 / 评测
+
+### 更新概览
+
+- 新增 `TripStateV2`、字段来源优先级、纯函数 Reducer 和 SQLite 状态事件，实现可恢复、可回放的权威旅行状态。
+- 将每轮理解统一为 `TurnUnderstanding`，由确定性 Policy 决定回答、追问、规划或重规划。
+- 新增标准工具协议和最多 5 步的 Plan–Act–Observe 执行器，按失败诊断执行扩大召回、减少站点或精准追问。
+- 路线不足 3 条时保留已有合法路线；所有结果经 `OutcomeVerifier` 检查后再返回。
+- 保留 LYNN、多目标 Fine Rank、现有路线服务、`/api/chat`、流式接口和前端兼容。
+- 新增 V1/Shadow/V2 运行模式，默认仍为 V1。
+- Eval V3 支持 Golden Patch、Golden State、工具与恢复动作、单 Case 超时、`pass@1`、`stable-pass@3` 和版本记录。
+- 行程覆盖午餐或晚餐时推断 `implicit_needs: meal`，确保路线包含正餐；明确不吃饭时取消该需求。
+
+### 用户可感知改进
+
+- 明确起点不会再被 GPS 覆盖，未明确起点时优先使用当前位置。
+- 凑不够三条路线时能出几条出几条，不再直接清空。
+- LLM 总结失败时仍能看到路线，不再暴露 `ConnectError`、`AttributeError` 等内部异常。
+- 路线无解时能够说明具体约束原因，并采取对应恢复动作。
+- 覆盖饭点的行程会自动安排吃饭。
+
+### 验证
+
+- 合并前全量后端回归：`276 passed`。
+- 前端 TypeScript 与生产构建通过。
+- V2 实际烟测返回 3 条路线；饭点烟测中 3 条路线均包含正餐节点。
+
+### 协作影响
+
+| 角色 | 影响 | 需要关注 |
+| --- | --- | --- |
+| Agent / 后端 | V2 以 `TripStateV2` 为唯一权威状态，旧 Intent 仅为兼容投影 | 新字段应先进入 State Patch 和 Reducer，不要新增第二份可写状态 |
+| POI / 路线策略 | 路线算法继续由 LYNN 和 Fine Rank 提供，V2 通过工具协议调用 | 工具必须返回结构化诊断，部分合法路线不能清空 |
+| 前端 / UI | `ChatResponse` 新增可选 outcome/version/trace/warnings/degradation | 旧响应仍兼容；可逐步展示 partial 和 degradation 状态 |
+
+### 风险与注意事项
+
+- 合并后默认运行模式仍为 `v1`；需要通过环境变量显式启用 `shadow` 或 `v2`。
+- Shadow 只读执行，不应重复写画像、曝光或状态事件。
+- 灰度前应使用真实 Query 批量评测，不建议直接全量切换。
+
+### 详细文档
+
+- `docs/agent_v2_test_architecture_and_improvements.md`
+- `docs/agent_architecture_v2.md`
+- `docs/evaluation.md`
+
+---
+
 ## 2026-07-21 - `uncommitted` - `perf(route): 收口三路线率、性能与发布门禁`
 
 - 必去点和必要角色进入 Beam 状态；增加 objective Top30、角色配额和邻近候选保护。
@@ -145,7 +194,6 @@
 
 ---
 
->>>>>>> Stashed changes
 ## 2026-06-06 - `uncommitted` - `feat(route): 局部 POI 修改升级为候选生成链路`
 
 负责人：路线策略 / 局部重规划 / B 同学

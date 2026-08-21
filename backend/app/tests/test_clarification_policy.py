@@ -48,6 +48,28 @@ class ClarificationPolicyTest(unittest.TestCase):
         group_ids = [g.id for g in decision.clarification_groups]
         self.assertNotIn("city", group_ids)
 
+    def test_gps_city_prevents_city_gap(self) -> None:
+        decision = self.policy.evaluate(
+            request=ChatRequest(
+                session_id="s1",
+                message="周末安排一日游",
+                current_lat=39.9042,
+                current_lng=116.4074,
+            ),
+            intent=Intent(city="北京", city_from_message=False, preferences=["一日游"]),
+            message_route=MessageRoute(
+                intent_type=MessageIntentType.NEW_PLAN,
+                turn_type=TurnType.NEW_PLAN,
+                planning_mode=PlanningMode.NEW_PLAN,
+                confidence=0.9,
+            ),
+            session_state=SessionState(session_id="s1"),
+        )
+
+        group_ids = [group.id for group in decision.clarification_groups]
+        self.assertNotIn("city", group_ids)
+        self.assertEqual(self.policy._coords_to_city(39.9042, 116.4074), "北京")
+
     # ── 新规划路线：有城市+有目标 → 只追问 P1 时间（可跳过） ──
 
     def test_new_plan_with_city_and_goal_asks_only_time(self) -> None:

@@ -14,6 +14,9 @@
 let _cache: { lat: number; lng: number } | null = null;
 const _listeners: Array<() => void> = [];
 
+export const DEFAULT_LOCATION_CITY = "北京";
+export const DEFAULT_LOCATION_LABEL = "北京市朝阳区望京";
+
 export function setGpsCache(lat: number, lng: number): void {
   _cache = { lat, lng };
   _listeners.splice(0).forEach((fn) => fn());
@@ -79,6 +82,14 @@ export function coordsToLocationLabel(lat: number, lng: number): string | null {
     (b) => b.city === cityEntry.city && lat >= b.latMin && lat <= b.latMax && lng >= b.lngMin && lng <= b.lngMax,
   );
   return districtEntry ? `${cityEntry.city}${districtEntry.district}` : cityEntry.city;
+}
+
+/** Resolve only the city name for request defaults. */
+export function coordsToCity(lat: number, lng: number): string | null {
+  const entry = CITY_BOUNDS.find(
+    (item) => lat >= item.latMin && lat <= item.latMax && lng >= item.lngMin && lng <= item.lngMax,
+  );
+  return entry?.city ?? null;
 }
 
 // ── Nominatim 逆地理编码（OpenStreetMap，免费无 key） ──────────

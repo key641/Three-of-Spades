@@ -364,6 +364,24 @@ function buildInitMessage(trip: TripConstraints): string {
 
 type LLMCheckResult = { ok: boolean; model?: string; reply?: string; elapsed_ms?: number; provider?: string; error?: string } | null;
 
+function DebugRow({
+  label,
+  value,
+  highlight,
+}: {
+  label: string;
+  value: string;
+  highlight?: "ok" | "warn";
+}) {
+  const color = highlight === "ok" ? "#38c98a" : highlight === "warn" ? "#ef6b73" : "#d1d5db";
+  return (
+    <div style={{ display: "grid", gridTemplateColumns: "88px 1fr", gap: 8, marginTop: 6, fontSize: 11 }}>
+      <span style={{ color: "#64748b" }}>{label}</span>
+      <span style={{ color, overflowWrap: "anywhere" }}>{value}</span>
+    </div>
+  );
+}
+
 function LLMHealthCheck() {
   const [status, setStatus] = useState<"idle" | "checking" | "done">("idle");
   const [result, setResult] = useState<LLMCheckResult>(null);
@@ -1603,6 +1621,10 @@ export function PlannerPage({ profile, onResetProfile, preset, onPresetConsumed,
                           <div style={{ color: "#93c5fd", fontSize: 10 }}>
                             trip_city: <span style={{ color: req?.trip_city && req.trip_city !== "(未传，后端追问)" ? "#e2e8f0" : "#374151" }}>{String(req?.trip_city ?? "(未传)")}</span>
                             {"  "}start_lat: <span style={{ color: req?.start_lat ? "#e2e8f0" : "#374151" }}>{String(req?.start_lat ?? "(无GPS)")}</span>
+                          </div>
+                          <div style={{ color: "#93c5fd", fontSize: 10, marginTop: 3 }}>
+                            location_source: <span style={{ color: "#e2e8f0" }}>{String(req?.location_source ?? "unknown")}</span>
+                            {"  "}start_location: <span style={{ color: "#e2e8f0" }}>{String(req?.start_location_name ?? "-")}</span>
                           </div>
                         </div>
                       </div>

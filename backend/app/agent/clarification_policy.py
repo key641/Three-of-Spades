@@ -178,7 +178,44 @@ class ClarificationPolicy:
         if request.city and request.city.strip():
             return False
 
+        lat = request.current_lat if request.current_lat is not None else request.start_lat
+        lng = request.current_lng if request.current_lng is not None else request.start_lng
+        if lat is not None and lng is not None and self._coords_to_city(lat, lng):
+            return False
+
         return True
+
+    def _coords_to_city(self, lat: float, lng: float) -> str:
+        """Resolve common mainland-city GPS coordinates without an external API."""
+        city_bounds = [
+            ("北京", 39.4, 41.1, 115.4, 117.5),
+            ("上海", 30.7, 31.9, 120.9, 122.0),
+            ("广州", 22.5, 23.9, 112.9, 114.0),
+            ("深圳", 22.3, 22.8, 113.7, 114.6),
+            ("成都", 30.0, 31.3, 103.2, 104.9),
+            ("杭州", 29.2, 30.6, 119.1, 120.7),
+            ("南京", 31.2, 32.6, 118.3, 119.3),
+            ("武汉", 29.9, 31.4, 113.7, 115.1),
+            ("西安", 33.4, 34.6, 107.6, 109.5),
+            ("重庆", 28.1, 32.2, 105.3, 110.2),
+            ("厦门", 24.1, 24.7, 117.9, 118.4),
+            ("天津", 38.5, 40.3, 116.7, 118.1),
+            ("苏州", 30.7, 31.8, 119.9, 121.2),
+            ("长沙", 27.8, 28.7, 112.3, 113.6),
+            ("青岛", 35.5, 37.0, 119.3, 121.0),
+            ("郑州", 34.2, 34.9, 113.0, 114.2),
+            ("合肥", 31.4, 32.5, 116.8, 117.6),
+            ("沈阳", 41.2, 42.0, 122.9, 123.8),
+            ("哈尔滨", 45.4, 46.1, 125.9, 127.0),
+            ("济南", 36.4, 37.3, 116.5, 117.5),
+            ("昆明", 24.5, 25.3, 102.4, 103.1),
+            ("大连", 38.8, 39.4, 121.2, 122.2),
+            ("宁波", 29.4, 30.3, 121.0, 122.3),
+        ]
+        for city, lat_min, lat_max, lng_min, lng_max in city_bounds:
+            if lat_min <= lat <= lat_max and lng_min <= lng <= lng_max:
+                return city
+        return ""
 
     def _is_too_generic_new_plan(self, message: str, intent: Intent, message_route: MessageRoute) -> bool:
         if message_route.planning_mode != PlanningMode.NEW_PLAN:

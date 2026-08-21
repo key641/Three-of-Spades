@@ -123,6 +123,10 @@ def enhance_intent_from_message(intent: Intent, message: str) -> Intent:
     if start_time:
         data["start_time"] = start_time
 
+    start_location = _extract_start_location(text)
+    if start_location:
+        data["start_location_name"] = start_location
+
     district = _extract_district(text)
     if district:
         data["target_district"] = district
@@ -178,6 +182,9 @@ def extract_explicit_trip_fields(message: str) -> dict[str, object]:
     start_time = _extract_start_time(text)
     if start_time:
         fields["start_time"] = start_time
+    start_location = _extract_start_location(text)
+    if start_location:
+        fields["start_location_name"] = start_location
     district = _extract_district(text)
     if district:
         fields["target_district"] = district
@@ -214,6 +221,20 @@ def _extract_city(text: str) -> str | None:
     for city, aliases in CITY_ALIASES.items():
         if any(alias in text for alias in aliases):
             return city
+    return None
+
+
+def _extract_start_location(text: str) -> str | None:
+    patterns = [
+        r"从\s*([\u4e00-\u9fa5A-Za-z0-9·\-]{2,16}?)\s*(?:出发|开始|走)",
+        r"(?:我在|当前位置是|起点是|出发地是)\s*([\u4e00-\u9fa5A-Za-z0-9·\-]{2,16}?)(?:附近|这边|出发|，|。|,|$)",
+    ]
+    for pattern in patterns:
+        match = re.search(pattern, text)
+        if match:
+            value = match.group(1).strip()
+            if value:
+                return value
     return None
 
 

@@ -7,4 +7,5 @@ httpx==0.28.1
 joblib==1.4.2
 scikit-learn==1.5.2
 pytest==8.3.5
+coverage==7.6.12
 eval-type-backport==0.2.2; python_version < "3.10"

@@ -5,6 +5,13 @@ from app.schemas.intent import Intent
 
 
 class IntentEnhancerTest(unittest.TestCase):
+    def test_extracts_explicit_start_location(self) -> None:
+        from_start = enhance_intent_from_message(Intent(city="北京"), "从国贸出发，找个附近餐厅")
+        at_start = enhance_intent_from_message(Intent(city="上海"), "我在静安寺，想附近转转")
+
+        self.assertEqual(from_start.start_location_name, "国贸")
+        self.assertEqual(at_start.start_location_name, "静安寺")
+
     def test_extracts_city_and_one_day_trip(self) -> None:
         intent = enhance_intent_from_message(Intent(preferences=["一日游"], need_clarification=True), "想要在北京一日游")
 

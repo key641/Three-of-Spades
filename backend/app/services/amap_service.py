@@ -45,24 +45,11 @@ class AmapService:
         self._route_leg_cache: dict[tuple[str, str, str, str], RouteLeg] = {}
         self._route_leg_cache_lock = threading.Lock()
         self._route_leg_inflight: dict[tuple[str, str, str, str], threading.Event] = {}
-<<<<<<< Updated upstream
-        self._mock_route_map_service = None
-
-    def route_leg(self, origin: GeoPoint, destination: GeoPoint, mode: str = "walk", departure_time: str | None = None) -> RouteLeg:
-        if self.route_provider == "mock" or (not self.api_key and self.route_provider != "fallback"):
-            from app.services.mock_route_map_service import MockRouteMapService
-
-            if self._mock_route_map_service is None:
-                self._mock_route_map_service = MockRouteMapService()
-            return self._mock_route_map_service.route_leg(origin, destination, mode=mode, departure_time=departure_time)
-
-=======
         self._mock_service: Any | None = None
         self.cache_hits = 0
         self.cache_misses = 0
 
     def route_leg(self, origin: GeoPoint, destination: GeoPoint, mode: str = "walk", departure_time: str | None = None) -> RouteLeg:
->>>>>>> Stashed changes
         cache_key = (
             self._format_point(origin),
             self._format_point(destination),

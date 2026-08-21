@@ -198,6 +198,13 @@ class MessageRouter:
                 inherit_previous=state.last_intent is not None,
             )
 
+        return MessageRoute(
+            intent_type=MessageIntentType.GENERAL_CHAT,
+            turn_type=TurnType.GENERAL_CHAT,
+            planning_mode=PlanningMode.GENERAL_CHAT,
+            confidence=0.4,
+        )
+
     def _looks_like_new_plan_spec(self, text: str) -> bool:
         """判断消息是否像独立新规划（含城市+目标或时间）。"""
         # 有城市名
@@ -214,13 +221,6 @@ class MessageRouter:
         import re
         has_time = bool(re.search(r"\d{1,2}\s*[点:：]|上午|下午|晚上|小时", text))
         return has_city or has_goal or has_time
-
-        return MessageRoute(
-            intent_type=MessageIntentType.GENERAL_CHAT,
-            turn_type=TurnType.GENERAL_CHAT,
-            planning_mode=PlanningMode.GENERAL_CHAT,
-            confidence=0.4,
-        )
 
     def _looks_like_route_detail_question(self, text: str) -> bool:
         detail_terms = ["怎么过去", "怎么去", "如何过去", "如何去", "两地", "两个地点", "之间", "交通", "打车", "地铁"]
@@ -372,6 +372,9 @@ class MessageRouter:
 
     def _looks_like_full_replan(self, text: str) -> bool:
         full_terms = [
+            "不用少换乘",
+            "少换乘",
+            "服务优先",
             "更省钱",
             "便宜一点",
             "预算低",

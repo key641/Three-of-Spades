@@ -1,10 +1,11 @@
 import { FormEvent, useEffect, useRef, useState } from "react";
-import { Clock, MapPin, Users, Wallet, Sun, Star, ArrowLeft } from "lucide-react";
+import { Clock, MapPin, Users, Wallet, Sun, Star, ArrowLeft, FlaskConical } from "lucide-react";
 import logoSvg from "../assets/logo.svg";
 import type { OnboardingProfile } from "../hooks/useOnboarding";
 import { PhoneStatusBar } from "../App";
 import { RouteCard } from "../components/RouteCard";
 import type { Route, RouteStop } from "../api/types";
+import { DEFAULT_LOCATION_LABEL } from "../utils/gpsCache";
 
 // ── 类型定义 ──────────────────────────────────────────────────
 export type PoiCategory = "景点" | "美食" | "购物" | "娱乐" | "运动" | "文化" | "自然";
@@ -129,7 +130,7 @@ const FEATURED_ROUTES: PresetRoute[] = [
 ];
 
 const MOCK_WEATHER = { condition: "晴", tempHigh: 28, tempLow: 17, tip: "适合户外出行" };
-const MOCK_LOCATION = "北京市朝阳区望京";
+const MOCK_LOCATION = DEFAULT_LOCATION_LABEL;
 
 const THEME_COLORS: Record<string, string> = {
   citywalk: "#4FA8E8",
@@ -518,7 +519,7 @@ function DanmakuSuggestions({ onSelect }: { onSelect: (text: string) => void }) 
   // 当前基准偏移（滑到 index 对应位置）
   const baseOffsetRef = useRef(0);
   // 拖拽状态
-  const dragRef = useRef<{ startX: number; dragging: boolean } | null>(null);
+  const dragRef = useRef<{ startX: number; dragging: boolean; suggestion: string | null } | null>(null);
   const [dragDelta, setDragDelta] = useState(0);
   const [isAnimating, setIsAnimating] = useState(true);
   // 定时器 ref，拖拽时暂停
@@ -560,7 +561,8 @@ function DanmakuSuggestions({ onSelect }: { onSelect: (text: string) => void }) 
   // ── 拖拽处理 ──
   function onPointerDown(e: React.PointerEvent) {
     (e.currentTarget as HTMLElement).setPointerCapture(e.pointerId);
-    dragRef.current = { startX: e.clientX, dragging: true };
+    const suggestion = (e.target as HTMLElement).closest<HTMLButtonElement>("button[data-suggestion]")?.dataset.suggestion ?? null;
+    dragRef.current = { startX: e.clientX, dragging: true, suggestion };
     setIsAnimating(false);
     if (timerRef.current) clearInterval(timerRef.current);
   }
@@ -572,7 +574,8 @@ function DanmakuSuggestions({ onSelect }: { onSelect: (text: string) => void }) 
 
   function onPointerUp(e: React.PointerEvent) {
     if (!dragRef.current?.dragging) return;
-    const delta = e.clientX - dragRef.current.startX;
+    const { startX, suggestion } = dragRef.current;
+    const delta = e.clientX - startX;
     dragRef.current = null;
     // 滑动超过 40px 则切换
     if (delta < -40) {
@@ -583,7 +586,16 @@ function DanmakuSuggestions({ onSelect }: { onSelect: (text: string) => void }) 
       // 回弹
       setDragDelta(0);
       setIsAnimating(true);
+      if (Math.abs(delta) <= 8 && suggestion) {
+        onSelect(suggestion);
+      }
     }
+  }
+
+  function onPointerCancel() {
+    dragRef.current = null;
+    setDragDelta(0);
+    setIsAnimating(true);
   }
 
   const translateX = baseOffsetRef.current - dragDelta;
@@ -595,7 +607,7 @@ function DanmakuSuggestions({ onSelect }: { onSelect: (text: string) => void }) 
         onPointerDown={onPointerDown}
         onPointerMove={onPointerMove}
         onPointerUp={onPointerUp}
-        onPointerCancel={onPointerUp}
+        onPointerCancel={onPointerCancel}
         style={{ cursor: "grab", userSelect: "none" }}
       >
         <div
@@ -614,7 +626,12 @@ function DanmakuSuggestions({ onSelect }: { onSelect: (text: string) => void }) 
               <button
                 type="button"
                 className="home-danmaku-item"
-                onClick={() => onSelect(text)}
+                data-suggestion={text}
+                onClick={(event) => {
+                  // Pointer taps are handled by the drag surface on pointer-up;
+                  // detail=0 preserves keyboard activation without double-firing.
+                  if (event.detail === 0) onSelect(text);
+                }}
               >
                 {text}
               </button>
@@ -631,9 +648,10 @@ export interface HomePageProps {
   profile: OnboardingProfile;
   onStartPlanning: (presetGoals?: string[], presetTitle?: string, initialMsg?: string) => void;
   onProfileClick?: () => void;
+  onEvaluationClick?: () => void;
 }
 
-export function HomePage({ profile, onStartPlanning, onProfileClick }: HomePageProps) {
+export function HomePage({ profile, onStartPlanning, onProfileClick, onEvaluationClick }: HomePageProps) {
   const [viewRoute, setViewRoute] = useState<PresetRoute | null>(null);
   const [inputText, setInputText] = useState("");
   const textareaRef = useRef<HTMLTextAreaElement>(null);
@@ -654,7 +672,7 @@ export function HomePage({ profile, onStartPlanning, onProfileClick }: HomePageP
     el.style.height = Math.min(el.scrollHeight, 100) + "px";
   }
 
-  function handleSubmit(e: FormEvent) {
+  function handleSubmit(e: FormEvent<HTMLFormElement>) {
     e.preventDefault();
     const msg = inputText.trim();
     if (!msg) return;
@@ -664,8 +682,20 @@ export function HomePage({ profile, onStartPlanning, onProfileClick }: HomePageP
   function handleKeyDown(e: React.KeyboardEvent<HTMLTextAreaElement>) {
     if (e.key === "Enter" && !e.shiftKey) {
       e.preventDefault();
-      handleSubmit(e as unknown as FormEvent);
+      e.currentTarget.form?.requestSubmit();
     }
+  }
+
+  function handleSuggestionSelect(text: string) {
+    setInputText(text);
+    window.requestAnimationFrame(() => {
+      const textarea = textareaRef.current;
+      if (!textarea) return;
+      textarea.style.height = "auto";
+      textarea.style.height = Math.min(textarea.scrollHeight, 100) + "px";
+      textarea.focus({ preventScroll: true });
+      textarea.setSelectionRange(text.length, text.length);
+    });
   }
 
   // 生成头像文字：取 scenarios 第一个 emoji 或 user_id 首字符
@@ -685,6 +715,15 @@ export function HomePage({ profile, onStartPlanning, onProfileClick }: HomePageP
         <span className="home-topbar-greeting">
           {greeting}{profile.nickname ? `，${profile.nickname}` : ""}
         </span>
+        <button
+          type="button"
+          className="home-evaluation-entry"
+          onClick={onEvaluationClick}
+          aria-label="打开测评"
+        >
+          <FlaskConical size={14} />
+          测评
+        </button>
         <button
           type="button"
           className="home-avatar"
@@ -715,8 +754,8 @@ export function HomePage({ profile, onStartPlanning, onProfileClick }: HomePageP
         </div>
 
       {/* ── 主输入卡片 ── */}
-      <div className="home-input-card">
-        <form className="home-input-form" onSubmit={handleSubmit}>
+      <form className="home-input-card" onSubmit={handleSubmit}>
+        <div className="home-input-form">
           <textarea
             ref={textareaRef}
             className="home-input-textarea"
@@ -727,24 +766,20 @@ export function HomePage({ profile, onStartPlanning, onProfileClick }: HomePageP
             rows={2}
             aria-label="输入出行想法"
           />
-        </form>
+        </div>
 
         {/* 弹幕推荐：点击填入输入框 */}
-        <DanmakuSuggestions onSelect={(text) => {
-          setInputText(text);
-          textareaRef.current?.focus();
-        }} />
+        <DanmakuSuggestions onSelect={handleSuggestionSelect} />
 
         {/* 底部发送按钮 */}
         <button
-          type="button"
+          type="submit"
           className="home-input-send"
           disabled={!inputText.trim()}
-          onClick={handleSubmit as unknown as React.MouseEventHandler}
         >
           开始规划
         </button>
-      </div>
+      </form>
 
         {/* ── 猜你喜欢（横向滚动） ── */}
         <div className="home-featured-section">

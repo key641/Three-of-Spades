@@ -1,5 +1,6 @@
 from app.schemas.user import UserProfile
 from app.services.predictive_route_service import PredictiveRouteRequest, PredictiveRouteService
+from app.schemas.route import RoutePlanResponse
 
 
 def _overlap_ratio(route_a, route_b) -> float:
@@ -79,6 +80,17 @@ def test_new_user_gets_top_diverse_routes_without_default_profile() -> None:
         for other in response.routes[index + 1 :]:
             assert _overlap_ratio(route, other) <= 0.7
             assert {stop.poi_id for stop in route.stops} != {stop.poi_id for stop in other.stops}
+
+
+def test_predictive_route_service_returns_best_partial_result() -> None:
+    service = PredictiveRouteService()
+    partial = RoutePlanResponse.model_construct(routes=[object(), object()])
+    service.route_service.generate_routes = lambda _request: partial
+
+    response = service.generate(PredictiveRouteRequest(user_id="partial", city="上海"))
+
+    assert response is partial
+    assert len(response.routes) == 2
 
 
 def test_rainy_predictive_routes_include_indoor_option() -> None:

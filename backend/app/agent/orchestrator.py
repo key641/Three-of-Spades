@@ -133,6 +133,14 @@ class AgentOrchestrator:
         )
         await emit_pending_trace()
 
+        distinct_candidate_modes = set(message_route.candidate_planning_modes)
+        if (
+            message_route.confidence < 0.5
+            and len(distinct_candidate_modes) >= 2
+            and session_state.current_routes
+        ):
+            return self._handle_ambiguous_planning_mode(request, session_state, trace)
+
         if message_route.intent_type == MessageIntentType.ROUTE_DETAIL_QUESTION:
             response = self.route_detail_handler.answer(request.message, request.session_id, session_state)
             response.agent_trace = [*trace, *response.agent_trace]
@@ -229,6 +237,79 @@ class AgentOrchestrator:
         # ── 追问判断必须在应用默认起点之前执行 ──────────────────────────────
         # 若先执行 _apply_default_city_start，会把 intent.start_location_name 设为"西单站"等默认值，
         # 导致 _is_missing_city 误判为"用户已提供具体地点"而跳过城市/区域追问。
+        # 用户明确说出的起点优先于 GPS；只有未说起点时才使用当前位置。
+        if intent.start_location_name and (intent.start_lat is None or intent.start_lng is None):
+            named_start = self._resolve_named_start(intent.city, intent.start_location_name)
+            if named_start is not None:
+                intent = intent.model_copy(update={
+                    "start_lat": named_start.lat,
+                    "start_lng": named_start.lng,
+                })
+                trace.append(
+                    AgentTraceStep(
+                        step="apply_named_start",
+                        label=f"使用用户指定起点：{intent.start_location_name}",
+                        status="done",
+                        details={
+                            "start_location_name": intent.start_location_name,
+                            "start_lat": named_start.lat,
+                            "start_lng": named_start.lng,
+                            "matched_poi": named_start.name,
+                            "reason": "用户消息中的明确起点优先于当前位置。",
+                        },
+                    )
+                )
+                await emit_pending_trace()
+
+        # ── 未指定起点时使用 GPS，最后才使用城市级规划兜底 ────────────────
+        # 优先使用前端传来的 GPS 坐标作为起点（LLM 不会输出具体坐标）
+        if not intent.start_location_name and intent.start_lat is None and intent.start_lng is None:
+            if request.start_lat is not None and request.start_lng is not None:
+                city_pois = self.poi_service.search(Intent(city=intent.city), limit=5)
+                min_dist = self._min_distance_to_pois(request.start_lat, request.start_lng, city_pois)
+                intent = intent.model_copy(update={
+                    "start_lat": request.start_lat,
+                    "start_lng": request.start_lng,
+                    "start_location_name": "当前位置",
+                })
+                trace.append(
+                    AgentTraceStep(
+                        step="apply_gps_start",
+                        label=f"使用GPS坐标作为起点：({request.start_lat:.4f}, {request.start_lng:.4f})",
+                        status="done",
+                        details={
+                            "start_lat": request.start_lat,
+                            "start_lng": request.start_lng,
+                            "min_dist_to_poi_km": round(min_dist, 1) if min_dist is not None else None,
+                            "reason": "使用前端传入的 GPS 坐标作为规划起点。",
+                        },
+                    )
+                )
+                await emit_pending_trace()
+
+        if (
+            not intent.start_location_name
+            and intent.start_lat is not None
+            and intent.start_lng is not None
+            and request.start_lat is not None
+            and request.start_lng is not None
+        ):
+            intent = intent.model_copy(update={"start_location_name": "当前位置"})
+            trace.append(
+                AgentTraceStep(
+                    step="apply_gps_start",
+                    label=f"使用GPS坐标作为起点：({intent.start_lat:.4f}, {intent.start_lng:.4f})",
+                    status="done",
+                    details={
+                        "start_location_name": "当前位置",
+                        "start_lat": intent.start_lat,
+                        "start_lng": intent.start_lng,
+                        "reason": "使用前端传入的 GPS 坐标作为规划起点。",
+                    },
+                )
+            )
+            await emit_pending_trace()
+
         clarification = self.clarification_policy.evaluate(
             request=request,
             intent=intent,
@@ -238,35 +319,9 @@ class AgentOrchestrator:
         if clarification.need_clarification:
             return self._handle_clarification(request, session_state, trace, clarification, intent)
 
-        # ── 追问通过后再应用起点：优先 GPS，兜底默认商圈 ────────────────────
-        # 优先使用前端传来的 GPS 坐标作为起点（LLM 不会输出具体坐标）
-        # 但若 GPS 距城市 POI 过远（> 8km），则 fallback 到默认商圈起点，避免时间窗口不足
-        if intent.start_lat is None and intent.start_lng is None:
-            if request.start_lat is not None and request.start_lng is not None:
-                city_pois = self.poi_service.search(Intent(city=intent.city), limit=5)
-                min_dist = self._min_distance_to_pois(request.start_lat, request.start_lng, city_pois)
-                if min_dist is not None and min_dist <= 8.0:
-                    intent = intent.model_copy(update={
-                        "start_lat": request.start_lat,
-                        "start_lng": request.start_lng,
-                        "start_location_name": intent.start_location_name or "当前位置",
-                    })
-                    trace.append(
-                        AgentTraceStep(
-                            step="apply_gps_start",
-                            label=f"使用GPS坐标作为起点：({request.start_lat:.4f}, {request.start_lng:.4f})",
-                            status="done",
-                            details={
-                                "start_lat": request.start_lat,
-                                "start_lng": request.start_lng,
-                                "min_dist_to_poi_km": round(min_dist, 1) if min_dist is not None else None,
-                                "reason": "使用前端传入的 GPS 坐标作为规划起点。",
-                            },
-                        )
-                    )
-                    await emit_pending_trace()
-                # else: GPS 距 POI 太远，走下面的默认商圈逻辑
-        intent, default_start = self._apply_default_city_start(intent)
+        default_start = None
+        if not intent.start_location_name and intent.start_lat is None and intent.start_lng is None:
+            intent, default_start = self._apply_default_city_start(intent)
         if default_start:
             trace.append(
                 AgentTraceStep(
@@ -347,26 +402,6 @@ class AgentOrchestrator:
         routes: list[Route] = []
         recall_attempts: list[dict[str, object]] = []
 
-        async def build_routes(candidate_pois: list[POI]) -> list[Route]:
-            scores, fine_rank_details = self.fine_rank_service.score_map(
-                candidate_pois,
-                intent,
-                user_profile,
-                strategy_tags=strategy_tags,
-                objective="balanced",
-            )
-            route_request = RoutePlanRequest(
-                intent=intent,
-                user_profile=user_profile,
-                strategy_weights=strategy_weights,
-                strategy_tags=strategy_tags,
-                candidate_pois=candidate_pois,
-                poi_relevance_scores=scores,
-                poi_fine_rank_details=fine_rank_details,
-            )
-            response = await asyncio.to_thread(self.route_service.generate_routes, route_request)
-            return response.routes
-
         for recall_limit, relax_preferences in [(60, False), (90, True), (120, True)]:
             pois = self.poi_service.search(
                 intent,
@@ -411,17 +446,16 @@ class AgentOrchestrator:
                     }
                 )
                 break
-            routes = await build_routes(pois)
             recall_attempts.append(
                 {
                     "limit": recall_limit,
                     "relax_preferences": relax_preferences,
                     "poi_count": len(pois),
-                    "route_count": len(routes),
+                    "route_count": 0,
                 }
             )
-            if len(routes) >= 3:
-                break
+            # Route generation happens once in the multi-objective Fine Rank pipeline below.
+            break
 
         if not pois:
             message = self._no_poi_data_message(intent)
@@ -523,8 +557,8 @@ class AgentOrchestrator:
             return response.routes
 
         routes = await build_routes(pois, allow_min_stops_fallback=False)
-        for recall_limit in [200, 260]:
-            if len(routes) >= 3:
+        for recall_limit in [120]:
+            if routes:
                 break
             expanded_recall = True
             expanded_pois = self.poi_service.search(
@@ -539,8 +573,8 @@ class AgentOrchestrator:
                 routes = expanded_routes
                 final_pois = expanded_pois
 
-        if len(routes) < 3:
-            message = "当前候选不足以生成 3 条互不重复且可执行的路线，可以换北京/上海其他区域或减少约束。"
+        if not routes:
+            message = "当前没有找到满足约束且可执行的路线，可以更换区域或减少部分约束。"
             trace.append(
                 AgentTraceStep(
                     step="generate_routes",
@@ -548,9 +582,11 @@ class AgentOrchestrator:
                     status="done",
                     details={
                         "count": len(routes),
-                        "required_count": 3,
+                        "required_count": 1,
                         "recall_attempts": recall_attempts,
-                        "reason": "insufficient_non_overlapping_routes",
+                        "reason": "no_feasible_routes",
+                        "poi_pipeline": self.poi_service.last_diagnostics,
+                        "route_pipeline": self.route_service.last_diagnostics,
                     },
                 )
             )
@@ -601,12 +637,12 @@ class AgentOrchestrator:
             "cross_route_dedup": True,
             "cross_route_poi_dedup": "zero_overlap",
             "recall_attempts": recall_attempts,
-            "final_candidate_poi_count": len(pois),
+            "final_candidate_poi_count": len(final_pois),
             "min_stop_counts": [len(route.stops) for route in routes[:5]],
+            "route_pipeline": self.route_service.last_diagnostics,
         }
         if request.debug:
             trace[-1].details["poi_pipeline"] = self.poi_service.last_diagnostics
-            trace[-1].details["route_pipeline"] = self.route_service.last_diagnostics
         await emit_pending_trace()
         logger.info(
             "step done session_id=%s step=generate_routes count=%s routes=%s",
@@ -657,6 +693,22 @@ class AgentOrchestrator:
             if dist < min_dist:
                 min_dist = dist
         return min_dist if min_dist != float("inf") else None
+
+    def _resolve_named_start(self, city: str, location_name: str) -> POI | None:
+        name = location_name.strip().lower()
+        if not name:
+            return None
+        candidates = self.poi_service.all_pois(city)
+        exact = [
+            poi for poi in candidates
+            if name in poi.name.lower()
+            or name in poi.business_area.lower()
+            or name in poi.address.lower()
+            or name in poi.district.lower()
+        ]
+        if not exact:
+            return None
+        return max(exact, key=lambda poi: (name in poi.name.lower(), poi.rating, poi.review_count))
 
     def _apply_default_city_start(self, intent: Intent) -> tuple[Intent, dict[str, object] | None]:
         if intent.start_lat is not None and intent.start_lng is not None:
@@ -902,6 +954,37 @@ class AgentOrchestrator:
             agent_trace=trace,
         )
 
+    def _handle_ambiguous_planning_mode(
+        self,
+        request: ChatRequest,
+        session_state,
+        trace: list[AgentTraceStep],
+    ) -> ChatResponse:
+        message = "你是想按新要求重新生成整条路线，还是只换掉当前路线中的某一站？"
+        trace.append(
+            AgentTraceStep(
+                step="clarify_planning_mode",
+                label="规划范围不明确，先确认整体重规划或局部替换",
+                status="done",
+                details={
+                    "candidate_modes": ["full_replan", "partial_replan"],
+                    "reason": "多个规划方式置信度接近，避免误改整条路线。",
+                },
+            )
+        )
+        return ChatResponse(
+            session_id=request.session_id,
+            message=message,
+            need_clarification=True,
+            clarifying_question=message,
+            clarification_type="planning_mode",
+            inferred_context={"has_current_routes": bool(session_state.current_routes)},
+            intent=session_state.last_intent,
+            user_profile=session_state.user_profile,
+            routes=session_state.current_routes,
+            agent_trace=trace,
+        )
+
     def _format_partial_replan_message(self, routes: list[Route]) -> str:
         if not routes:
             return "我尝试基于原方案做局部重规划，但当前没有可调整的路线。"
@@ -1074,6 +1157,9 @@ class AgentOrchestrator:
         data["removed_must_include"] = self._filter_allowed_needs(data["removed_must_include"])
         data["added_hard_constraints"] = self._filter_hard_constraints(data["added_hard_constraints"])
         data["modified_hard_constraints"] = self._filter_hard_constraints(data["modified_hard_constraints"])
+        explicit_fields = extract_explicit_trip_fields(message) if message else {}
+        if explicit_fields.get("start_location_name"):
+            data["modified_hard_constraints"]["start_location_name"] = explicit_fields["start_location_name"]
         data = self._guard_relative_budget_change(data, message, session_state)
         normalized = IntentDelta.model_validate(data)
         return normalize_delta_units(normalized, message) if message else normalized
@@ -1106,6 +1192,9 @@ class AgentOrchestrator:
                 "people_count",
                 "target_district",
                 "target_business_area",
+                "start_location_name",
+                "start_lat",
+                "start_lng",
                 "start_time",
                 "duration_hours",
                 "budget_per_person",
@@ -1133,7 +1222,12 @@ class AgentOrchestrator:
                 continue
             if key in {"people_count", "duration_hours", "budget_per_person"}:
                 result[key] = self._coerce_int(value, 0)
-            elif key in {"city", "target_district", "target_business_area", "start_time", "scenario"} and value:
+            elif key in {"start_lat", "start_lng"}:
+                try:
+                    result[key] = float(value)
+                except (TypeError, ValueError):
+                    continue
+            elif key in {"city", "target_district", "target_business_area", "start_location_name", "start_time", "scenario"} and value:
                 result[key] = str(value)
         return result
 
@@ -1178,7 +1272,7 @@ class AgentOrchestrator:
         if previous_state and intent.city_from_message and intent.city != previous_state.city:
             delta.modified_hard_constraints["city"] = intent.city
         if previous_state:
-            for field in ("people_count", "duration_hours", "start_time", "budget_per_person"):
+            for field in ("people_count", "duration_hours", "start_time", "budget_per_person", "start_location_name"):
                 if field in explicit_fields:
                     value = explicit_fields[field]
                     if getattr(previous_state, field) != value:
@@ -1321,9 +1415,14 @@ class AgentOrchestrator:
                         "stops": [
                             {
                                 "name": stop.name,
+                                "district": stop.district,
+                                "business_area": stop.business_area,
+                                "address": stop.address,
                                 "start_time": stop.start_time,
                                 "end_time": stop.end_time,
                                 "estimated_cost": stop.estimated_cost,
+                                "walking_intensity": stop.walking_intensity,
+                                "recommended_transport": stop.recommended_transport,
                                 "transport_mode_from_previous": stop.transport_mode_from_previous,
                                 "travel_minutes_from_previous": stop.travel_minutes_from_previous,
                                 "highlight_text": stop.highlight_text,
