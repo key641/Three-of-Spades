@@ -20,7 +20,7 @@ class Settings(BaseSettings):
     deepseek_base_url: str = "https://api.deepseek.com/v1"
     amap_web_service_key: str = ""
     map_route_provider: str = "mock"
-    planning_pipeline_mode: str = ""
+    planning_pipeline_mode: str = "v2"
     planning_pipeline_rollout_percent: int = 100
     planning_pipeline_v2: bool | None = None
     planning_pipeline_shadow: bool | None = None

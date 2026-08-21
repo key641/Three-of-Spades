@@ -840,7 +840,7 @@ PLANNING_PIPELINE_MODE=legacy|shadow|v2
 PLANNING_PIPELINE_ROLLOUT_PERCENT=0..100
 ```
 
-旧的 `PLANNING_PIPELINE_V2` 和 `PLANNING_PIPELINE_SHADOW` 仍兼容。生产环境未显式配置时默认 shadow；`v2` 模式下会按 user/session hash 做确定性灰度，支持 10%、50%、100% 放量。
+旧的 `PLANNING_PIPELINE_V2` 和 `PLANNING_PIPELINE_SHADOW` 仍兼容。未显式配置时默认使用 V2；`v2` 模式下会按 user/session hash 做确定性灰度，支持 10%、50%、100% 放量。
 
 CI 包含：
 

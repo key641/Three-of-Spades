@@ -350,6 +350,6 @@ A 同学调试路线点评大模型使用。该接口不重新生成路线，只
 
 `RoutePlanRequest` 还支持内部可选字段 `poi_candidate_ids_by_objective`。路线响应新增默认值为 `0` 的 `degradation_level`；两站轻量路线会同时返回 warning。`debug=true` 时诊断包含阶段耗时、Beam 状态、硬约束淘汰原因、地图缓存命中率、降级步骤和不可行说明。
 
-发布配置使用 `PLANNING_PIPELINE_MODE=legacy|shadow|v2` 与 `PLANNING_PIPELINE_ROLLOUT_PERCENT=0..100`。旧 `PLANNING_PIPELINE_V2/SHADOW` 仍兼容；生产环境未显式配置时默认 shadow。
+发布配置使用 `PLANNING_PIPELINE_MODE=legacy|shadow|v2` 与 `PLANNING_PIPELINE_ROLLOUT_PERCENT=0..100`。旧 `PLANNING_PIPELINE_V2/SHADOW` 仍兼容；未显式配置时默认使用 V2。
 
 行程评分和画像更新使用。

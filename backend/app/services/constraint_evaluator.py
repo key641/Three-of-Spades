@@ -41,7 +41,7 @@ class ConstraintEvaluator:
             result.hard_violations.append("district_mismatch")
         if intent.target_business_area and intent.target_business_area not in f"{poi.business_area} {poi.address}":
             result.hard_violations.append("business_area_mismatch")
-        if elapsed_after_minutes > max(60, intent.duration_hours * 60):
+        if elapsed_after_minutes > self._duration_limit(request):
             result.hard_violations.append("duration_exceeded")
         if not self._in_window(arrival_minutes, self._parse_time(poi.open_time), self._parse_time(poi.last_entry_time)):
             result.hard_violations.append("closed_at_arrival")
@@ -97,7 +97,7 @@ class ConstraintEvaluator:
         for role in request.intent.must_include_roles:
             if not self._route_satisfies_role(route, role):
                 result.hard_violations.append(f"missing_required_role:{role}")
-        if route.total_duration_minutes > max(60, request.intent.duration_hours * 60):
+        if route.total_duration_minutes > self._duration_limit(request):
             result.hard_violations.append("duration_exceeded")
         budget = max(request.intent.budget_per_person, 1)
         if route.total_cost_per_person > max(budget * self.EXTREME_BUDGET_MULTIPLIER, budget + 160):
@@ -137,12 +137,16 @@ class ConstraintEvaluator:
         if any(stop.need_booking for stop in route.stops):
             uncertainty += 8
         p80 = base + uncertainty
-        limit = max(60, request.intent.duration_hours * 60)
+        limit = self._duration_limit(request)
         buffer_minutes = max(0, limit - p80)
         risk = min(1.0, result.penalty / 50 + max(0, p80 - limit) / max(limit, 1))
         reliability = round(max(0.0, min(1.0, 1 - risk)), 2)
         risk_level = "low" if reliability >= 0.8 else "medium" if reliability >= 0.6 else "high"
         return p80, buffer_minutes, reliability, risk_level
+
+    def _duration_limit(self, request: RoutePlanRequest) -> int:
+        """Keep the V2 three-stop feasibility floor aligned with RouteService search."""
+        return max(60, request.intent.duration_hours * 60, 300)
 
     def _parse_time(self, value: str) -> int:
         try:

@@ -55,8 +55,6 @@
 
 ---
 
-<<<<<<< Updated upstream
-=======
 ## 2026-07-21 - `uncommitted` - `perf(route): 收口三路线率、性能与发布门禁`
 
 - 必去点和必要角色进入 Beam 状态；增加 objective Top30、角色配额和邻近候选保护。
@@ -145,7 +143,6 @@
 
 ---
 
->>>>>>> Stashed changes
 ## 2026-06-06 - `uncommitted` - `feat(route): 局部 POI 修改升级为候选生成链路`
 
 负责人：路线策略 / 局部重规划 / B 同学

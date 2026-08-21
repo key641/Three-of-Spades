@@ -26,12 +26,8 @@ class POICandidate:
 class POIService:
     """B-owned module: filters POI candidates by intent and strategy tags."""
 
-<<<<<<< Updated upstream
-    MIN_DEFAULT_CANDIDATES = 60
-=======
     MIN_DEFAULT_CANDIDATES = 40
     CITY_CENTERS = {"上海": (31.2304, 121.4737), "北京": (39.9042, 116.4074)}
->>>>>>> Stashed changes
 
     def __init__(self, data_path: Path | None = None) -> None:
         self.data_path = data_path or Path(__file__).resolve().parents[3] / "data" / "seed" / "pois.json"
@@ -45,11 +41,7 @@ class POIService:
         self,
         intent: Intent,
         user_profile: UserProfile | None = None,
-<<<<<<< Updated upstream
-        limit: int = 60,
-=======
         limit: int | None = None,
->>>>>>> Stashed changes
         strategy_tags: list[StrategyTag] | None = None,
         relax_preferences: bool = False,
     ) -> list[POI]:
@@ -91,32 +83,28 @@ class POIService:
         candidates = relaxed_matches if relax_preferences else strict_matches or relaxed_matches
         if len(candidates) < min_candidates:
             candidates = self._merge_candidates(candidates, relaxed_matches)
-        if not candidates:
-<<<<<<< Updated upstream
-            return []
-
-        recalled = self.recall_service.recall(
-            intent,
-=======
-            candidates = city_matches
         if intent.must_include_poi_ids:
             required_ids = set(intent.must_include_poi_ids)
             required_candidates = [candidate for candidate in city_matches if candidate.poi.id in required_ids]
             candidates = self._merge_candidates(required_candidates, candidates)
+        if not candidates:
+            self.last_diagnostics = {
+                "pipeline": self._pipeline_mode(user_profile.user_id if user_profile else "anonymous"),
+                "city_count": len(city_matches),
+                "strict_count": len(strict_matches),
+                "filtered_count": 0,
+                "output_count": 0,
+                "reason": "no_candidates_after_hard_filters",
+            }
+            return []
 
-        legacy_ranked = sorted(
->>>>>>> Stashed changes
+        legacy_ranked = self.coarse_rank_service.rank(
             candidates,
+            intent,
             user_profile=user_profile,
             strategy_tags=strategy_tags or [],
-            target_pool_size=max(limit * 4, 240),
+            limit=min(output_limit, len(candidates)),
         )
-<<<<<<< Updated upstream
-        ranked = self.coarse_rank_service.rank(recalled, intent, user_profile, strategy_tags or [], limit=limit)
-        ranked = self._diversify_ranked_candidates(ranked, limit)
-        ranked = self._promote_low_walking_matches(ranked, intent)
-        return [candidate.poi for candidate in ranked[:limit]]
-=======
         legacy_ranked = self._protect_short_trip_candidates(legacy_ranked, intent)
         legacy_ranked = self._diversify_ranked_candidates(legacy_ranked, output_limit)
         legacy_output = [candidate.poi for candidate in legacy_ranked[:output_limit]]
@@ -179,9 +167,9 @@ class POIService:
             elif settings.planning_pipeline_v2 is True:
                 mode = "v2"
             else:
-                mode = "shadow" if settings.app_env == "production" else "v2"
+                mode = "v2"
         if mode not in {"legacy", "shadow", "v2"}:
-            mode = "shadow" if settings.app_env == "production" else "v2"
+            mode = "v2"
         if mode == "v2":
             percent = max(0, min(100, settings.planning_pipeline_rollout_percent))
             bucket = int(hashlib.sha256(identity.encode("utf-8")).hexdigest()[:8], 16) % 100
@@ -211,7 +199,6 @@ class POIService:
             recall_limit = math.ceil(recall_limit * 1.3)
             coarse_limit = math.ceil(coarse_limit * 1.25)
         return recall_limit, coarse_limit
->>>>>>> Stashed changes
 
     def has_city_data(self, city: str) -> bool:
         return any(candidate.poi.city == city for candidate in self._candidates)
@@ -420,21 +407,6 @@ class POIService:
         selected.extend(candidate for candidate in ranked if candidate.poi.id not in selected_ids)
         return selected
 
-<<<<<<< Updated upstream
-    def _promote_low_walking_matches(self, ranked: list[POICandidate], intent: Intent) -> list[POICandidate]:
-        terms = self._normalize_terms([*intent.preferences, *intent.interest_tags, *intent.optimization_goals])
-        if not self._has_term(terms, "少走路"):
-            return ranked
-        return sorted(
-            ranked,
-            key=lambda candidate: (
-                candidate.poi.walking_intensity == "low",
-                "transit_anchor" in candidate.poi.route_roles,
-                self.coarse_rank_service.score(candidate, intent, None, []),
-            ),
-            reverse=True,
-        )
-=======
     def _protect_short_trip_candidates(self, ranked: list[POICandidate], intent: Intent) -> list[POICandidate]:
         if intent.duration_hours > 3 or not ranked:
             return ranked
@@ -461,7 +433,6 @@ class POIService:
         )[:24]
         protected_ids = {candidate.poi.id for candidate in compact}
         return [*compact, *(candidate for candidate in ranked if candidate.poi.id not in protected_ids)]
->>>>>>> Stashed changes
 
     def _matches_budget(self, poi: POI, intent: Intent) -> bool:
         return poi.avg_price <= intent.budget_per_person

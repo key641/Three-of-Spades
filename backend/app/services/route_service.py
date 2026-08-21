@@ -68,16 +68,11 @@ class RouteService:
         "night_friendly": "夜间友好候选路线",
     }
 
-<<<<<<< Updated upstream
-    CANDIDATES_PER_OBJECTIVE = 16
-    INTERNAL_CANDIDATES_PER_OBJECTIVE = 16
-=======
     CANDIDATES_PER_OBJECTIVE = 8
     INTERNAL_CANDIDATES_PER_OBJECTIVE = 30
     BEAM_WIDTH = 8
     BRANCH_FACTOR = 12
     START_SEEDS_PER_OBJECTIVE = 16
->>>>>>> Stashed changes
     TARGET_ROUTE_COUNT = 3
     DEFAULT_MIN_ROUTE_STOPS = 3
     RELAXED_MIN_ROUTE_STOPS = 2
@@ -145,11 +140,6 @@ class RouteService:
             routes_per_objective=self.CANDIDATES_PER_OBJECTIVE,
             min_stops_floor=floor,
         ).routes
-<<<<<<< Updated upstream
-        selected = self._select_final_routes(request, candidates, objectives, self.TARGET_ROUTE_COUNT, floor)
-        if len(selected) < self.TARGET_ROUTE_COUNT:
-            selected = self._fill_disjoint_routes(request, objectives, selected, self.TARGET_ROUTE_COUNT, floor)
-=======
         strict_zero_overlap = self.experiment_config.diversity_mode == "zero_overlap"
         initial_overlap = 0.0 if strict_zero_overlap else 0.3
         relaxed_overlap = 0.0 if strict_zero_overlap else 0.5
@@ -169,7 +159,16 @@ class RouteService:
                 max_overlap=relaxed_overlap,
                 max_per_objective=2,
             )
->>>>>>> Stashed changes
+
+        if len(selected) < self.TARGET_ROUTE_COUNT and not request.intent.must_include_poi_ids:
+            self.last_diagnostics["degradation_steps"].append("disjoint_greedy_fill")
+            selected = self._fill_disjoint_routes(
+                request,
+                objectives,
+                selected,
+                self.TARGET_ROUTE_COUNT,
+                floor,
+            )
 
         if (
             len(selected) < self.TARGET_ROUTE_COUNT
@@ -189,19 +188,6 @@ class RouteService:
                 max_overlap=relaxed_overlap,
                 max_per_objective=2,
             )
-<<<<<<< Updated upstream
-            if len(selected) < self.TARGET_ROUTE_COUNT:
-                selected = self._fill_disjoint_routes(
-                    request,
-                    objectives,
-                    selected,
-                    self.TARGET_ROUTE_COUNT,
-                    self.RELAXED_MIN_ROUTE_STOPS,
-                )
-
-        if len(selected) < self.TARGET_ROUTE_COUNT:
-            return RoutePlanResponse(routes=[])
-=======
             degradation_level = 2
 
         if len(selected) < self.TARGET_ROUTE_COUNT:
@@ -216,7 +202,22 @@ class RouteService:
                 max_per_objective=3,
             )
             degradation_level = 3
->>>>>>> Stashed changes
+
+        if (
+            len(selected) == self.TARGET_ROUTE_COUNT
+            and len({route.objective for route in selected}) < self.TARGET_ROUTE_COUNT
+            and not request.intent.must_include_poi_ids
+        ):
+            distinct_disjoint = self._fill_disjoint_routes(
+                request,
+                objectives,
+                [],
+                self.TARGET_ROUTE_COUNT,
+                floor,
+            )
+            if len(distinct_disjoint) == self.TARGET_ROUTE_COUNT:
+                selected = distinct_disjoint
+                degradation_level = 0
 
         for route in selected:
             if len(route.stops) <= 2:
@@ -307,6 +308,18 @@ class RouteService:
                 key=lambda poi: self._distance_km(request.intent.start_lat, request.intent.start_lng, poi) or 0,
             )[:12]
             for poi in nearest_to_start:
+                if poi.id not in selected_ids:
+                    selected.append(poi)
+                    selected_ids.add(poi.id)
+        if request.intent.duration_hours <= 6:
+            compact_candidates = sorted(
+                request.candidate_pois,
+                key=lambda poi: (
+                    poi.visit_duration_minutes + poi.queue_minutes,
+                    self._distance_km(request.intent.start_lat, request.intent.start_lng, poi) or 0,
+                ),
+            )[:24]
+            for poi in compact_candidates:
                 if poi.id not in selected_ids:
                     selected.append(poi)
                     selected_ids.add(poi.id)
@@ -430,7 +443,7 @@ class RouteService:
         """Derive two-stop fallbacks from the existing objective pools without rerunning Beam."""
         routes: list[Route] = []
         poi_by_id = {poi.id: poi for poi in request.candidate_pois}
-        time_limit = max(60, request.intent.duration_hours * 60)
+        time_limit = max(60, request.intent.duration_hours * 60, min_stops * 100)
         required_ids = set(request.intent.must_include_poi_ids)
         for objective in self._unique_objectives(objectives):
             if objective not in self.OBJECTIVE_TITLES:
@@ -530,6 +543,7 @@ class RouteService:
         scored = [self.rerank_service.score(route, request, poi_by_id, []) for route in routes]
         scored = [item for item in scored if item is not None]
         exempt_ids = set(request.intent.must_include_poi_ids)
+        available_objectives = {item.route.objective for item in scored}
         for size in range(min(target_count, len(scored)), 0, -1):
             best = None
             best_score = float("-inf")
@@ -538,6 +552,8 @@ class RouteService:
                 for item in group:
                     objective_counts[item.route.objective] = objective_counts.get(item.route.objective, 0) + 1
                 if any(count > max_per_objective for count in objective_counts.values()):
+                    continue
+                if len(available_objectives) >= size and len(objective_counts) < size:
                     continue
                 if any(
                     self.rerank_service._route_overlap(left.route, right.route, exempt_ids) > max_overlap
@@ -588,6 +604,8 @@ class RouteService:
         for objective in objectives:
             if len(result) >= target_count:
                 break
+            if any(route.objective == objective for route in result):
+                continue
             for seed in self._start_candidates(request.candidate_pois, objective, request):
                 if seed.id in used_poi_ids:
                     continue
@@ -617,6 +635,8 @@ class RouteService:
             for objective in objectives:
                 if len(result) >= target_count:
                     break
+                if any(route.objective == objective for route in result):
+                    continue
                 for seed in self._start_candidates(request.candidate_pois, objective, request):
                     if seed.id in used_poi_ids:
                         continue
@@ -703,6 +723,8 @@ class RouteService:
         scored: list[Route] = []
         for route in candidates:
             if not route.stops:
+                continue
+            if not self._route_has_context_roles(route, objective, request):
                 continue
             constraints = self.constraint_evaluator.evaluate_route(route, request, poi_by_id)
             if not constraints.feasible:
@@ -854,36 +876,34 @@ class RouteService:
             max_stops = min(max_stops, max(1, max_stops_override))
         min_stops = min(min_stops, max_stops)
         ranked_start_pool = self._start_candidates(pois, objective, request)
-<<<<<<< Updated upstream
-        diverse_start_pool = self._diverse_start_seeds(ranked_start_pool, self.INTERNAL_CANDIDATES_PER_OBJECTIVE * 2)
-        diverse_ids = {poi.id for poi in diverse_start_pool}
-        start_pool = diverse_start_pool + [poi for poi in ranked_start_pool if poi.id not in diverse_ids]
-        routes: list[Route] = []
-        signatures: set[tuple[str, ...]] = set()
-
-        for seed in start_pool[: self.INTERNAL_CANDIDATES_PER_OBJECTIVE * 2]:
-            route = self._build_candidate(seed, pois, objective, request, time_limit, min_stops, max_stops)
-            signature = self._route_signature(route)
-            if route.stops and len(route.stops) >= min_stops and signature not in signatures:
-                routes.append(route)
-                signatures.add(signature)
-            if len(routes) >= self.INTERNAL_CANDIDATES_PER_OBJECTIVE:
+        compact_start_pool = sorted(
+            ranked_start_pool,
+            key=lambda poi: (
+                poi.visit_duration_minutes + poi.queue_minutes + self._leg_minutes(request.intent.start_lat, request.intent.start_lng, poi),
+                -self._poi_score(poi, objective, request, request.intent.start_lat, request.intent.start_lng),
+            ),
+        )[: max(4, self.START_SEEDS_PER_OBJECTIVE // 2)]
+        diverse_start_pool = self._diverse_start_seeds(ranked_start_pool, self.START_SEEDS_PER_OBJECTIVE)
+        start_pool: list[POI] = []
+        start_ids: set[str] = set()
+        for poi in [*compact_start_pool, *diverse_start_pool]:
+            if poi.id in start_ids:
+                continue
+            start_pool.append(poi)
+            start_ids.add(poi.id)
+            if len(start_pool) >= self.START_SEEDS_PER_OBJECTIVE:
                 break
-
-        if len(routes) < self.INTERNAL_CANDIDATES_PER_OBJECTIVE:
-            for seed in start_pool[self.INTERNAL_CANDIDATES_PER_OBJECTIVE * 2 :]:
-                route = self._build_candidate(seed, pois, objective, request, time_limit, min_stops, max_stops)
-                signature = self._route_signature(route)
-                if route.stops and len(route.stops) >= min_stops and signature not in signatures:
-                    routes.append(route)
-                    signatures.add(signature)
-                if len(routes) >= self.INTERNAL_CANDIDATES_PER_OBJECTIVE:
-=======
-        start_pool = self._diverse_start_seeds(ranked_start_pool, self.START_SEEDS_PER_OBJECTIVE)
         required_ids = set(request.intent.must_include_poi_ids)
         required_seed_pool = [poi for poi in ranked_start_pool if poi.id in required_ids]
         if required_seed_pool:
-            start_pool = required_seed_pool
+            merged_start_pool: list[POI] = []
+            merged_start_ids: set[str] = set()
+            for poi in [*required_seed_pool, *start_pool]:
+                if poi.id in merged_start_ids:
+                    continue
+                merged_start_pool.append(poi)
+                merged_start_ids.add(poi.id)
+            start_pool = merged_start_pool[: self.START_SEEDS_PER_OBJECTIVE]
         beam_states: list[RouteBeamState] = []
         hard_rejections: dict[str, int] = {}
         start_minutes = self._parse_time(request.intent.start_time)
@@ -954,8 +974,28 @@ class RouteService:
                     for poi in next_candidates
                     if any(self._poi_satisfies_required_role(poi, role) for role in state.missing_required_roles)
                 ]
+                has_meal = any(self._is_meal_poi(poi) or self._meal_group(poi) == "snack" for poi in state.pois)
+                has_coffee = any(self._is_coffee_poi(poi) for poi in state.pois)
+                context_next: list[POI] = []
+                if self._route_wants_meal(objective, request) and not has_meal:
+                    context_next = [
+                        poi
+                        for poi in next_candidates
+                        if self._is_meal_poi(poi) or self._meal_group(poi) == "snack"
+                    ]
+                elif self._route_wants_coffee(objective, request) and not has_coffee:
+                    context_next = [poi for poi in next_candidates if self._is_coffee_poi(poi)]
+                compact_next = sorted(
+                    next_candidates,
+                    key=lambda poi: (
+                        self._leg_minutes(state.current_lat, state.current_lng, poi)
+                        + poi.queue_minutes
+                        + poi.visit_duration_minutes,
+                        -self._poi_score(poi, objective, request, state.current_lat, state.current_lng),
+                    ),
+                )[:4]
                 branch: list[POI] = []
-                for poi in [*required_next, *role_next, *next_candidates]:
+                for poi in [*required_next, *role_next, *context_next, *compact_next, *next_candidates]:
                     if poi not in branch:
                         branch.append(poi)
                     if len(branch) >= self.BRANCH_FACTOR:
@@ -1064,6 +1104,30 @@ class RouteService:
             if len(route.stops) >= min_stops and signature not in enriched_signatures:
                 enriched_signatures.add(signature)
                 routes.append(route)
+        if required_ids and len(routes) < self.CANDIDATES_PER_OBJECTIVE:
+            required_pois = [poi for poi in ranked_start_pool if poi.id in required_ids]
+            optional_pois = [poi for poi in [*compact_start_pool, *ranked_start_pool] if poi.id not in required_ids]
+            optional_pois = self._diverse_start_seeds(optional_pois, 24)
+            for first_index, first in enumerate(optional_pois):
+                for second in optional_pois[first_index + 1 :]:
+                    for sequence in ([first, second, *required_pois], [first, *required_pois, second]):
+                        if len({poi.id for poi in sequence}) != len(sequence):
+                            continue
+                        route = self._build_candidate_from_sequence(sequence, objective, request, time_limit)
+                        signature = tuple(stop.poi_id for stop in route.stops)
+                        if (
+                            len(route.stops) >= min_stops
+                            and required_ids <= set(signature)
+                            and signature not in enriched_signatures
+                        ):
+                            enriched_signatures.add(signature)
+                            routes.append(route)
+                        if len(routes) >= self.CANDIDATES_PER_OBJECTIVE * 2:
+                            break
+                    if len(routes) >= self.CANDIDATES_PER_OBJECTIVE * 2:
+                        break
+                if len(routes) >= self.CANDIDATES_PER_OBJECTIVE * 2:
+                    break
         if min_stops == self.RELAXED_MIN_ROUTE_STOPS:
             if required_seed_pool:
                 pair_seeds = required_seed_pool
@@ -1089,7 +1153,6 @@ class RouteService:
                     if len(routes) >= self.CANDIDATES_PER_OBJECTIVE * 4:
                         break
                 if detail_budget_exhausted:
->>>>>>> Stashed changes
                     break
                 if len(routes) >= self.CANDIDATES_PER_OBJECTIVE * 4:
                     break
@@ -1530,8 +1593,7 @@ class RouteService:
             return True
         required = self._required_primary_category_count(len(stops), min_stops)
         primary_categories = {stop.primary_category or stop.category for stop in stops if stop.primary_category or stop.category}
-        categories = {stop.category for stop in stops if stop.category}
-        return len(primary_categories) >= required or len(categories) >= required
+        return len(primary_categories) >= required
 
     def _required_primary_category_count(self, stop_count: int, min_stops: int) -> int:
         if stop_count <= 2:
@@ -1569,7 +1631,7 @@ class RouteService:
         )
 
     def _allows_single_theme_route(self, request: RoutePlanRequest) -> bool:
-        terms = set(self._request_terms(request))
+        terms = set(self._intent_terms(request))
         return self._has_any(
             terms,
             [
@@ -1959,7 +2021,7 @@ class RouteService:
         return self._route_wants_meal(objective, request) or self._route_wants_coffee(objective, request)
 
     def _route_wants_meal(self, objective: str, request: RoutePlanRequest) -> bool:
-        terms = set(self._request_terms(request))
+        terms = set(self._intent_terms(request))
         explicit_meal = self._has_any(terms, ["吃好", "聚餐", "餐厅", "美食", "正餐", "小吃", "扫街"])
         explicit_coffee = self._has_any(terms, ["咖啡", "下午茶", "咖啡馆", "咖啡探店"])
         if explicit_coffee and not explicit_meal:
@@ -1967,7 +2029,7 @@ class RouteService:
         return objective in {"food_first", "photo_food"} or explicit_meal
 
     def _route_wants_coffee(self, objective: str, request: RoutePlanRequest) -> bool:
-        terms = set(self._request_terms(request))
+        terms = set(self._intent_terms(request))
         return self._has_any(terms, ["咖啡", "下午茶", "咖啡馆", "咖啡探店"])
 
     def _food_candidates_for_request(self, pois: list[POI], objective: str, request: RoutePlanRequest) -> list[POI]:
