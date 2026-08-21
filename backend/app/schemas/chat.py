@@ -10,6 +10,7 @@ from app.schemas.user import UserProfile
 
 
 class ChatRequest(BaseModel):
+    request_id: str | None = None
     session_id: str = "session_demo"
     user_id: str = "user_demo"
     message: str
@@ -86,3 +87,8 @@ class ChatResponse(BaseModel):
     user_profile: UserProfile | None = None
     routes: list[Route]
     agent_trace: list[AgentTraceStep]
+    planning_outcome: str | None = None
+    state_version: int | None = None
+    trace_id: str | None = None
+    warnings: list[str] = Field(default_factory=list)
+    degradation: dict[str, Any] | None = None

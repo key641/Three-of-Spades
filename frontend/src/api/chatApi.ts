@@ -440,6 +440,7 @@ export async function sendChatMessage(
 
   const payload = {
     session_id: getSessionId(),
+    request_id: crypto.randomUUID(),
     user_id:    profile?.user_id ?? "user_demo",
     message,
     event_type: "user_message",
@@ -549,6 +550,7 @@ export async function sendChatMessageStream(
 
   const streamPayload = {
     session_id: getSessionId(),
+    request_id: crypto.randomUUID(),
     user_id:    profile?.user_id ?? "user_demo",
     message,
     event_type: "user_message",

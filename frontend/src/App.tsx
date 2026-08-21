@@ -5,6 +5,7 @@ import { OnboardingPage } from "./pages/OnboardingPage";
 import { PlannerPage } from "./pages/PlannerPage";
 import { HomePage } from "./pages/HomePage";
 import { ProfilePage } from "./pages/ProfilePage";
+import { EvaluationPage } from "./pages/EvaluationPage";
 import type { AppTab } from "./components/TabBar";
 import type { Route, RouteStop } from "./api/types";
 
@@ -156,7 +157,7 @@ function routeToHistoryTrip(route: Route, avgScore: number): HistoryTrip {
 
 export default function App() {
   const [profile, setProfile] = useState<OnboardingProfile | null>(() => loadProfile());
-  const [activeTab, setActiveTab] = useState<AppTab>("home");
+  const [activeTab, setActiveTab] = useState<AppTab | "evaluation">("home");
   // 预设参数：首页点击路线/主题 → 跳规划页时携带
   const [plannerPreset, setPlannerPreset] = useState<PlannerPreset | null>(null);
   // 行程历史记录
@@ -213,6 +214,7 @@ export default function App() {
             profile={profile}
             onStartPlanning={handleStartPlanning}
             onProfileClick={() => setActiveTab("profile")}
+            onEvaluationClick={() => setActiveTab("evaluation")}
           />
         </div>
 
@@ -238,6 +240,10 @@ export default function App() {
             tripHistory={tripHistory}
             onBack={() => setActiveTab("home")}
           />
+        </div>
+
+        <div className={`app-page${activeTab === "evaluation" ? " active" : ""}`}>
+          <EvaluationPage onBack={() => setActiveTab("home")} />
         </div>
       </div>
 

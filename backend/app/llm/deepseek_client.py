@@ -36,7 +36,7 @@ class DeepSeekClient(LLMClient):
             json_mode,
         )
 
-        async with httpx.AsyncClient(timeout=30) as client:
+        async with httpx.AsyncClient(timeout=30, proxy=settings.llm_proxy_url or None) as client:
             try:
                 response = await client.post(
                     url,

@@ -41,7 +41,7 @@ class ConstraintEvaluator:
             result.hard_violations.append("district_mismatch")
         if intent.target_business_area and intent.target_business_area not in f"{poi.business_area} {poi.address}":
             result.hard_violations.append("business_area_mismatch")
-        if elapsed_after_minutes > max(60, intent.duration_hours * 60):
+        if elapsed_after_minutes > self._effective_duration_limit(intent.duration_hours):
             result.hard_violations.append("duration_exceeded")
         if not self._in_window(arrival_minutes, self._parse_time(poi.open_time), self._parse_time(poi.last_entry_time)):
             result.hard_violations.append("closed_at_arrival")
@@ -97,7 +97,7 @@ class ConstraintEvaluator:
         for role in request.intent.must_include_roles:
             if not self._route_satisfies_role(route, role):
                 result.hard_violations.append(f"missing_required_role:{role}")
-        if route.total_duration_minutes > max(60, request.intent.duration_hours * 60):
+        if route.total_duration_minutes > self._effective_duration_limit(request.intent.duration_hours):
             result.hard_violations.append("duration_exceeded")
         budget = max(request.intent.budget_per_person, 1)
         if route.total_cost_per_person > max(budget * self.EXTREME_BUDGET_MULTIPLIER, budget + 160):
@@ -137,7 +137,7 @@ class ConstraintEvaluator:
         if any(stop.need_booking for stop in route.stops):
             uncertainty += 8
         p80 = base + uncertainty
-        limit = max(60, request.intent.duration_hours * 60)
+        limit = self._effective_duration_limit(request.intent.duration_hours)
         buffer_minutes = max(0, limit - p80)
         risk = min(1.0, result.penalty / 50 + max(0, p80 - limit) / max(limit, 1))
         reliability = round(max(0.0, min(1.0, 1 - risk)), 2)
@@ -150,6 +150,16 @@ class ConstraintEvaluator:
             return int(hour) * 60 + int(minute)
         except (ValueError, AttributeError):
             return 0
+
+    def _effective_duration_limit(self, duration_hours: int) -> int:
+        """Keep feasibility aligned with the planner's minimum-stop compatibility window."""
+        if duration_hours <= 2:
+            minimum_stops = 2
+        elif duration_hours <= 6:
+            minimum_stops = 3
+        else:
+            minimum_stops = 4
+        return max(60, duration_hours * 60, minimum_stops * 100)
 
     def _in_window(self, value: int, start: int, end: int) -> bool:
         if end >= start:

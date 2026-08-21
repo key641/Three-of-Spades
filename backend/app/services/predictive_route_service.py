@@ -66,39 +66,10 @@ class PredictiveRouteService:
         intent = self._intent_for_request(request, planning_profile if has_profile else None, weather_preferences)
         strategy_tags = self.strategy_service.infer_tags(" ".join(intent.interest_tags + intent.optimization_goals + intent.preferences), intent, planning_profile)
         strategy_weights = self.profile_service.build_strategy_weights(intent, planning_profile, strategy_tags)
-<<<<<<< Updated upstream
         if not self.poi_service.has_city_data(intent.city):
             return RoutePlanResponse(routes=[])
-=======
-        pois = self.poi_service.search(intent, user_profile=planning_profile, strategy_tags=strategy_tags, limit=48)
-        objectives = self._profile_objectives(planning_profile, weather_preferences, pois) if has_profile else self.ALL_OBJECTIVES
-        scores_by_objective: dict[str, dict[str, float]] = {}
-        details_by_objective: dict[str, dict[str, dict[str, float]]] = {}
-        for objective in objectives:
-            scores, details = self.fine_rank_service.score_map(
-                pois,
-                intent,
-                planning_profile,
-                strategy_tags=strategy_tags,
-                objective=objective,
-            )
-            scores_by_objective[objective] = scores
-            details_by_objective[objective] = details
-        poi_relevance_scores = scores_by_objective.get("balanced", next(iter(scores_by_objective.values()), {}))
-        poi_fine_rank_details = details_by_objective.get("balanced", next(iter(details_by_objective.values()), {}))
-        plan_request = RoutePlanRequest(
-            intent=intent,
-            user_profile=planning_profile,
-            strategy_weights=strategy_weights,
-            strategy_tags=strategy_tags,
-            candidate_pois=pois,
-            poi_relevance_scores=poi_relevance_scores,
-            poi_fine_rank_details=poi_fine_rank_details,
-            poi_relevance_scores_by_objective=scores_by_objective,
-            poi_fine_rank_details_by_objective=details_by_objective,
-        )
->>>>>>> Stashed changes
 
+        best_response = RoutePlanResponse(routes=[])
         for limit, relax_preferences in [(60, False), (90, True), (120, True)]:
             pois = self.poi_service.search(
                 intent,
@@ -125,10 +96,37 @@ class PredictiveRouteService:
                 poi_fine_rank_details=poi_fine_rank_details,
             )
             response = self.route_service.generate_routes(plan_request)
+            if (
+                not has_profile
+                and response.routes
+                and all(isinstance(route, Route) for route in response.routes)
+                and len({route.objective for route in response.routes}) < 3
+            ):
+                diverse = self.route_service.generate_routes_for_objectives(
+                    plan_request,
+                    objectives,
+                    routes_per_objective=1,
+                ).routes
+                response = RoutePlanResponse(
+                    routes=self._select_top_diverse_routes([*response.routes, *diverse]),
+                    diagnostics=response.diagnostics,
+                )
+            if has_profile and response.routes and not any(route.objective == "balanced" for route in response.routes):
+                balanced = self.route_service.generate_routes_for_objectives(
+                    plan_request,
+                    ["balanced"],
+                    routes_per_objective=3,
+                ).routes
+                response = RoutePlanResponse(
+                    routes=self._select_profile_routes([*response.routes, *balanced], objectives),
+                    diagnostics=response.diagnostics,
+                )
+            if len(response.routes) > len(best_response.routes):
+                best_response = response
             if len(response.routes) >= 3:
                 return response
 
-        return RoutePlanResponse(routes=[])
+        return best_response
 
     def weather_for(self, city: str, scenario: str | None = None) -> dict[str, Any]:
         city_weather = self.weather_payload.get("cities", {}).get(city) or self.weather_payload.get("cities", {}).get("上海", {})

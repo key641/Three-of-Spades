@@ -81,6 +81,7 @@ def apply_session_context(intent: Intent, message: str, state: SessionState, rou
     # 3. 都没有 → 保持当前 LLM 解析值
     hard_keys = (
         "city", "people_count", "target_district", "target_business_area",
+        "start_location_name", "start_lat", "start_lng",
         "start_time", "duration_hours", "budget_per_person",
     )
     for key in hard_keys:
@@ -191,6 +192,9 @@ def apply_query_delta(
             "people_count",
             "target_district",
             "target_business_area",
+            "start_location_name",
+            "start_lat",
+            "start_lng",
             "start_time",
             "duration_hours",
             "budget_per_person",
@@ -202,6 +206,11 @@ def apply_query_delta(
     data["hard_constraints"] = {
         "city": data["city"],
         "people_count": data["people_count"],
+        "target_district": data["target_district"],
+        "target_business_area": data["target_business_area"],
+        "start_location_name": data["start_location_name"],
+        "start_lat": data["start_lat"],
+        "start_lng": data["start_lng"],
         "start_time": data["start_time"],
         "duration_hours": data["duration_hours"],
         "budget_per_person": data["budget_per_person"],
@@ -242,6 +251,9 @@ def _apply_hard_constraint_changes(data: dict, delta: IntentDelta, summary: Stat
             "people_count",
             "target_district",
             "target_business_area",
+            "start_location_name",
+            "start_lat",
+            "start_lng",
             "start_time",
             "duration_hours",
             "budget_per_person",
@@ -252,6 +264,9 @@ def _apply_hard_constraint_changes(data: dict, delta: IntentDelta, summary: Stat
         previous = data.get(key)
         if previous != value:
             data[key] = value
+            if key == "start_location_name":
+                data["start_lat"] = None
+                data["start_lng"] = None
             summary.changed[key] = {"from": previous, "to": value}
 
 

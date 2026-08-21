@@ -13,8 +13,10 @@ class Settings(BaseSettings):
     database_url: str = "sqlite:///../data/local_route_agent.db"
     llm_provider: str = "openai"
     openai_api_key: str = ""
-    openai_model: str = "openai/gpt-5.4-mini"
+    ofox_api_key: str = ""
+    openai_model: str = "openai/gpt-5.6-sol"
     openai_base_url: str = "https://api.ofox.ai/v1"
+    llm_proxy_url: str = ""
     deepseek_api_key: str = ""
     deepseek_model: str = "deepseek-chat"
     deepseek_base_url: str = "https://api.deepseek.com/v1"
@@ -24,6 +26,7 @@ class Settings(BaseSettings):
     planning_pipeline_rollout_percent: int = 100
     planning_pipeline_v2: bool | None = None
     planning_pipeline_shadow: bool | None = None
+    agent_runtime_version: str = "v1"
     route_model_enabled: bool = False
     cors_origins: list[str] = [
         "http://localhost:5173",
@@ -33,7 +36,7 @@ class Settings(BaseSettings):
     ]
 
     model_config = SettingsConfigDict(
-        env_file=(PROJECT_ROOT / ".env.example", PROJECT_ROOT / ".env"),
+        env_file=(PROJECT_ROOT / ".env.example", PROJECT_ROOT / ".env", PROJECT_ROOT / ".env.local"),
         env_file_encoding="utf-8",
         extra="ignore",
     )

@@ -2,6 +2,13 @@ import { useRef, useState } from "react";
 import { resetChatSession, sendChatMessageStream } from "../api/chatApi";
 import type { AgentTraceStep, ChatResponse } from "../api/types";
 import type { OnboardingProfile, TripConstraints } from "./useOnboarding";
+import {
+  coordsToCity,
+  DEFAULT_LOCATION_CITY,
+  DEFAULT_LOCATION_LABEL,
+  getGpsCache,
+  setGpsCache,
+} from "../utils/gpsCache";
 
 export interface ChatMessage {
   role: "user" | "assistant" | "trace" | "clarify";
@@ -65,14 +72,20 @@ export function useChat() {
         !hasSentProfile.current ||
         (profileSig !== null && profileSig !== lastProfileSigRef.current);
       const locationOptions = await getCurrentLocationOptions();
+      const resolvedLocationOptions = trip?.city
+        ? { ...locationOptions, city: trip.city }
+        : locationOptions;
 
       // 记录本次发送的请求体快照，供 Debug Panel 展示
       setLastRequest({
         session_id: "(当前会话ID)",
         message,
-        ...(trip?.city ? { trip_city: trip.city } : { trip_city: "(未传，后端追问)" }),
-        start_lat: (locationOptions as Record<string, unknown>).start_lat ?? null,
-        start_lng: (locationOptions as Record<string, unknown>).start_lng ?? null,
+        trip_city: (resolvedLocationOptions as Record<string, unknown>).city ?? "(未识别)",
+        location_city: (resolvedLocationOptions as Record<string, unknown>).city ?? null,
+        location_source: (resolvedLocationOptions as Record<string, unknown>).location_source ?? null,
+        start_location_name: (resolvedLocationOptions as Record<string, unknown>).start_location_name ?? null,
+        start_lat: (resolvedLocationOptions as Record<string, unknown>).start_lat ?? null,
+        start_lng: (resolvedLocationOptions as Record<string, unknown>).start_lng ?? null,
         preferences: profile?.preferences ?? [],
         scenarios: profile?.scenarios ?? [],
         avoid_tags: profile?.avoid_tags ?? [],
@@ -87,7 +100,7 @@ export function useChat() {
           setLiveTrace((prev) => [...prev, step]);
         },
         trip,
-        { ...locationOptions, ...options },
+        { ...resolvedLocationOptions, ...options },
         (routes) => {
           setResponse((prev) => ({
             session_id: prev?.session_id ?? "",
@@ -225,26 +238,69 @@ export function useChat() {
 }
 
 async function getCurrentLocationOptions(): Promise<Record<string, unknown>> {
-  if (typeof navigator === "undefined" || !navigator.geolocation) {
-    return {};
+  const cached = getGpsCache();
+  if (cached) {
+    return locationOptionsFromCoords(cached.lat, cached.lng);
   }
-  return new Promise((resolve) => {
-    const timer = window.setTimeout(() => resolve({}), 1200);
-    navigator.geolocation.getCurrentPosition(
-      (position) => {
-        window.clearTimeout(timer);
-        resolve({
-          current_lat: position.coords.latitude,
-          current_lng: position.coords.longitude,
-          start_lat: position.coords.latitude,
-          start_lng: position.coords.longitude,
-        });
-      },
-      () => {
-        window.clearTimeout(timer);
-        resolve({});
-      },
-      { enableHighAccuracy: false, maximumAge: 300000, timeout: 1000 },
-    );
-  });
+  if (typeof navigator !== "undefined" && navigator.geolocation) {
+    const gps = await new Promise<{ lat: number; lng: number } | null>((resolve) => {
+      navigator.geolocation.getCurrentPosition(
+        (position) => resolve({ lat: position.coords.latitude, lng: position.coords.longitude }),
+        () => resolve(null),
+        { enableHighAccuracy: false, maximumAge: 300000, timeout: 2500 },
+      );
+    });
+    if (gps) {
+      setGpsCache(gps.lat, gps.lng);
+      return locationOptionsFromCoords(gps.lat, gps.lng);
+    }
+  }
+
+  const networkLocation = await getNetworkLocationOptions();
+  return networkLocation ?? defaultLocationOptions();
+}
+
+function locationOptionsFromCoords(lat: number, lng: number): Record<string, unknown> {
+  const city = coordsToCity(lat, lng);
+  if (!city) return defaultLocationOptions("gps_unmatched_default");
+  return {
+    city,
+    location_source: "gps",
+    current_lat: lat,
+    current_lng: lng,
+    start_lat: lat,
+    start_lng: lng,
+  };
+}
+
+async function getNetworkLocationOptions(): Promise<Record<string, unknown> | null> {
+  try {
+    const response = await fetch("https://ipwho.is/?fields=success,city,latitude,longitude", {
+      signal: AbortSignal.timeout(1800),
+    });
+    if (!response.ok) return null;
+    const payload = await response.json() as {
+      success?: boolean;
+      city?: string;
+      latitude?: number;
+      longitude?: number;
+    };
+    if (payload.success === false) return null;
+    if (typeof payload.latitude === "number" && typeof payload.longitude === "number") {
+      const city = coordsToCity(payload.latitude, payload.longitude);
+      if (city) {
+        return { city, location_source: "network" };
+      }
+    }
+    return null;
+  } catch {
+    return null;
+  }
+}
+
+function defaultLocationOptions(source = "display_default"): Record<string, unknown> {
+  return {
+    city: DEFAULT_LOCATION_CITY,
+    location_source: source,
+  };
 }

@@ -68,16 +68,11 @@ class RouteService:
         "night_friendly": "夜间友好候选路线",
     }
 
-<<<<<<< Updated upstream
-    CANDIDATES_PER_OBJECTIVE = 16
-    INTERNAL_CANDIDATES_PER_OBJECTIVE = 16
-=======
     CANDIDATES_PER_OBJECTIVE = 8
     INTERNAL_CANDIDATES_PER_OBJECTIVE = 30
     BEAM_WIDTH = 8
     BRANCH_FACTOR = 12
     START_SEEDS_PER_OBJECTIVE = 16
->>>>>>> Stashed changes
     TARGET_ROUTE_COUNT = 3
     DEFAULT_MIN_ROUTE_STOPS = 3
     RELAXED_MIN_ROUTE_STOPS = 2
@@ -105,6 +100,9 @@ class RouteService:
         min_stops_floor: int | None = None,
         allow_min_stops_fallback: bool = False,
     ) -> RoutePlanResponse:
+        # Route generation is a deterministic tool boundary. Work on a deep copy so
+        # recovery and scoring never leak mutations back into the authoritative state.
+        request = request.model_copy(deep=True)
         started_at = time.perf_counter()
         if not request.candidate_pois:
             return RoutePlanResponse(routes=[])
@@ -125,7 +123,22 @@ class RouteService:
         # can make every candidate too far away to fit the time window.
         if request.intent.start_lat is None or request.intent.start_lng is None:
             city = request.intent.city
-            if city in {"上海", "北京"} and city in self.CITY_CENTERS:
+            required_start = next(
+                (
+                    poi
+                    for poi in request.candidate_pois
+                    if poi.id in set(request.intent.must_include_poi_ids)
+                ),
+                None,
+            )
+            theme_start = request.candidate_pois[0] if request.candidate_pois and self._allows_single_theme_route(request) else None
+            preferred_start = required_start or theme_start
+            if preferred_start is not None:
+                request.intent.start_lat = preferred_start.lat
+                request.intent.start_lng = preferred_start.lng
+                if not request.intent.start_location_name:
+                    request.intent.start_location_name = f"{preferred_start.name}附近"
+            elif city in {"上海", "北京"} and city in self.CITY_CENTERS:
                 lat, lng = self.CITY_CENTERS[city]
                 request.intent.start_lat = lat
                 request.intent.start_lng = lng
@@ -145,11 +158,6 @@ class RouteService:
             routes_per_objective=self.CANDIDATES_PER_OBJECTIVE,
             min_stops_floor=floor,
         ).routes
-<<<<<<< Updated upstream
-        selected = self._select_final_routes(request, candidates, objectives, self.TARGET_ROUTE_COUNT, floor)
-        if len(selected) < self.TARGET_ROUTE_COUNT:
-            selected = self._fill_disjoint_routes(request, objectives, selected, self.TARGET_ROUTE_COUNT, floor)
-=======
         strict_zero_overlap = self.experiment_config.diversity_mode == "zero_overlap"
         initial_overlap = 0.0 if strict_zero_overlap else 0.3
         relaxed_overlap = 0.0 if strict_zero_overlap else 0.5
@@ -169,7 +177,6 @@ class RouteService:
                 max_overlap=relaxed_overlap,
                 max_per_objective=2,
             )
->>>>>>> Stashed changes
 
         if (
             len(selected) < self.TARGET_ROUTE_COUNT
@@ -189,19 +196,6 @@ class RouteService:
                 max_overlap=relaxed_overlap,
                 max_per_objective=2,
             )
-<<<<<<< Updated upstream
-            if len(selected) < self.TARGET_ROUTE_COUNT:
-                selected = self._fill_disjoint_routes(
-                    request,
-                    objectives,
-                    selected,
-                    self.TARGET_ROUTE_COUNT,
-                    self.RELAXED_MIN_ROUTE_STOPS,
-                )
-
-        if len(selected) < self.TARGET_ROUTE_COUNT:
-            return RoutePlanResponse(routes=[])
-=======
             degradation_level = 2
 
         if len(selected) < self.TARGET_ROUTE_COUNT:
@@ -216,7 +210,6 @@ class RouteService:
                 max_per_objective=3,
             )
             degradation_level = 3
->>>>>>> Stashed changes
 
         for route in selected:
             if len(route.stops) <= 2:
@@ -307,6 +300,23 @@ class RouteService:
                 key=lambda poi: self._distance_km(request.intent.start_lat, request.intent.start_lng, poi) or 0,
             )[:12]
             for poi in nearest_to_start:
+                if poi.id not in selected_ids:
+                    selected.append(poi)
+                    selected_ids.add(poi.id)
+        if self._parse_time(request.intent.start_time) >= 18 * 60:
+            late_candidates = sorted(
+                (
+                    poi
+                    for poi in request.candidate_pois
+                    if self._before_last_entry(self._parse_time(request.intent.start_time), poi)
+                ),
+                key=lambda poi: (
+                    poi.night_activity,
+                    self._poi_score(poi, "night_friendly", request, request.intent.start_lat, request.intent.start_lng),
+                ),
+                reverse=True,
+            )[:16]
+            for poi in late_candidates:
                 if poi.id not in selected_ids:
                     selected.append(poi)
                     selected_ids.add(poi.id)
@@ -422,7 +432,7 @@ class RouteService:
             selected = self._select_final_routes(request, routes, objectives, self.TARGET_ROUTE_COUNT, floor)
             if len(selected) < self.TARGET_ROUTE_COUNT:
                 selected = self._fill_disjoint_routes(request, objectives, selected, self.TARGET_ROUTE_COUNT, floor)
-            return RoutePlanResponse(routes=selected if len(selected) >= self.TARGET_ROUTE_COUNT else [])
+            return RoutePlanResponse(routes=selected)
 
         return RoutePlanResponse(routes=routes)
 
@@ -712,6 +722,8 @@ class RouteService:
             route.score = max(0, route.score - round(constraints.penalty))
             if self._route_has_context_roles(route, objective, request):
                 route.score = min(100, route.score + 6)
+            if self._route_covers_explicit_theme(route, request, poi_by_id):
+                route.score = min(100, route.score + 10)
             p80, buffer_minutes, reliability, risk_level = self.constraint_evaluator.reliability(route, request, constraints)
             route.p50_duration_minutes = route.total_duration_minutes
             route.p80_duration_minutes = p80
@@ -726,6 +738,7 @@ class RouteService:
             for route in ranked
             if any("main_activity" in stop.route_roles for stop in route.stops)
             and self._route_has_context_roles(route, objective, request)
+            and self._route_covers_explicit_theme(route, request, poi_by_id)
         ]
         unstructured = [route for route in ranked if route not in structured]
         ordered = [*structured, *unstructured]
@@ -741,6 +754,29 @@ class RouteService:
             diverse.append(chosen)
             remaining.remove(chosen)
         return [*diverse, *remaining]
+
+    def _route_covers_explicit_theme(
+        self,
+        route: Route,
+        request: RoutePlanRequest,
+        poi_by_id: dict[str, POI],
+    ) -> bool:
+        explicit_theme_terms = [
+            term
+            for term in self._intent_terms(request)
+            if self._has_any(
+                {term},
+                ["逛店", "购物", "书店", "买手店", "潮玩", "美妆", "户外", "文创"],
+            )
+        ]
+        if not explicit_theme_terms:
+            return True
+        route_pois = [poi_by_id[stop.poi_id] for stop in route.stops if stop.poi_id in poi_by_id]
+        return any(
+            self._term_matches_poi(term, poi)
+            for term in explicit_theme_terms
+            for poi in route_pois
+        )
 
     def _candidate_overlap(self, left: Route, right: Route) -> float:
         left_ids = {stop.poi_id for stop in left.stops}
@@ -806,6 +842,8 @@ class RouteService:
             selected = ordered[:2]
         if "balanced" not in selected:
             selected.append("balanced")
+        if self._parse_time(request.intent.start_time) >= 18 * 60 and "night_friendly" not in selected:
+            selected.insert(min(2, len(selected)), "night_friendly")
         for fallback in ["food_first", "photo_citywalk", "nature_relax", "indoor_rainy", "low_walking", "budget", "night_friendly"]:
             if len(selected) >= 3:
                 break
@@ -854,46 +892,29 @@ class RouteService:
             max_stops = min(max_stops, max(1, max_stops_override))
         min_stops = min(min_stops, max_stops)
         ranked_start_pool = self._start_candidates(pois, objective, request)
-<<<<<<< Updated upstream
-        diverse_start_pool = self._diverse_start_seeds(ranked_start_pool, self.INTERNAL_CANDIDATES_PER_OBJECTIVE * 2)
-        diverse_ids = {poi.id for poi in diverse_start_pool}
-        start_pool = diverse_start_pool + [poi for poi in ranked_start_pool if poi.id not in diverse_ids]
-        routes: list[Route] = []
-        signatures: set[tuple[str, ...]] = set()
-
-        for seed in start_pool[: self.INTERNAL_CANDIDATES_PER_OBJECTIVE * 2]:
-            route = self._build_candidate(seed, pois, objective, request, time_limit, min_stops, max_stops)
-            signature = self._route_signature(route)
-            if route.stops and len(route.stops) >= min_stops and signature not in signatures:
-                routes.append(route)
-                signatures.add(signature)
-            if len(routes) >= self.INTERNAL_CANDIDATES_PER_OBJECTIVE:
-                break
-
-        if len(routes) < self.INTERNAL_CANDIDATES_PER_OBJECTIVE:
-            for seed in start_pool[self.INTERNAL_CANDIDATES_PER_OBJECTIVE * 2 :]:
-                route = self._build_candidate(seed, pois, objective, request, time_limit, min_stops, max_stops)
-                signature = self._route_signature(route)
-                if route.stops and len(route.stops) >= min_stops and signature not in signatures:
-                    routes.append(route)
-                    signatures.add(signature)
-                if len(routes) >= self.INTERNAL_CANDIDATES_PER_OBJECTIVE:
-=======
         start_pool = self._diverse_start_seeds(ranked_start_pool, self.START_SEEDS_PER_OBJECTIVE)
         required_ids = set(request.intent.must_include_poi_ids)
         required_seed_pool = [poi for poi in ranked_start_pool if poi.id in required_ids]
         if required_seed_pool:
             start_pool = required_seed_pool
+        elif request.intent.start_lat is not None and request.intent.start_lng is not None and ranked_start_pool:
+            nearest_seed = min(
+                ranked_start_pool,
+                key=lambda poi: self._distance_km(request.intent.start_lat, request.intent.start_lng, poi) or 0,
+            )
+            start_pool = [nearest_seed, *[poi for poi in start_pool if poi.id != nearest_seed.id]]
         beam_states: list[RouteBeamState] = []
         hard_rejections: dict[str, int] = {}
         start_minutes = self._parse_time(request.intent.start_time)
         for seed in start_pool:
             distance, travel = self._approx_leg(request.intent.start_lat, request.intent.start_lng, seed)
-            elapsed = travel + seed.queue_minutes + seed.visit_duration_minutes
+            arrival_minutes = start_minutes + travel
+            wait_minutes = self._wait_minutes_until_open(arrival_minutes, seed)
+            elapsed = travel + wait_minutes + seed.queue_minutes + seed.visit_duration_minutes
             constraint = self.constraint_evaluator.evaluate_poi(
                 seed,
                 request,
-                start_minutes + travel,
+                arrival_minutes + wait_minutes,
                 elapsed,
                 seed.avg_price,
                 distance_km=distance,
@@ -967,12 +988,14 @@ class RouteService:
                     if not self._passes_meal_composition(selected_ids, poi, pois, request):
                         continue
                     distance, travel = self._approx_leg(state.current_lat, state.current_lng, poi)
-                    added = travel + poi.queue_minutes + poi.visit_duration_minutes
+                    arrival_minutes = state.current_minutes + travel
+                    wait_minutes = self._wait_minutes_until_open(arrival_minutes, poi)
+                    added = travel + wait_minutes + poi.queue_minutes + poi.visit_duration_minutes
                     cumulative_cost = state.total_cost + poi.avg_price
                     constraint = self.constraint_evaluator.evaluate_poi(
                         poi,
                         request,
-                        state.current_minutes + travel,
+                        arrival_minutes + wait_minutes,
                         state.elapsed_minutes + added,
                         cumulative_cost,
                         selected=list(state.pois),
@@ -1089,7 +1112,6 @@ class RouteService:
                     if len(routes) >= self.CANDIDATES_PER_OBJECTIVE * 4:
                         break
                 if detail_budget_exhausted:
->>>>>>> Stashed changes
                     break
                 if len(routes) >= self.CANDIDATES_PER_OBJECTIVE * 4:
                     break
@@ -1288,11 +1310,13 @@ class RouteService:
         route_leg = self._best_route_leg(state.current_lat, state.current_lng, poi, request, distance)
         travel_minutes = route_leg.duration_minutes if route_leg else self._travel_minutes(distance)
         distance_km = self._distance_from_leg(route_leg, distance)
-        total_add = travel_minutes + poi.queue_minutes + poi.visit_duration_minutes
+        arrival_minutes = state.current_minutes + travel_minutes
+        wait_minutes = self._wait_minutes_until_open(arrival_minutes, poi)
+        total_add = travel_minutes + wait_minutes + poi.queue_minutes + poi.visit_duration_minutes
         if state.elapsed_minutes + total_add > time_limit:
             return None
 
-        start_minutes = state.current_minutes + travel_minutes
+        start_minutes = arrival_minutes + wait_minutes
         # Approximate Beam travel can differ from the detailed map leg. Recheck
         # the arrival window before materialising the stop so an enriched route
         # cannot be discarded later for a violation introduced by that drift.
@@ -1344,6 +1368,16 @@ class RouteService:
             current_lng=poi.lng,
         )
         return stop, next_state
+
+    def _wait_minutes_until_open(self, arrival_minutes: int, poi: POI) -> int:
+        minute = arrival_minutes % (24 * 60)
+        opening = self._parse_time(poi.open_time)
+        last_entry = self._parse_time(poi.last_entry_time)
+        if last_entry >= opening:
+            return max(0, opening - minute) if minute < opening else 0
+        if last_entry < minute < opening:
+            return opening - minute
+        return 0
 
     def _effective_route_roles(self, poi: POI, request: RoutePlanRequest) -> list[str]:
         roles = list(poi.route_roles)
