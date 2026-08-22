@@ -171,8 +171,12 @@ def apply_query_delta(
 
     trip_state = TripState.model_validate(data)
     merged_intent = trip_state.to_intent()
-    if original.get("city") != trip_state.city or "city" in delta.modified_hard_constraints or "city" in delta.added_hard_constraints:
-        merged_intent.city_from_message = True
+    merged_intent.city_from_message = bool(
+        intent.city_from_message
+        or original.get("city") != trip_state.city
+        or "city" in delta.modified_hard_constraints
+        or "city" in delta.added_hard_constraints
+    )
     return merged_intent, trip_state, summary
 
 

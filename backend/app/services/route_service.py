@@ -3,7 +3,7 @@ from __future__ import annotations
 import math
 import re
 import time
-from itertools import combinations
+from itertools import combinations, permutations
 from dataclasses import dataclass
 from collections.abc import Callable
 
@@ -173,8 +173,11 @@ class RouteService:
         if (
             len(selected) < self.TARGET_ROUTE_COUNT
             and floor > self.RELAXED_MIN_ROUTE_STOPS
-            and allow_min_stops_fallback
-            and self._allows_simple_route(request)
+            and (
+                bool(request.intent.must_include_poi_ids)
+                or allow_min_stops_fallback
+                and self._allows_simple_route(request)
+            )
         ):
             self.last_diagnostics["degradation_steps"].append("lightweight_two_stop")
             relaxed_candidates = self._lightweight_fallback_candidates(request, objectives)
@@ -443,6 +446,7 @@ class RouteService:
         """Derive two-stop fallbacks from the existing objective pools without rerunning Beam."""
         routes: list[Route] = []
         poi_by_id = {poi.id: poi for poi in request.candidate_pois}
+        min_stops = self.RELAXED_MIN_ROUTE_STOPS
         time_limit = max(60, request.intent.duration_hours * 60, min_stops * 100)
         required_ids = set(request.intent.must_include_poi_ids)
         for objective in self._unique_objectives(objectives):
@@ -1106,7 +1110,23 @@ class RouteService:
                 routes.append(route)
         if required_ids and len(routes) < self.CANDIDATES_PER_OBJECTIVE:
             required_pois = [poi for poi in ranked_start_pool if poi.id in required_ids]
-            optional_pois = [poi for poi in [*compact_start_pool, *ranked_start_pool] if poi.id not in required_ids]
+            required_neighbors: list[POI] = []
+            for anchor in required_pois:
+                neighbors = sorted(
+                    (poi for poi in pois if poi.id not in required_ids),
+                    key=lambda poi: (
+                        poi.visit_duration_minutes
+                        + poi.queue_minutes
+                        + (self._distance_km(anchor.lat, anchor.lng, poi) or 0) * 8,
+                        poi.visit_duration_minutes + poi.queue_minutes,
+                    ),
+                )[:32]
+                required_neighbors.extend(neighbors)
+            optional_pois = [
+                poi
+                for poi in [*required_neighbors, *compact_start_pool, *ranked_start_pool]
+                if poi.id not in required_ids
+            ]
             optional_pois = self._diverse_start_seeds(optional_pois, 24)
             for first_index, first in enumerate(optional_pois):
                 for second in optional_pois[first_index + 1 :]:
@@ -1128,6 +1148,45 @@ class RouteService:
                         break
                 if len(routes) >= self.CANDIDATES_PER_OBJECTIVE * 2:
                     break
+        if (
+            routes
+            and len(routes) < self.CANDIDATES_PER_OBJECTIVE
+            and self._allows_single_theme_route(request)
+            and self._is_single_theme_route(routes[0].stops)
+        ):
+            base_pois = [
+                next((poi for poi in pois if poi.id == stop.poi_id), None)
+                for stop in routes[0].stops
+            ]
+            if all(base_pois):
+                base_ids = {poi.id for poi in base_pois if poi is not None}
+                replacements = sorted(
+                    (poi for poi in pois if poi.id not in base_ids),
+                    key=lambda poi: (
+                        poi.visit_duration_minutes + poi.queue_minutes,
+                        self._leg_minutes(request.intent.start_lat, request.intent.start_lng, poi),
+                    ),
+                )
+                for replacement in replacements:
+                    for replaced_index in range(len(base_pois)):
+                        variant_pois = list(base_pois)
+                        variant_pois[replaced_index] = replacement
+                        for sequence in permutations(variant_pois):
+                            route = self._build_candidate_from_sequence(list(sequence), objective, request, time_limit)
+                            signature = tuple(stop.poi_id for stop in route.stops)
+                            if (
+                                len(route.stops) >= min_stops
+                                and signature not in enriched_signatures
+                                and self._route_has_category_diversity(route, min_stops, request)
+                            ):
+                                enriched_signatures.add(signature)
+                                routes.append(route)
+                            if len(routes) >= self.CANDIDATES_PER_OBJECTIVE:
+                                break
+                        if len(routes) >= self.CANDIDATES_PER_OBJECTIVE:
+                            break
+                    if len(routes) >= self.CANDIDATES_PER_OBJECTIVE:
+                        break
         if min_stops == self.RELAXED_MIN_ROUTE_STOPS:
             if required_seed_pool:
                 pair_seeds = required_seed_pool
@@ -1450,7 +1509,7 @@ class RouteService:
         legs = [self._route_leg(current_lat, current_lng, poi, mode, request.intent.start_time) for mode in shortlist]
         available = [leg for leg in legs if leg is not None]
         if not available:
-            return None
+            return self._synthetic_direct_leg(current_lat, current_lng, poi, distance_km, preferred)
         if (
             request.intent.city in {"北京", "上海"}
             and distance_km is not None
@@ -1459,6 +1518,38 @@ class RouteService:
         ):
             available.append(self._synthetic_public_transit_leg(current_lat, current_lng, poi, distance_km))
         return self._choose_public_transit_first(available, request)
+
+    def _synthetic_direct_leg(
+        self,
+        origin_lat: float,
+        origin_lng: float,
+        poi: POI,
+        distance_km: float,
+        mode: str,
+    ) -> RouteLeg:
+        normalized_mode = self._normalize_transport_mode(mode)
+        if normalized_mode == "walk":
+            duration_minutes = max(5, round(distance_km * 12))
+            instruction = f"步行约 {distance_km:.1f} 公里，预计 {duration_minutes} 分钟到达"
+        else:
+            normalized_mode = "taxi"
+            duration_minutes = max(8, round(6 + distance_km * 3))
+            instruction = f"打车约 {distance_km:.1f} 公里，预计 {duration_minutes} 分钟到达"
+        distance_meters = max(1, round(distance_km * 1000))
+        return RouteLeg(
+            mode=normalized_mode,
+            distance_meters=distance_meters,
+            duration_minutes=duration_minutes,
+            polyline=f"{origin_lng},{origin_lat};{poi.lng},{poi.lat}",
+            steps=[
+                RouteLegStep(
+                    instruction=instruction,
+                    distance_meters=distance_meters,
+                    duration_minutes=duration_minutes,
+                )
+            ],
+            source="fallback",
+        )
 
     def _synthetic_public_transit_leg(self, origin_lat: float, origin_lng: float, poi: POI, distance_km: float) -> RouteLeg:
         distance_meters = max(1, round(distance_km * 1150))
@@ -1610,7 +1701,12 @@ class RouteService:
         meal_count = sum(1 for stop in stops if self._is_meal_poi(stop) or stop.meal_type in {"light_meal", "fast_food"} or stop.category == "market")
         culture_count = sum(1 for stop in stops if stop.primary_category == "culture" or stop.category in {"museum", "gallery", "theater"})
         night_count = sum(1 for stop in stops if stop.category in {"night_view", "landmark", "theater"} or "night_end" in stop.route_roles)
-        return max(coffee_count, coffee_book_count, meal_count, culture_count, night_count) == len(stops)
+        nature_count = sum(
+            1
+            for stop in stops
+            if stop.primary_category == "nature" or stop.category in {"park", "garden", "scenic_area"}
+        )
+        return max(coffee_count, coffee_book_count, meal_count, culture_count, night_count, nature_count) == len(stops)
 
     def _allows_simple_route(self, request: RoutePlanRequest) -> bool:
         terms = set(self._intent_terms(request))
@@ -1649,6 +1745,9 @@ class RouteService:
                 "书店",
                 "夜景",
                 "夜游",
+                "自然风景",
+                "自然",
+                "公园",
             ],
         )
 

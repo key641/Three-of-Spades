@@ -6,7 +6,9 @@
 - 已生成路线的局部调整 / 动态重规划
 - 预制路线生成
 
-本文档按当前 `LYNN` 分支合并 `keyki` 后的代码编写。若历史方案文档和本文不一致，以当前代码为准。
+最后同步：2026-08-23。
+
+本文档按当前工作区代码编写。若历史方案文档和本文不一致，以当前代码和本文为准。
 
 ## 1. 核心代码位置
 
@@ -57,6 +59,7 @@ API 入口：
 - `city`：城市，默认 `上海`。
 - `people_count`：人数，默认 `2`。
 - `start_location_name`：起点名称，可为空。
+- `target_district` / `target_business_area`：目标行政区和商圈，可为空；用于区域过滤和约束校验。
 - `start_lat` / `start_lng`：起点坐标，可为空。
 - `start_time`：开始时间，默认 `14:00`。
 - `duration_hours`：游玩时长，默认 `6`。
@@ -65,6 +68,8 @@ API 入口：
 - `interest_tags`：体验偏好，例如 `美食`、`咖啡`、`拍照`、`citywalk`、`艺术展`、`自然风景`、`本地感`、`夜景`、`亲子`、`室内`、`安静`。
 - `optimization_goals`：优化目标，例如 `少排队`、`省钱`、`少走路`、`高性价比`、`轻松`、`时间紧`。
 - `avoid_tags`：避让标签，例如 `人流密集`、`排队久`、`太贵`、`需要预约`、`商业街`、`拍照打卡`、`辣`、`步行多`。
+- `must_include_poi_ids`：路线必须包含的 POI ID。
+- `must_include_roles`：路线必须覆盖的角色，例如 `main_activity`、`meal`、`rest_stop`。
 - `scenario`：场景，默认 `friends_citywalk`。
 - `need_clarification`：是否需要追问。
 - `city_from_message`：城市是否来自用户本轮显式表达。
@@ -76,7 +81,7 @@ API 入口：
 - 避雷类进入 `avoid_tags`。
 - `preferences` 被重算为兼容字段。
 
-当前 `Intent` 没有结构化 `target_district` 或 `target_business_area` 字段；区域主要通过 `city`、`start_location_name`、用户消息中的具体地点，以及 POI 搜索文本弱匹配体现。
+`target_district` 和 `target_business_area` 是结构化区域约束：召回阶段据此缩小候选，路线约束阶段继续校验；`must_include_poi_ids` 和 `must_include_roles` 会贯穿候选保护、Beam 状态和最终硬约束检查。
 
 ### 2.2 POI
 
@@ -284,7 +289,7 @@ Intent 解析：
 
 ## 4. POI 召回规则
 
-入口：`POIService.search(intent, user_profile, limit=60, strategy_tags=None, relax_preferences=False)`
+入口：`POIService.search(intent, user_profile, limit=None, strategy_tags=None, relax_preferences=False)`
 
 ### 4.1 数据来源
 
@@ -313,15 +318,19 @@ POI 搜索流程：
 
 1. 按城市过滤。
 2. 城市无数据则返回空，不跨城兜底。
-3. 首轮召回默认 `limit=60`，严格匹配：
+3. 主聊天首轮使用自适应漏斗并严格匹配：
    - 命中 `intent.interest_tags`。
    - 不命中 `intent.avoid_tags`。
    - 不是极端预算不匹配。
-4. 如果候选不足，上层 Orchestrator 会按 `90 -> 120` 扩召回，并传入 `relax_preferences=True` 放宽偏好 strict match。
-5. 放宽召回只放宽偏好匹配，不放宽城市过滤、避让标签和极端预算过滤：
+   - 明确区域或 `<=3h`：召回 180，粗排保留 100。
+   - `<=6h`：召回 320，粗排保留 160。
+   - `>6h`：召回 420，粗排保留 220。
+   - 偏好、目标和避让词合计不少于 4 个时，召回约放大 30%，粗排约放大 25%。
+4. 如果路线不足 3 条，上层 Orchestrator 依次用 `limit=200`、`limit=260` 扩召回，并传入 `relax_preferences=True`。
+5. 放宽召回只放宽偏好严格命中，不放宽城市、区域、must_include、避让和极端预算等硬约束：
    - 不命中避让标签。
    - 不是极端预算不匹配。
-6. 通过多路召回和 `CoarseRankService` 粗排，返回前 `limit` 个 POI。
+6. 候选经过多路召回、加权 RRF 融合、硬过滤和 `CoarseRankService` 粗排；must_include POI 及其邻近候选会被保护，避免被截断。
 
 预算极端不匹配阈值：
 
@@ -701,17 +710,17 @@ overall_score = weighted_score - hard_penalty
 这些是当前代码真实状态：
 
 1. 城市无数据时直接提示“当前城市暂无可用 POI 数据，可以先选择北京或上海的路线”，不跨城克隆 POI。
-2. 主聊天首轮召回 60 个 POI；如果筛不满 3 条合规路线，按 90、120 扩召回并放宽偏好 strict match。
-3. 放宽召回不放宽城市过滤、避让标签、极端预算过滤、跨路线去重和交通完整性。
-4. `RouteService.generate_routes()` 会扩展 objective 覆盖，并为每个 objective 生成多条内部候选。
-5. 最终选择层默认必须选满 3 条路线；每条初始路线之间 POI ID 零重叠。
-6. 默认每条路线至少 3 个 POI；明确简单路线意图时可降到 2 个 POI；不允许 1 个 POI 路线。
-7. 最终入选路线的每个 stop 必须具备交通方式、耗时、距离、polyline 和可读 steps。
-8. 最终选择会按 objective 优先级先保留用户意图相关路线，再用剩余高分候选补齐 3 条。
-9. 中长距离交通优先选择 `metro` / `bus`，短距离可步行；高德不可用时使用 `mock_map` 生成可读交通步骤。
-10. 目前没有结构化 `target_district` / `target_business_area` 硬过滤字段。
-11. `RouteRerankService` 当前存在独立实现，但主聊天 `RouteService.generate_routes()` 没有调用它。
-12. `FineRankService.score_map()` 在主聊天中会生成 POI 相关分，但当前 `RouteService._poi_score()` 没有直接读取 `poi_relevance_scores`，路线候选生成主要仍是规则分。
+2. 主聊天首轮使用自适应漏斗；如果筛不满 3 条合规路线，按 200、260 扩召回并放宽偏好严格命中。
+3. 放宽召回不放宽城市、区域、must_include、避让、极端预算和交通完整性等硬约束。
+4. 每个 objective 独立精排；路线候选池读取对应 objective 的 Top30 relevance，并补入 must_include、必去点邻近、起点邻近、紧凑候选和路线角色配额。
+5. `RouteService` 使用多 seed Beam Search 生成内部候选，并统一交给 `RouteRerankService` 和全局路线集合选择。
+6. 三路线差异使用分阶段阈值：先尝试普通 POI 重合不超过 30%，再放宽到 50%、不相交补位、必要时两站轻量路线，最后才放宽到 70%；must_include POI 不计入重合率。
+7. 默认每条路线至少 3 个 POI；明确简单路线或候选不足的最后兜底可降到 2 个 POI；不允许 1 个 POI 路线。
+8. 最终入选路线的每个 stop 必须具备交通方式、耗时、距离、polyline 和可读 steps。
+9. 中长距离交通优先选择 `metro` / `bus`，短距离可步行；地图服务不可用时使用 mock 或合成直达路段补齐可执行交通信息。
+10. `target_district` / `target_business_area` 已结构化，并在召回和约束检查中生效。
+11. `RouteRerankService` 已接入主聊天 `RouteService.generate_routes()`，对跨 objective 候选做集合级最终选择。
+12. `FineRankService.score_map()` 的分 objective relevance 已被候选池、起点选择和 `RouteService._poi_score()` 消费；规则分仍负责时间、距离、角色和业务约束校准。
 
 ## 8. 路线调整 / 局部重规划
 
@@ -1042,8 +1051,8 @@ data/seed/mock_weather.json
 预制路线召回：
 
 ```text
-POIService.search(limit=60)
-不足 3 条合规路线时按 90、120 扩召回
+POIService.search(limit=48)
+不足 3 条时按 90、120 扩召回
 ```
 
 每个 objective 生成：
@@ -1062,14 +1071,13 @@ enforce_constraints = True
 
 ### 10.8 预制路线最终选择
 
-预制路线现在复用 `RouteService` 的强筛选：
+预制路线复用 `RouteService` 的候选生成和约束检查，并在服务层做画像目标与多样性选择：
 
-- 最终默认必须 3 条路线。
-- 初始路线之间 POI 零重叠。
-- 默认每条至少 3 个 POI；简单路线最低 2 个 POI。
+- 目标返回最多 3 条路线；优先保留不同 objective，重合阈值按 50%、70%、100% 逐步放宽。
+- 每个 objective 最多生成 3 条候选，最低 2 个 POI。
 - 每个 stop 必须有交通字段和可读 steps。
 - 城市无数据时返回空路线列表，不跨城克隆。
-- 120 扩召回后仍不足 3 条时返回空路线列表，不返回半成品。
+- 120 扩召回后仍不足 3 条时返回当前最优的 1-2 条，不伪造候选。
 
 ## 11. 路线评价
 
@@ -1106,15 +1114,15 @@ Fallback 风险：
 
 以下是当前实现里可能影响产品效果的边界：
 
-1. 候选不足时不会返回少于 3 条或不合规路线；城市有数据但 120 扩召回后仍不足，会返回明确失败说明。
+1. 主聊天候选不足时不会返回少于 3 条或不合规路线；自适应、200、260 三轮后仍不足，会返回明确失败说明和空路线列表。
 2. 城市完全无 POI 数据时是唯一不保证 3 条路线的场景；系统会提示用户选择北京或上海。
-3. 初始主路线之间 POI 必须零重叠；局部重规划 / 替换某一家 POI 不套用这条跨路线零重叠规则。
+3. 主路线优先低重合而非强制零重合；普通 POI 重合阈值会分阶段从 30% 放宽到 70%，must_include 不计入重合。局部重规划不套用这套跨路线集合选择规则。
 4. 默认每条路线至少 3 个 POI；简单路线最低 2 个 POI；不允许 1 个 POI。
-5. 区/商圈目前不是结构化硬过滤字段。
-6. 路线内部类目多样性主要靠候选惩罚、角色补位和多 objective 组合，不是独立的最终硬校验。
-7. `RouteRerankService` 当前没有接入主聊天路线生成链路。
-8. `FineRankService` 当前主要输出 relevance map 和 trace details，主路线候选生成的 POI 选择仍主要依赖 `RouteService._poi_score()` 规则。
-9. 预制路线已复用强筛选；不足 3 条时同样按 90/120 扩召回，仍不足则返回空路线列表。
+5. 区/商圈已经是结构化约束；区域没有候选时会按无可用 POI 处理，不跨区或跨城伪造数据。
+6. 路线内部类目多样性有最终校验，同时仍由候选惩罚、角色补位和多 objective 组合共同保证。
+7. `RouteRerankService` 已接入主聊天路线生成链路。
+8. `FineRankService` 已按 objective 产出并实际参与候选池、Beam 局部打分和最终路线生成。
+9. 预制路线使用 48/90/120 扩召回；最终允许返回当前最优的少于 3 条路线，与主聊天的“三条或失败”语义不同。
 10. 局部重规划允许使用外部 mock map provider 补候选，可能产生 `external_...` POI。
 
 ## 13. 建议前端展示优先级

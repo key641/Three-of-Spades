@@ -1,5 +1,7 @@
 # 路线规划逻辑 Introduction
 
+最后同步：2026-08-23。
+
 这份文档用于向 A 同学和 B 同学介绍当前路线规划系统的整体逻辑：数据从哪里来、用户需求如何变成策略目标、POI 如何推荐排序、路线如何生成、交通路段如何补全，以及路线如何评分、修改和预制。
 
 核心原则一句话：
@@ -416,18 +418,18 @@ user_id + city + weather_scenario
 
 当前离线评测有 120 个固定案例：上海 60 个、北京 60 个。
 
-最新三轮结果：
+当前工作区最新报告 `artifacts/route-strategy/route_strategy_evaluation.md` 的结果：
 
 | 指标 | 结果 |
 | --- | ---: |
 | 可行路线率 | 100% |
-| 三路线生成率 | 95.83% |
+| 三路线生成率 | 100% |
 | 硬约束违反数 | 0 |
 | 必去 POI Recall | 100% |
 | 最终路线必去遗漏数 | 0 |
-| 必要角色覆盖率 | 96.05% |
-| 非必去 POI 平均重合率 | 13.91% |
-| Mock P95 | 1544-1687ms |
+| 必要角色覆盖率 | 100% |
+| 非必去 POI 平均重合率 | 7.82% |
+| Mock P95 | 1772.92ms |
 
 发布开关：
 
@@ -436,7 +438,7 @@ PLANNING_PIPELINE_MODE=legacy|shadow|v2
 PLANNING_PIPELINE_ROLLOUT_PERCENT=0..100
 ```
 
-生产默认 shadow，再按 hash 灰度到 10%、50%、100%。
+未显式配置时默认使用 V2；`PLANNING_PIPELINE_ROLLOUT_PERCENT` 再按 user/session hash 做确定性灰度，可配置 10%、50%、100% 放量。`shadow` 仍可显式用于只观测、不切流。
 
 为什么这么做：
 

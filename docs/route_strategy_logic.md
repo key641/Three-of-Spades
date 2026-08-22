@@ -1,5 +1,7 @@
 # 路线策略代码逻辑说明
 
+最后同步：2026-08-23。
+
 本文档说明当前 B 侧路线策略的真实代码逻辑，覆盖三类场景：
 
 - 规划路线：用户发起一次新的出行规划或追加约束后重新生成路线。
@@ -142,7 +144,7 @@ Orchestrator 在路线数不足三条时会做两次保守扩召回：
 
 - `primary_category`：主类目，例如 `food`、`culture`、`landmark`、`nature`。
 - `secondary_categories`：辅助标签，例如 `photo`、`indoor`、`night`、`rainy`、`budget`。
-- `district` / `business_area`：区和商圈，例如 `徐汇区`、`武康路-安福路`，会进入召回搜索文本并用于区域软排序。
+- `district` / `business_area`：区和商圈，例如 `徐汇区`、`武康路-安福路`，会进入召回搜索文本；用户显式指定 `target_district` / `target_business_area` 时用于区域过滤和最终约束校验。
 - `route_roles`：路线角色，例如 `main_activity`、`meal`、`coffee_break`、`photo_stop`、`rest_stop`、`transit_anchor`、`night_end`。
 - `experience_tags`：体验标签，例如 `老字号`、`安静`、`文艺`、`夜景`、`雨天`。
 
@@ -194,7 +196,7 @@ rrf_score = sum(channel_weight / (60 + rank))
 
 召回后的过滤大致分三层：
 
-1. 城市过滤：优先取 `poi.city == intent.city`。如果该城市没有数据，会用上海数据克隆成 fallback 候选，保证不空。
+1. 城市和区域过滤：只保留目标城市，并按 `target_district` / `target_business_area` 限定区域；没有本地数据时返回空，不复制上海或其他城市 POI。
 2. 严格匹配：要求命中用户偏好、避开 avoid_tags、价格不是极端超预算。
 3. 放宽兜底：如果严格结果不足，会放宽为“不命中避开项 + 不是极端超预算”；仍不足则补低风险 POI。
 
@@ -557,9 +559,9 @@ final_route_score =
 9. 如果不足三条，按 `limit=200`、`limit=260` 扩召回；仍不足时允许两站轻量路线。
 10. 对返回路线记录曝光信号，保存到 session memory，便于后续追问、反馈和修改。
 
-注意：`RouteService.CITY_CENTERS` 中保留了多个城市中心坐标，但当前普通规划只会给上海和北京自动补默认起点。其他城市如果没有真实起点坐标，通常依赖 POI fallback 数据，不会强行套用真实城市中心。
+注意：`RouteService.CITY_CENTERS` 中保留了多个城市中心坐标，但当前 POI 种子只覆盖上海和北京。其他城市没有本地 POI 数据时会直接返回无数据提示，不会借用 fallback POI 或仅凭城市中心坐标强行生成路线。
 
-普通规划的路线数目标是 3 条：两个画像/偏好目标 + `balanced`。强约束、短时长或候选不足时可能返回 1-2 条，但 120 案例离线门禁要求三路线率不低于 95%。
+普通聊天规划的路线数目标是 3 条：两个画像/偏好目标 + `balanced`。自适应、200、260 三轮召回和两站兜底后仍不足 3 条时，主接口返回明确失败说明和空路线列表，不返回 1-2 条半成品；预制路线服务则允许返回当前最优的 1-2 条。120 案例离线门禁要求三路线率不低于 95%。
 
 ## 8. 修改部分路线
 
@@ -818,20 +820,18 @@ overlap / min(len(route_a), len(route_b))
 
 固定评测集由 `scripts/evaluate_route_strategy.py` 生成，覆盖上海、北京各 60 个案例，包括商圈、半日、一日、预算、少走路、雨天、夜间、美食、亲子、老人、必去点、闭店/排队和单主题场景。
 
-当前最新三轮验收报告在 `artifacts/route-strategy-v2-final/route_strategy_evaluation.md`。结果如下：
+当前工作区最新验收报告在 `artifacts/route-strategy/route_strategy_evaluation.md`，对应自适应候选的一轮确定性 120 案例运行：
 
 | 运行 | 案例数 | 可行路线率 | 三路线率 | 角色覆盖率 | Mock P95 | 门禁 |
 | --- | ---: | ---: | ---: | ---: | ---: | --- |
-| run 1 | 120 | 100.00% | 95.83% | 96.05% | 1686.86 ms | PASS |
-| run 2 | 120 | 100.00% | 95.83% | 96.05% | 1625.73 ms | PASS |
-| run 3 | 120 | 100.00% | 95.83% | 96.05% | 1544.76 ms | PASS |
+| adaptive run 1 | 120 | 100.00% | 100.00% | 100.00% | 1772.92 ms | PASS |
 
 同时满足：
 
 - 硬约束违反数为 0。
 - 必去 POI Recall 为 100%。
 - 最终路线必去遗漏数为 0。
-- 非必去 POI 平均跨路线重合率为 13.91%。
+- 非必去 POI 平均跨路线重合率为 7.82%。
 
 发布配置使用：
 

@@ -83,10 +83,19 @@ class POIService:
         candidates = relaxed_matches if relax_preferences else strict_matches or relaxed_matches
         if len(candidates) < min_candidates:
             candidates = self._merge_candidates(candidates, relaxed_matches)
-        if intent.must_include_poi_ids:
-            required_ids = set(intent.must_include_poi_ids)
+        required_ids = set(intent.must_include_poi_ids)
+        required_neighborhood_ids: set[str] = set()
+        if required_ids:
             required_candidates = [candidate for candidate in city_matches if candidate.poi.id in required_ids]
-            candidates = self._merge_candidates(required_candidates, candidates)
+            required_neighbors = self._required_neighborhood_candidates(
+                required_candidates,
+                relaxed_matches,
+            )
+            required_neighborhood_ids = {candidate.poi.id for candidate in required_neighbors}
+            candidates = self._merge_candidates(
+                [*required_candidates, *required_neighbors],
+                candidates,
+            )
         if not candidates:
             self.last_diagnostics = {
                 "pipeline": self._pipeline_mode(user_profile.user_id if user_profile else "anonymous"),
@@ -107,6 +116,13 @@ class POIService:
         )
         legacy_ranked = self._protect_short_trip_candidates(legacy_ranked, intent)
         legacy_ranked = self._diversify_ranked_candidates(legacy_ranked, output_limit)
+        if required_ids:
+            protected = [
+                candidate
+                for candidate in candidates
+                if candidate.poi.id in required_ids | required_neighborhood_ids
+            ]
+            legacy_ranked = self._merge_candidates(protected, legacy_ranked)
         legacy_output = [candidate.poi for candidate in legacy_ranked[:output_limit]]
         pipeline_mode = self._pipeline_mode(user_profile.user_id if user_profile else "anonymous")
         if pipeline_mode == "legacy":
@@ -133,9 +149,12 @@ class POIService:
             limit=min(coarse_limit, len(recalled)),
         )
         ranked = self._protect_short_trip_candidates(ranked, intent)
-        required_ids = set(intent.must_include_poi_ids)
         if required_ids:
-            required = [candidate for candidate in candidates if candidate.poi.id in required_ids]
+            required = [
+                candidate
+                for candidate in candidates
+                if candidate.poi.id in required_ids | required_neighborhood_ids
+            ]
             required_seen = {candidate.poi.id for candidate in required}
             ranked = [*required, *(candidate for candidate in ranked if candidate.poi.id not in required_seen)]
         ranked = self._diversify_ranked_candidates(ranked, output_limit)
@@ -156,6 +175,38 @@ class POIService:
             ),
         }
         return legacy_output if pipeline_mode == "shadow" else output
+
+    def _required_neighborhood_candidates(
+        self,
+        required: list[POICandidate],
+        candidates: list[POICandidate],
+    ) -> list[POICandidate]:
+        protected: list[POICandidate] = []
+        protected_ids: set[str] = set()
+        required_ids = {candidate.poi.id for candidate in required}
+        for anchor_candidate in required:
+            anchor = anchor_candidate.poi
+            nearby = sorted(
+                (candidate for candidate in candidates if candidate.poi.id not in required_ids),
+                key=lambda candidate: (
+                    candidate.poi.visit_duration_minutes
+                    + candidate.poi.queue_minutes
+                    + self._haversine_km(
+                        anchor.lat,
+                        anchor.lng,
+                        candidate.poi.lat,
+                        candidate.poi.lng,
+                    )
+                    * 8,
+                    candidate.poi.visit_duration_minutes + candidate.poi.queue_minutes,
+                ),
+            )[:32]
+            for candidate in nearby:
+                if candidate.poi.id in protected_ids:
+                    continue
+                protected.append(candidate)
+                protected_ids.add(candidate.poi.id)
+        return protected
 
     def _pipeline_mode(self, identity: str) -> str:
         mode = str(settings.planning_pipeline_mode or "").strip().lower()
