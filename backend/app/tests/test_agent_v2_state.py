@@ -5,7 +5,9 @@ from app.agent.v2.models import (
     TripStateV2,
     TurnUnderstanding,
 )
+from app.agent.v2.compatibility import state_to_intent
 from app.agent.v2.reducer import reduce_state
+from app.agent.v2.temporal import normalize_clock_time
 from app.state.repository import InMemoryStateRepository, SQLiteStateRepository, StateConflictError
 
 
@@ -113,3 +115,39 @@ def test_repository_rejects_stale_state_version() -> None:
         pass
     else:
         raise AssertionError("stale state write should fail")
+
+
+def test_reducer_normalizes_iso_datetime_to_clock_time() -> None:
+    state, _, _ = reduce_state(
+        TripStateV2(session_id="iso-time"),
+        TurnUnderstanding(state_patch=[StatePatch(
+            op="replace",
+            path="/start_time",
+            value="2026-08-22 10:00",
+            source=ConstraintSource.USER_EXPLICIT,
+        )]),
+        "t1",
+    )
+
+    assert state.scalar_value("start_time") == "10:00"
+
+
+def test_state_projection_repairs_existing_iso_datetime() -> None:
+    state = TripStateV2(
+        session_id="stored-iso",
+        start_time={
+            "value": "2026-08-22 10:00",
+            "source": "user_explicit",
+            "confidence": 1.0,
+            "turn_id": "t1",
+            "relaxability": "ask_before_relax",
+            "evidence": "明天上午十点",
+        },
+    )
+
+    assert state_to_intent(state).start_time == "10:00"
+
+
+def test_clock_time_normalizer_supports_period_expressions() -> None:
+    assert normalize_clock_time("明天下午3点半") == "15:30"
+    assert normalize_clock_time("凌晨12:30") == "00:30"

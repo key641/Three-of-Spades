@@ -18,6 +18,7 @@ from app.agent.v2.models import (
     TurnUnderstanding,
 )
 from app.agent.v2.contextual_needs import ContextualNeedEngine
+from app.agent.v2.temporal import normalize_clock_time
 from app.schemas.chat import ChatRequest
 from app.schemas.intent import Intent
 
@@ -278,7 +279,10 @@ class TurnUnderstandingService:
         start_time = self._projected_patch_value(patches, "start_time", state.scalar_value("start_time", "14:00"))
         duration = self._projected_patch_value(patches, "duration_minutes", state.scalar_value("duration_minutes", 360))
         try:
-            hour, minute = str(start_time).split(":", 1)
+            normalized_start = normalize_clock_time(start_time)
+            if normalized_start is None:
+                return []
+            hour, minute = normalized_start.split(":", 1)
             start_minutes = int(hour) * 60 + int(minute)
             duration_minutes = max(0, int(duration))
         except (TypeError, ValueError):

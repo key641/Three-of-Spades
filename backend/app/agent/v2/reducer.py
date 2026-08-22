@@ -16,6 +16,7 @@ from app.agent.v2.models import (
     TripStateV2,
     TurnUnderstanding,
 )
+from app.agent.v2.temporal import normalize_clock_time
 
 
 SCALAR_FIELDS = {
@@ -135,6 +136,11 @@ def _coerce_value(field: str, value):
         return LocationRef.model_validate(value)
     if field in {"people_count", "duration_minutes", "budget_per_person"}:
         return int(value)
+    if field == "start_time":
+        normalized = normalize_clock_time(value)
+        if normalized is None:
+            raise ValueError(f"invalid start_time: {value!r}")
+        return normalized
     return value
 
 

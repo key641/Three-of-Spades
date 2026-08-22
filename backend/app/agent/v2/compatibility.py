@@ -10,6 +10,7 @@ from app.agent.v2.models import (
 )
 from app.schemas.intent import Intent
 from app.schemas.route import Route
+from app.agent.v2.temporal import normalize_clock_time
 
 
 def legacy_to_v2(session_id: str, legacy: SessionState | None) -> TripStateV2:
@@ -66,7 +67,7 @@ def state_to_intent(state: TripStateV2) -> Intent:
         start_location_name=location.name if isinstance(location, LocationRef) else None,
         start_lat=location.lat if isinstance(location, LocationRef) else None,
         start_lng=location.lng if isinstance(location, LocationRef) else None,
-        start_time=str(state.scalar_value("start_time", "14:00")),
+        start_time=normalize_clock_time(state.scalar_value("start_time", "14:00")) or "14:00",
         duration_hours=max(1, round(int(state.scalar_value("duration_minutes", 360)) / 60)),
         budget_per_person=int(state.scalar_value("budget_per_person", 300)),
         target_district=state.scalar_value("target_district"),
