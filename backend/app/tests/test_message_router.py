@@ -123,6 +123,33 @@ class MessageRouterTest(unittest.TestCase):
 
         asyncio.run(run_case())
 
+    def test_router_handles_transfer_and_service_preference_change(self) -> None:
+        async def run_case() -> None:
+            llm_client = AsyncMock()
+            llm_client.complete = AsyncMock(side_effect=RuntimeError("llm down"))
+            state = SessionState(session_id="s1", last_intent=Intent(city="上海", preferences=["少换乘"]))
+
+            result = await MessageRouter(llm_client).classify("不用少换乘、服务优先", state)
+
+            self.assertEqual(result.intent_type, MessageIntentType.MODIFY_PLAN)
+            self.assertEqual(result.planning_mode, PlanningMode.FULL_REPLAN)
+            self.assertTrue(result.inherit_previous)
+            self.assertTrue(result.preserve_scenario)
+
+        asyncio.run(run_case())
+
+    def test_router_returns_general_chat_when_no_rule_matches(self) -> None:
+        async def run_case() -> None:
+            llm_client = AsyncMock()
+            llm_client.complete = AsyncMock(side_effect=RuntimeError("llm down"))
+
+            result = await MessageRouter(llm_client).classify("嗯", SessionState(session_id="s1"))
+
+            self.assertEqual(result.intent_type, MessageIntentType.GENERAL_CHAT)
+            self.assertEqual(result.confidence_source, "规则兜底")
+
+        asyncio.run(run_case())
+
     def test_router_falls_back_to_partial_replan_for_local_or_live_route_changes(self) -> None:
         async def run_case() -> None:
             llm_client = AsyncMock()

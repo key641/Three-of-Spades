@@ -7,6 +7,32 @@ from app.services.profile_service import ProfileService
 
 
 class ProfileRequestSyncTest(unittest.TestCase):
+    def test_explicit_message_start_wins_over_request_gps(self) -> None:
+        service = ProfileService()
+        intent = Intent(city="北京", start_location_name="国贸")
+        request = ChatRequest(
+            message="从国贸出发",
+            start_location_name="当前位置",
+            start_lat=39.9962,
+            start_lng=116.4753,
+        )
+
+        merged = service.merge_request_into_intent(intent, request)
+
+        self.assertEqual(merged.start_location_name, "国贸")
+        self.assertIsNone(merged.start_lat)
+        self.assertIsNone(merged.start_lng)
+
+    def test_request_gps_is_used_when_message_has_no_start(self) -> None:
+        service = ProfileService()
+        merged = service.merge_request_into_intent(
+            Intent(city="北京"),
+            ChatRequest(message="找附近餐厅", start_lat=39.9962, start_lng=116.4753),
+        )
+
+        self.assertEqual(merged.start_lat, 39.9962)
+        self.assertEqual(merged.start_lng, 116.4753)
+
     def test_chat_request_accepts_onboarding_profile_fields(self) -> None:
         request = ChatRequest(
             message="上海半天 citywalk，少排队",

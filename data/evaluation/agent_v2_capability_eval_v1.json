@@ -1,0 +1,247 @@
+{
+  "dataset_version": "agent-v2-capability-v1",
+  "description": "AI 出行规划 Agent V2 理想能力覆盖集：理解、定位、隐含需求、多轮状态、规划执行与鲁棒性。",
+  "suites": [
+    {
+      "name": "01_understanding",
+      "label": "结构化理解",
+      "cases": [
+        {
+          "name": "明确城市人数预算时长",
+          "category": "意图理解",
+          "message": "北京半日游，3个人，人均预算200，想少走路",
+          "expectation": {"expected_city": "北京", "expected_people_count": 3, "expected_preferences": ["少走路"], "min_routes": 1, "required_tool_calls": ["search_pois", "generate_routes"]}
+        },
+        {
+          "name": "显式城市覆盖请求默认城市",
+          "category": "意图理解",
+          "message": "去上海玩一天，想看展和逛街",
+          "city": "北京",
+          "expectation": {"expected_city": "上海", "min_routes": 1}
+        },
+        {
+          "name": "雨天室内偏好",
+          "category": "意图理解",
+          "message": "上海明天下雨，安排一个室内半日游",
+          "expectation": {"expected_city": "上海", "expected_preferences": ["室内"], "min_routes": 1}
+        },
+        {
+          "name": "聚餐人数识别",
+          "category": "意图理解",
+          "message": "北京推荐个适合6个人聚餐的地方，晚上六点开始",
+          "expectation": {"expected_city": "北京", "expected_people_count": 6, "expected_required_roles": ["meal"], "min_routes": 1}
+        },
+        {
+          "name": "缺少城市只追问阻断字段",
+          "category": "追问决策",
+          "message": "周末想出去逛逛，轻松一点",
+          "expectation": {"expect_clarification": true, "min_routes": 0, "require_planning_outcome": false}
+        }
+      ]
+    },
+    {
+      "name": "02_grounding",
+      "label": "城市与起点定位",
+      "cases": [
+        {
+          "name": "明确国贸起点覆盖GPS",
+          "category": "起点定位",
+          "message": "从国贸出发，北京玩半天，少走路",
+          "city": "北京",
+          "start_lat": 39.9962,
+          "start_lng": 116.4753,
+          "expectation": {"expected_city": "北京", "expected_start_location_name": "国贸", "expected_start_source": "named", "min_routes": 1}
+        },
+        {
+          "name": "未指定起点使用北京GPS",
+          "category": "起点定位",
+          "message": "附近找几个安静放松的地方，玩三小时",
+          "city": "北京",
+          "start_lat": 39.9962,
+          "start_lng": 116.4753,
+          "expectation": {"expected_city": "北京", "expected_start_source": "gps", "min_routes": 1}
+        },
+        {
+          "name": "未指定起点使用上海GPS",
+          "category": "起点定位",
+          "message": "附近安排一个咖啡加散步的半日路线",
+          "city": "上海",
+          "start_lat": 31.2304,
+          "start_lng": 121.4737,
+          "expectation": {"expected_city": "上海", "expected_start_source": "gps", "min_routes": 1}
+        },
+        {
+          "name": "静安寺命名起点",
+          "category": "起点定位",
+          "message": "从静安寺出发安排上海下午citywalk",
+          "city": "上海",
+          "expectation": {"expected_city": "上海", "expected_start_location_name": "静安寺", "expected_start_source": "named", "min_routes": 1}
+        },
+        {
+          "name": "用户消息城市优先于定位城市",
+          "category": "起点定位",
+          "message": "杭州周六逛一天，3个人",
+          "city": "北京",
+          "location_city": "北京",
+          "start_lat": 39.9962,
+          "start_lng": 116.4753,
+          "expectation": {"expected_city": "杭州", "expected_people_count": 3, "min_routes": 0, "require_planning_outcome": false}
+        }
+      ]
+    },
+    {
+      "name": "03_implicit_needs",
+      "label": "时间与隐含需求",
+      "cases": [
+        {
+          "name": "午餐饭点自动安排正餐",
+          "category": "隐含需求",
+          "message": "北京从上午10点开始玩4小时，想逛逛景点",
+          "expectation": {"expected_city": "北京", "expected_required_roles": ["meal"], "min_routes": 1}
+        },
+        {
+          "name": "晚餐饭点自动安排正餐",
+          "category": "隐含需求",
+          "message": "上海下午四点出发玩四小时，想看展和散步",
+          "expectation": {"expected_city": "上海", "expected_required_roles": ["meal"], "min_routes": 1}
+        },
+        {
+          "name": "晚上聚餐显式正餐",
+          "category": "隐含需求",
+          "message": "北京晚上六点开始，先吃饭再看夜景，4个人",
+          "expectation": {"expected_city": "北京", "expected_people_count": 4, "expected_required_roles": ["meal"], "min_routes": 1}
+        },
+        {
+          "name": "咖啡需求不替代正餐",
+          "category": "隐含需求",
+          "message": "上海上午十点开始玩到下午两点，想喝咖啡也要正常吃午饭",
+          "expectation": {"expected_city": "上海", "expected_preferences": ["咖啡"], "expected_required_roles": ["meal"], "min_routes": 1}
+        },
+        {
+          "name": "明确吃过饭不强制正餐",
+          "category": "隐含需求",
+          "message": "北京晚上六点出发玩三小时，我已经吃过了，不用安排吃饭",
+          "expectation": {"expected_city": "北京", "min_routes": 1}
+        }
+      ]
+    },
+    {
+      "name": "04_multiturn_state",
+      "label": "多轮状态与修改",
+      "cases": [
+        {
+          "name": "修改预算保留国贸起点",
+          "category": "多轮状态",
+          "message": "从国贸出发安排北京半日游，4个人，人均300",
+          "turns": ["预算降到人均200，其他不变"],
+          "expectation": {"expected_city": "北京", "expected_people_count": 4, "expected_start_location_name": "国贸", "min_routes": 1}
+        },
+        {
+          "name": "追加少走路保留城市人数",
+          "category": "多轮状态",
+          "message": "上海5个人玩半天，人均400",
+          "turns": ["再少走路一点，其他不变"],
+          "expectation": {"expected_city": "上海", "expected_people_count": 5, "expected_preferences": ["少走路"], "min_routes": 1}
+        },
+        {
+          "name": "后续明确更换起点",
+          "category": "多轮状态",
+          "message": "北京安排一个半日游",
+          "turns": ["改成从国贸出发，少走路"],
+          "start_lat": 39.9962,
+          "start_lng": 116.4753,
+          "expectation": {"expected_city": "北京", "expected_start_location_name": "国贸", "expected_preferences": ["少走路"], "min_routes": 1}
+        },
+        {
+          "name": "追问后补充城市继续规划",
+          "category": "多轮状态",
+          "message": "周末想出去放松一下",
+          "turns": ["就在北京，下午两点开始玩四小时"],
+          "expectation": {"expected_city": "北京", "min_routes": 1}
+        },
+        {
+          "name": "路线生成后继续问交通",
+          "category": "路线问答",
+          "message": "上海半日citywalk，少走路",
+          "turns": ["第一条路线各站之间怎么走？"],
+          "expectation": {"expected_city": "上海", "min_routes": 1, "expect_trace": true}
+        }
+      ]
+    },
+    {
+      "name": "05_planning_quality",
+      "label": "规划执行与偏好",
+      "cases": [
+        {
+          "name": "北京轻松半日游",
+          "category": "路线生成",
+          "message": "北京半日游，想轻松一点，别走太多路",
+          "expectation": {"expected_city": "北京", "expected_preferences": ["少走路"], "min_routes": 1, "required_tool_calls": ["search_pois", "generate_routes"]}
+        },
+        {
+          "name": "上海雨天室内路线",
+          "category": "路线生成",
+          "message": "上海雨天玩四小时，尽量都在室内",
+          "expectation": {"expected_city": "上海", "expected_preferences": ["室内"], "min_routes": 1}
+        },
+        {
+          "name": "北京低预算路线",
+          "category": "路线生成",
+          "message": "北京玩一天，人均100以内，想省钱但别太赶",
+          "expectation": {"expected_city": "北京", "min_routes": 1}
+        },
+        {
+          "name": "上海夜景路线",
+          "category": "路线生成",
+          "message": "上海晚上七点开始看夜景，安排三小时",
+          "expectation": {"expected_city": "上海", "expected_preferences": ["夜景"], "min_routes": 1}
+        },
+        {
+          "name": "北京亲子轻松路线",
+          "category": "路线生成",
+          "message": "北京带孩子玩一天，亲子友好，少排队也别太累",
+          "expectation": {"expected_city": "北京", "expected_preferences": ["亲子", "少走路"], "min_routes": 1}
+        }
+      ]
+    },
+    {
+      "name": "06_robustness",
+      "label": "口语与鲁棒性",
+      "cases": [
+        {
+          "name": "中英文混合Citywalk",
+          "category": "鲁棒性",
+          "message": "北京 afternoon citywalk，想拍照和喝 coffee，别走太多",
+          "expectation": {"expected_city": "北京", "expected_preferences": ["拍照", "咖啡", "少走路"], "min_routes": 1}
+        },
+        {
+          "name": "口语化上海闲逛",
+          "category": "鲁棒性",
+          "message": "我俩在上海随便转转呗，别整太累，预算两百来块",
+          "expectation": {"expected_city": "上海", "expected_people_count": 2, "expected_preferences": ["少走路"], "min_routes": 1}
+        },
+        {
+          "name": "复合偏好长输入",
+          "category": "鲁棒性",
+          "message": "北京周六上午十点开始，三个人，想看点文化艺术的，也想找地方吃饭，尽量地铁出行，不要排太久，人均预算250左右，晚上七点前结束",
+          "expectation": {"expected_city": "北京", "expected_people_count": 3, "expected_required_roles": ["meal"], "min_routes": 1}
+        },
+        {
+          "name": "附近晚间放松口语",
+          "category": "鲁棒性",
+          "message": "来几个附近放松的地点，晚上出去转转",
+          "city": "北京",
+          "start_lat": 39.9962,
+          "start_lng": 116.4753,
+          "expectation": {"expected_city": "北京", "expected_start_source": "gps", "min_routes": 1}
+        },
+        {
+          "name": "无本地数据城市安全失败",
+          "category": "鲁棒性",
+          "message": "成都从春熙路出发玩半天，想吃小吃",
+          "expectation": {"expected_city": "成都", "min_routes": 0, "require_planning_outcome": false, "expect_trace": true}
+        }
+      ]
+    }
+  ]
+}

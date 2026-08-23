@@ -182,6 +182,11 @@ export interface ChatResponse {
   user_profile?: UserProfile | null;
   routes: Route[];
   agent_trace: AgentTraceStep[];
+  planning_outcome?: "complete" | "partial" | "clarification" | "infeasible" | "degraded" | "failed" | null;
+  state_version?: number | null;
+  trace_id?: string | null;
+  warnings?: string[];
+  degradation?: { level: number; changes: string[] } | null;
 }
 
 export type ChatStreamEvent =

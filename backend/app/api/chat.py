@@ -4,13 +4,13 @@ import json
 from fastapi import APIRouter
 from fastapi.responses import StreamingResponse
 
-from app.agent.orchestrator import AgentOrchestrator
+from app.agent.v2.runtime import AgentRuntimeRouter
 from app.schemas.chat import AgentTraceStep
 from app.schemas.chat import ChatRequest, ChatResponse
 from app.schemas.route import Route
 
 router = APIRouter(tags=["chat"])
-orchestrator = AgentOrchestrator()
+orchestrator = AgentRuntimeRouter()
 
 
 async def enqueue_stream_event(queue: asyncio.Queue[dict], event: dict) -> None:

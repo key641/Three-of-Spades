@@ -1,12 +1,44 @@
 import unittest
 
-from app.agent.intent_context import apply_session_context, is_adjustment_message
+from app.agent.intent_context import apply_query_delta, apply_session_context, is_adjustment_message
 from app.agent.message_router import MessageIntentType, MessageRoute, TurnType
-from app.agent.schemas import SessionState
+from app.agent.schemas import IntentDelta, QueryUnderstanding, SessionState, TripState
 from app.schemas.intent import Intent
 
 
 class IntentContextTest(unittest.TestCase):
+    def test_trip_state_roundtrip_preserves_start_location(self) -> None:
+        source = Intent(
+            city="北京",
+            start_location_name="当前位置",
+            start_lat=39.9962,
+            start_lng=116.4753,
+        )
+
+        restored = TripState.from_intent(source).to_intent()
+
+        self.assertEqual(restored.start_location_name, "当前位置")
+        self.assertEqual(restored.start_lat, 39.9962)
+        self.assertEqual(restored.start_lng, 116.4753)
+
+    def test_explicit_named_start_replaces_previous_gps(self) -> None:
+        previous = TripState.from_intent(Intent(
+            city="北京",
+            start_location_name="当前位置",
+            start_lat=39.9962,
+            start_lng=116.4753,
+        ))
+        state = SessionState(session_id="s-start", trip_state=previous)
+        understanding = QueryUnderstanding(turn_type="modify_constraint", inherit_previous=True)
+        delta = IntentDelta(modified_hard_constraints={"start_location_name": "国贸"})
+
+        merged, trip_state, _ = apply_query_delta(Intent(city="北京"), state, understanding, delta)
+
+        self.assertEqual(merged.start_location_name, "国贸")
+        self.assertIsNone(merged.start_lat)
+        self.assertIsNone(merged.start_lng)
+        self.assertEqual(trip_state.start_location_name, "国贸")
+
     def test_detects_adjustment_message(self) -> None:
         self.assertTrue(is_adjustment_message("预算低一点，别排队"))
         self.assertTrue(is_adjustment_message("不想排队"))

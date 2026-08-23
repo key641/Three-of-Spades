@@ -123,6 +123,10 @@ def enhance_intent_from_message(intent: Intent, message: str) -> Intent:
     if start_time:
         data["start_time"] = start_time
 
+    start_location = _extract_start_location(text)
+    if start_location:
+        data["start_location_name"] = start_location
+
     district = _extract_district(text)
     if district:
         data["target_district"] = district
@@ -178,6 +182,9 @@ def extract_explicit_trip_fields(message: str) -> dict[str, object]:
     start_time = _extract_start_time(text)
     if start_time:
         fields["start_time"] = start_time
+    start_location = _extract_start_location(text)
+    if start_location:
+        fields["start_location_name"] = start_location
     district = _extract_district(text)
     if district:
         fields["target_district"] = district
@@ -217,6 +224,20 @@ def _extract_city(text: str) -> str | None:
     return None
 
 
+def _extract_start_location(text: str) -> str | None:
+    patterns = [
+        r"从\s*([\u4e00-\u9fa5A-Za-z0-9·\-]{2,16}?)\s*(?:出发|开始|走)",
+        r"(?:我在|当前位置是|起点是|出发地是)\s*([\u4e00-\u9fa5A-Za-z0-9·\-]{2,16}?)(?:附近|这边|出发|，|。|,|$)",
+    ]
+    for pattern in patterns:
+        match = re.search(pattern, text)
+        if match:
+            value = match.group(1).strip()
+            if value:
+                return value
+    return None
+
+
 def _extract_district(text: str) -> str | None:
     non_district_endings = {"地区", "景区", "特区", "城区", "风景区", "保护区", "开发区", "区别", "区域"}
     for match in re.finditer(r"[\u4e00-\u9fa5]{2,6}区|[\u4e00-\u9fa5]{2,6}县|[\u4e00-\u9fa5]{2,6}新区", text):
@@ -231,9 +252,12 @@ def _extract_business_area(text: str) -> str | None:
     for area in KNOWN_BUSINESS_AREAS:
         if area in text:
             return area
-    match = re.search(r"[\u4e00-\u9fa5]{2,8}(?:路|街|巷|弄|大道|步行街|老街)", text)
+    match = re.search(
+        r"(?:在|去|到|逛|想去|前往)\s*([\u4e00-\u9fa5]{2,8}(?:路|街|巷|弄|大道|步行街|老街))",
+        text,
+    )
     if match:
-        value = match.group(0)
+        value = match.group(1)
         if value not in {"路线", "道路"}:
             return value
     return None

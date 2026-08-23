@@ -13,7 +13,8 @@ logger = logging.getLogger("app.llm.openai")
 
 class OpenAIClient(LLMClient):
     async def complete(self, messages: list[dict], tools: list[dict] | None = None, json_mode: bool = True) -> dict:
-        if not settings.openai_api_key:
+        api_key = settings.ofox_api_key if "ofox.ai" in settings.openai_base_url else settings.openai_api_key
+        if not api_key:
             raise RuntimeError("OPENAI_API_KEY is not configured")
 
         payload: dict = {
@@ -36,12 +37,12 @@ class OpenAIClient(LLMClient):
             json_mode,
         )
 
-        async with httpx.AsyncClient(timeout=30) as client:
+        async with httpx.AsyncClient(timeout=30, proxy=settings.llm_proxy_url or None) as client:
             try:
                 response = await client.post(
                     url,
                     headers={
-                        "Authorization": f"Bearer {settings.openai_api_key}",
+                        "Authorization": f"Bearer {api_key}",
                         "Content-Type": "application/json",
                     },
                     json=payload,

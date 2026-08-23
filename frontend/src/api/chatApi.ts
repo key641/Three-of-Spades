@@ -2,11 +2,8 @@ import { API_BASE_URL, postJson } from "./client";
 import type { OnboardingProfile, TripConstraints } from "../hooks/useOnboarding";
 import type { AgentTraceStep, ChatResponse, ChatStreamEvent, RouteStop } from "./types";
 
-// ============================================================
-// Mock 开关：当前强制开启前端本地 mock，无需后端即可预览。
-// 如需走真实后端，将下一行改为 const USE_MOCK = false;
-// ============================================================
-const USE_MOCK = true;
+// 真实联调默认走后端；如需离线调试，可临时改为 true。
+const USE_MOCK = false;
 const SESSION_STORAGE_KEY = "tos_chat_session_id";
 
 

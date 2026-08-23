@@ -79,7 +79,7 @@
 允许修改：
 - backend/app/agent/orchestrator.py
 - backend/app/llm/openai_client.py
-- backend/app/agent/prompts.py
+- backend/app/agent/prompts/
 - backend/app/tools/intent_tool.py
 
 不要修改：

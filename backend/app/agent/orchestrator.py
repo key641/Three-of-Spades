@@ -124,15 +124,12 @@ class AgentOrchestrator:
         )
         await emit_pending_trace()
 
-        route_clarification = self.clarification_policy._intent_disambiguation_decision(message_route)
-        if route_clarification.need_clarification:
-            return self._handle_clarification(
-                request,
-                session_state,
-                trace,
-                route_clarification,
-                intent=session_state.last_intent or Intent(),
-            )
+        if (
+            message_route.references_previous_route
+            and message_route.confidence < 0.5
+            and len(message_route.candidate_planning_modes) > 1
+        ):
+            return self._handle_ambiguous_planning_mode(request, session_state, trace)
 
         if message_route.intent_type == MessageIntentType.ROUTE_DETAIL_QUESTION:
             response = self.route_detail_handler.answer(request.message, request.session_id, session_state)
@@ -850,6 +847,32 @@ class AgentOrchestrator:
             clarification_groups=decision.clarification_groups,
             inferred_context=decision.inferred_context,
             intent=intent,
+            user_profile=session_state.user_profile,
+            routes=session_state.current_routes,
+            agent_trace=trace,
+        )
+
+    def _handle_ambiguous_planning_mode(self, request: ChatRequest, session_state, trace: list[AgentTraceStep]) -> ChatResponse:
+        message = "你是想按新要求重新生成整条路线，还是只换掉当前路线中的某一站？"
+        trace.append(
+            AgentTraceStep(
+                step="clarify_planning_mode",
+                label="规划范围不明确，先确认整体重规划或局部替换",
+                status="done",
+                details={
+                    "candidate_modes": ["full_replan", "partial_replan"],
+                    "reason": "多个规划方式置信度接近，避免误改整条路线。",
+                },
+            )
+        )
+        return ChatResponse(
+            session_id=request.session_id,
+            message=message,
+            need_clarification=True,
+            clarifying_question=message,
+            clarification_type="planning_mode",
+            inferred_context={"has_current_routes": bool(session_state.current_routes)},
+            intent=session_state.last_intent,
             user_profile=session_state.user_profile,
             routes=session_state.current_routes,
             agent_trace=trace,

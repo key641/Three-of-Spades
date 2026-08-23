@@ -5,6 +5,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from app.api.chat import router as chat_router
+from app.api.evaluation import router as evaluation_router
 from app.api.feedback import router as feedback_router
 from app.api.pois import router as pois_router
 from app.api.routes import router as routes_router
@@ -20,15 +21,25 @@ logging.getLogger("app").setLevel(logging.INFO)
 
 app = FastAPI(title="Local Route Agent API", version="0.1.0")
 
+development_origin_regex = (
+    r"^https?://(localhost|127\.0\.0\.1|10(?:\.\d{1,3}){3}|"
+    r"192\.168(?:\.\d{1,3}){2}|172\.(?:1[6-9]|2\d|3[01])(?:\.\d{1,3}){2})"
+    r"(?::\d+)?$"
+    if settings.app_env == "development"
+    else None
+)
+
 app.add_middleware(
     CORSMiddleware,
     allow_origins=settings.cors_origins,
+    allow_origin_regex=development_origin_regex,
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
 )
 
 app.include_router(chat_router, prefix="/api")
+app.include_router(evaluation_router, prefix="/api")
 app.include_router(pois_router, prefix="/api")
 app.include_router(routes_router, prefix="/api")
 app.include_router(feedback_router, prefix="/api")
