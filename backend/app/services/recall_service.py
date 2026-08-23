@@ -1,4 +1,7 @@
+from __future__ import annotations
+
 import json
+import hashlib
 import math
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -39,6 +42,15 @@ class RecallService:
     }
 
     REQUIRED_ROLES = ["main_activity", "meal", "rest_stop", "coffee_break", "photo_stop", "transit_anchor", "night_end"]
+    RRF_K = 60
+    CHANNEL_WEIGHTS = {
+        "content": 1.0,
+        "profile": 1.0,
+        "collaborative_filtering": 0.9,
+        "two_tower": 1.0,
+        "scenario": 1.1,
+        "route_role": 1.1,
+    }
 
     def __init__(
         self,
@@ -57,6 +69,7 @@ class RecallService:
         self._user_embeddings = self._load_json(self.user_embedding_path, {}).get("embeddings", {})
         self._item_similarity = self._load_json(self.item_similarity_path, {}).get("items", {})
         self._events_by_user = self._index_events_by_user(self._events)
+        self.last_diagnostics: dict[str, Any] = {}
 
     def recall(
         self,
@@ -73,18 +86,55 @@ class RecallService:
             candidates=candidates,
             target_pool_size=target_pool_size,
         )
-        results: list[RecallResult] = []
-        results.extend(self._content_recall(context, self.CHANNEL_LIMITS["content"]))
-        results.extend(self._profile_recall(context, self.CHANNEL_LIMITS["profile"]))
-        results.extend(self._collaborative_recall(context, self.CHANNEL_LIMITS["collaborative_filtering"]))
-        results.extend(self._two_tower_recall(context, self.CHANNEL_LIMITS["two_tower"]))
-        results.extend(self._scenario_recall(context, self.CHANNEL_LIMITS["scenario"]))
-        results.extend(self._route_role_recall(context, self.CHANNEL_LIMITS["route_role"]))
-        merged = self._merge_results(results)
+        channel_results = {
+            "content": self._content_recall(context, self.CHANNEL_LIMITS["content"]),
+            "scenario": self._scenario_recall(context, self.CHANNEL_LIMITS["scenario"]),
+            "route_role": self._route_role_recall(context, self.CHANNEL_LIMITS["route_role"]),
+        }
+        if user_profile is not None:
+            channel_results["profile"] = self._profile_recall(context, self.CHANNEL_LIMITS["profile"])
+            channel_results["collaborative_filtering"] = self._collaborative_recall(
+                context, self.CHANNEL_LIMITS["collaborative_filtering"]
+            )
+        channel_results["two_tower"] = self._two_tower_recall(context, self.CHANNEL_LIMITS["two_tower"])
+        merged = self._rrf_merge(channel_results)
         diversified = self._diversify(merged, context.target_pool_size)
         if len(diversified) < context.target_pool_size:
             diversified = self._append_fallback(diversified, context.candidates, context.target_pool_size)
+        self.last_diagnostics = {
+            "input_count": len(candidates),
+            "target_pool_size": target_pool_size,
+            "channel_counts": {channel: len(items) for channel, items in channel_results.items()},
+            "merged_count": len(merged),
+            "output_count": min(len(diversified), context.target_pool_size),
+            "fusion": "weighted_rrf",
+        }
         return [result.candidate for result in diversified[: context.target_pool_size]]
+
+    def _rrf_merge(self, channel_results: dict[str, list[RecallResult]]) -> list[RecallResult]:
+        merged: dict[str, RecallResult] = {}
+        for channel, results in channel_results.items():
+            weight = self.CHANNEL_WEIGHTS.get(channel, 1.0)
+            for rank, result in enumerate(results, start=1):
+                poi_id = result.candidate.poi.id
+                rrf_score = weight / (self.RRF_K + rank)
+                if poi_id not in merged:
+                    merged[poi_id] = RecallResult(
+                        candidate=result.candidate,
+                        channel=channel,
+                        reason=result.reason,
+                        score_hint=rrf_score,
+                        channels={channel},
+                    )
+                else:
+                    merged[poi_id].score_hint += rrf_score
+                    merged[poi_id].channels.add(channel)
+                    merged[poi_id].reason = "+".join(sorted(merged[poi_id].channels))
+        return sorted(
+            merged.values(),
+            key=lambda item: (item.score_hint, len(item.channels)),
+            reverse=True,
+        )
 
     def _content_recall(self, context: RecallContext, limit: int) -> list[RecallResult]:
         terms = self._terms([*context.intent.preferences, *(tag.tag for tag in context.strategy_tags), context.intent.scenario])
@@ -289,11 +339,11 @@ class RecallService:
         terms = context.intent.preferences + [tag.tag for tag in context.strategy_tags]
         vector = [0.0] * 64
         for term in terms:
-            index = abs(hash(term)) % len(vector)
+            index = self._stable_bucket(term, len(vector))
             vector[index] += 1
         if profile:
             for category, score in profile.category_preferences.items():
-                vector[abs(hash(f"category:{category}")) % len(vector)] += float(score)
+                vector[self._stable_bucket(f"category:{category}", len(vector))] += float(score)
             vector[0] += profile.budget_sensitivity
             vector[1] += profile.walking_tolerance
             vector[2] += profile.crowd_tolerance
@@ -303,6 +353,10 @@ class RecallService:
         if norm <= 0:
             return None
         return [value / norm for value in vector]
+
+    def _stable_bucket(self, value: str, size: int) -> int:
+        digest = hashlib.sha256(value.encode("utf-8")).digest()
+        return int.from_bytes(digest[:8], "big") % size
 
     def _candidate_text(self, candidate: Any) -> str:
         poi = candidate.poi

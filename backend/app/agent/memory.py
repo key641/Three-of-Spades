@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 from app.agent.schemas import ChatTurn, SessionState, TripState
 from app.schemas.intent import Intent
 from app.schemas.route import Route

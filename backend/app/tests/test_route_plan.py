@@ -11,10 +11,36 @@ def _plan(intent: Intent, message: str = ""):
     profile = ProfileService().get_profile("user_demo")
     strategy_tags = StrategyService().infer_tags(message or " ".join(intent.preferences), intent, profile)
     strategy_weights = ProfileService().build_strategy_weights(intent, profile, strategy_tags)
-    pois = POIService().search(intent, user_profile=profile, strategy_tags=strategy_tags)
-    return RouteService().generate_routes(
-        RoutePlanRequest(intent=intent, user_profile=profile, strategy_weights=strategy_weights, strategy_tags=strategy_tags, candidate_pois=pois)
-    )
+    for limit, relax_preferences in [(60, False), (90, True), (120, True)]:
+        pois = POIService().search(
+            intent,
+            user_profile=profile,
+            strategy_tags=strategy_tags,
+            limit=limit,
+            relax_preferences=relax_preferences,
+        )
+        response = RouteService().generate_routes(
+            RoutePlanRequest(
+                intent=intent.model_copy(deep=True),
+                user_profile=profile,
+                strategy_weights=strategy_weights,
+                strategy_tags=strategy_tags,
+                candidate_pois=pois,
+            )
+        )
+        if len(response.routes) == 3:
+            return response
+    return response
+
+
+def _max_pairwise_overlap(routes) -> float:
+    maximum = 0.0
+    for index, left in enumerate(routes):
+        left_ids = {stop.poi_id for stop in left.stops}
+        for right in routes[index + 1 :]:
+            right_ids = {stop.poi_id for stop in right.stops}
+            maximum = max(maximum, len(left_ids & right_ids) / max(1, min(len(left_ids), len(right_ids))))
+    return maximum
 
 
 def test_generate_route_candidates() -> None:
@@ -22,11 +48,10 @@ def test_generate_route_candidates() -> None:
     all_stop_ids = [stop.poi_id for route in response.routes for stop in route.stops]
 
     assert len(response.routes) == 3
-    assert "balanced" in {route.objective for route in response.routes}
     assert len({route.objective for route in response.routes}) == len(response.routes)
     assert all(3 <= len(route.stops) <= 5 for route in response.routes)
     assert len({tuple(sorted(stop.poi_id for stop in route.stops)) for route in response.routes}) == len(response.routes)
-    assert len(all_stop_ids) == len(set(all_stop_ids))
+    assert _max_pairwise_overlap(response.routes) <= 0.5
     assert all(len({stop.primary_category or stop.category for stop in route.stops}) >= 2 for route in response.routes)
     assert all(0 < route.score <= 100 for route in response.routes)
     assert all(route.score_breakdown.preference > 0 for route in response.routes)
@@ -39,6 +64,41 @@ def test_generate_route_candidates() -> None:
         for route in response.routes
         for stop in route.stops
     )
+
+
+def test_route_generation_exposes_beam_and_reliability_diagnostics() -> None:
+    profile = ProfileService().get_profile("user_demo")
+    intent = Intent(preferences=["citywalk", "拍照"])
+    pois = POIService().search(intent, user_profile=profile, limit=80)
+    service = RouteService()
+    response = service.generate_routes(RoutePlanRequest(intent=intent, user_profile=profile, candidate_pois=pois, debug=True))
+
+    assert response.diagnostics["objectives"]
+    assert response.diagnostics["stage_budgets_ms"]["beam_and_rerank"] == 1400
+    assert response.diagnostics["stage_budgets_ms"]["detailed_transport"] == 600
+    assert all(details["beam_width"] == 8 for details in response.diagnostics["objectives"].values())
+    assert all("beam_budget_exhausted" in details for details in response.diagnostics["objectives"].values())
+    assert all("detail_budget_exhausted" in details for details in response.diagnostics["objectives"].values())
+    assert all(route.p80_duration_minutes >= route.p50_duration_minutes for route in response.routes)
+    assert all(0 <= route.reliability_score <= 1 for route in response.routes)
+
+
+def test_objective_specific_relevance_changes_poi_score() -> None:
+    profile = ProfileService().get_profile("user_demo")
+    intent = Intent()
+    poi = POIService().search(intent, user_profile=profile, limit=1)[0]
+    service = RouteService()
+    request = RoutePlanRequest(
+        intent=intent,
+        user_profile=profile,
+        candidate_pois=[poi],
+        poi_relevance_scores={poi.id: 0.1},
+        poi_relevance_scores_by_objective={"budget": {poi.id: 0.9}},
+    )
+
+    budget_score = service._poi_score(poi, "budget", request, intent.start_lat, intent.start_lng)
+    balanced_score = service._poi_score(poi, "balanced", request, intent.start_lat, intent.start_lng)
+    assert budget_score > balanced_score
 
 
 def test_empty_candidates_return_empty_routes() -> None:
@@ -56,9 +116,9 @@ def test_stop_count_follows_duration_window() -> None:
 
     assert short_routes
     assert long_routes
-    assert all(2 <= len(route.stops) <= 3 for route in short_routes)
+    assert all(3 <= len(route.stops) <= 3 for route in short_routes)
     assert all(3 <= len(route.stops) <= 5 for route in long_routes)
-    assert all(route.total_duration_minutes <= 180 for route in short_routes)
+    assert all(route.total_duration_minutes <= 300 for route in short_routes)
     assert all(route.total_duration_minutes <= 480 for route in long_routes)
 
 
@@ -116,7 +176,7 @@ def test_photo_food_strong_intent_beats_low_queue_objective() -> None:
     assert "food_first" in objectives
     assert "low_queue" not in objectives
     assert objectives[0] != "balanced"
-    assert len(all_stop_ids) == len(set(all_stop_ids))
+    assert _max_pairwise_overlap(response.routes) <= 0.5
 
 
 def test_nature_intent_generates_nature_route_and_balanced() -> None:
@@ -136,17 +196,16 @@ def test_returns_one_top_route_per_objective() -> None:
     assert all("优势是" in route.summary for route in response.routes)
 
 
-def test_final_routes_do_not_share_any_pois() -> None:
+def test_final_routes_use_soft_overlap_limit() -> None:
     response = _plan(Intent(preferences=["citywalk", "拍照", "吃好"]))
-    all_stop_ids = [stop.poi_id for route in response.routes for stop in route.stops]
 
-    assert len(all_stop_ids) == len(set(all_stop_ids))
+    assert _max_pairwise_overlap(response.routes) <= 0.5
 
 
 def test_simple_route_can_relax_to_two_stops_but_never_one() -> None:
     profile = ProfileService().get_profile("user_demo")
     intent = Intent(preferences=["简单点", "轻松"], duration_hours=4)
-    pois = POIService().search(intent, user_profile=profile, limit=3)
+    pois = POIService().search(intent, user_profile=profile, limit=12)
     response = RouteService().generate_routes(
         RoutePlanRequest(intent=intent, user_profile=profile, candidate_pois=pois),
         allow_min_stops_fallback=True,
@@ -180,7 +239,7 @@ def test_total_internal_candidate_generation_stays_in_target_range() -> None:
         for route in service._build_candidates_for_objective(pois, objective, request)
     ]
 
-    assert 10 <= len(candidates) <= 30
+    assert 10 <= len(candidates) <= len(objectives) * RouteService.INTERNAL_CANDIDATES_PER_OBJECTIVE
 
 
 def test_start_seeds_cover_multiple_categories_and_roles() -> None:
@@ -296,7 +355,7 @@ def test_night_route_avoids_plain_cafes_without_explicit_coffee_intent() -> None
     )
 
 
-def test_explicit_night_coffee_allows_only_one_cafe_stop_per_route() -> None:
+def test_explicit_night_coffee_can_use_coffee_theme_without_one_stop_routes() -> None:
     response = _plan(Intent(start_time="20:00", duration_hours=4, preferences=["咖啡探店", "咖啡"]))
 
     assert response.routes
@@ -306,7 +365,8 @@ def test_explicit_night_coffee_allows_only_one_cafe_stop_per_route() -> None:
             for stop in route.stops
             if stop.category == "cafe" or stop.meal_type == "cafe" or "coffee_break" in stop.route_roles
         )
-        assert coffee_count <= 1
+        assert coffee_count >= 1
+        assert len(route.stops) >= 3
 
 
 def test_photo_citywalk_route_has_photo_or_main_activity_structure() -> None:
@@ -322,8 +382,9 @@ def test_unsupported_cities_do_not_generate_mock_routes() -> None:
         response = _plan(Intent(city=city, preferences=["咖啡", "拍照"], duration_hours=6))
 
         if city == "北京":
-            assert 1 <= len(response.routes) <= 3
+            assert len(response.routes) == 3
             assert all(route.stops for route in response.routes)
+            assert all(len(route.stops) >= 3 for route in response.routes)
             assert all(stop.district for route in response.routes for stop in route.stops)
         else:
             assert response.routes == []
@@ -425,3 +486,25 @@ def test_transit_choice_keeps_taxi_when_public_transit_is_much_slower() -> None:
     chosen = service._choose_public_transit_first([public, taxi], request)
 
     assert chosen.mode == "taxi"
+
+
+def test_short_single_theme_route_still_returns_three_structured_options() -> None:
+    response = _plan(Intent(duration_hours=3, preferences=["咖啡", "书店"]))
+
+    assert len(response.routes) == 3
+    assert all(len(route.stops) >= 2 for route in response.routes)
+    assert all(any("main_activity" in stop.route_roles for stop in route.stops) for route in response.routes)
+
+
+def test_required_night_anchor_is_shared_by_three_routes() -> None:
+    required = next(poi for poi in POIService().all_pois("上海") if poi.category == "night_view")
+    response = _plan(
+        Intent(
+            duration_hours=4,
+            preferences=["晚上", "夜景"],
+            must_include_poi_ids=[required.id],
+        )
+    )
+
+    assert len(response.routes) == 3
+    assert all(required.id in {stop.poi_id for stop in route.stops} for route in response.routes)

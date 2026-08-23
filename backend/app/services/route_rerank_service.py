@@ -1,7 +1,14 @@
-from dataclasses import dataclass, field
+from __future__ import annotations
 
+from dataclasses import dataclass, field
+import json
+from pathlib import Path
+from typing import Any, ClassVar
+
+from app.config import settings
 from app.schemas.poi import POI
 from app.schemas.route import Route, RoutePlanRequest, RouteStop
+from app.services.constraint_evaluator import ConstraintEvaluator
 
 
 @dataclass(frozen=True)
@@ -22,8 +29,14 @@ class RouteRerankService:
         "objective": 0.20,
         "risk": 0.10,
         "diversity": 0.05,
+        "reliability": 0.08,
     }
-    MAX_OVERLAP = 0.7
+    MAX_OVERLAP = 0.5
+    _ROUTE_MODEL: ClassVar[Any | None] = None
+    _ROUTE_MODEL_CHECKED: ClassVar[bool] = False
+
+    def __init__(self) -> None:
+        self.constraint_evaluator = ConstraintEvaluator()
 
     def rerank(
         self,
@@ -32,6 +45,7 @@ class RouteRerankService:
         poi_by_id: dict[str, POI],
         max_routes: int,
         max_per_objective: int = 1,
+        max_overlap: float | None = None,
     ) -> list[RouteRerankResult]:
         if not routes or max_routes <= 0:
             return []
@@ -39,12 +53,37 @@ class RouteRerankService:
         selected: list[RouteRerankResult] = []
         remaining = list(routes)
         while remaining and len(selected) < max_routes:
+            objective_counts: dict[str, int] = {}
+            for item in selected:
+                objective_counts[item.route.objective] = objective_counts.get(item.route.objective, 0) + 1
+            remaining = [
+                route for route in remaining if objective_counts.get(route.objective, 0) < max_per_objective
+            ]
+            if not remaining:
+                break
+            if selected:
+                exempt_ids = set(request.intent.must_include_poi_ids)
+                remaining = [
+                    route
+                    for route in remaining
+                    if all(self._route_overlap(route, item.route, exempt_ids) < 1.0 for item in selected)
+                ]
+                if not remaining:
+                    break
             scored = [
                 self.score(route, request, poi_by_id, [item.route for item in selected])
                 for route in remaining
             ]
             scored.sort(key=lambda item: item.score, reverse=True)
-            chosen = self._choose_next(scored, selected, max_per_objective)
+            chosen = self._choose_next(
+                scored,
+                selected,
+                max_per_objective,
+                set(request.intent.must_include_poi_ids),
+                self.MAX_OVERLAP if max_overlap is None else max_overlap,
+            )
+            if chosen is None:
+                break
             selected.append(chosen)
             remaining = [route for route in remaining if route is not chosen.route]
         return selected
@@ -55,8 +94,11 @@ class RouteRerankService:
         request: RoutePlanRequest,
         poi_by_id: dict[str, POI],
         selected_routes: list[Route] | None = None,
-    ) -> RouteRerankResult:
+    ) -> RouteRerankResult | None:
         selected_routes = selected_routes or []
+        constraints = self.constraint_evaluator.evaluate_route(route, request, poi_by_id)
+        if not constraints.feasible:
+            return RouteRerankResult(route=route, score=0, reasons=["存在不可满足的硬约束"], features={})
         features = {
             "poi_model": self._poi_model_score(route, request),
             "structure": self._route_structure_score(route, request),
@@ -64,13 +106,17 @@ class RouteRerankService:
             "objective": self._objective_match_score(route, request),
             "risk": self._budget_queue_risk_score(route, request, poi_by_id),
             "diversity": self._diversity_score(route, selected_routes, request),
+            "reliability": route.reliability_score,
         }
         weights = self._dynamic_weights(route.objective, request)
         score = sum(features[key] * weights[key] for key in weights)
         score += self._coverage_bonus(route, request, selected_routes)
         score += self._food_crawl_bonus(route, request)
         score -= self._bad_meal_sequence_penalty(route, request)
-        score -= self._common_sense_penalty(route, request)
+        score -= min(0.35, constraints.penalty / 100)
+        learned_score = self._learned_route_score(route)
+        if learned_score is not None:
+            score = score * 0.8 + learned_score * 0.2
         return RouteRerankResult(
             route=route,
             score=round(max(0, min(1, score)) * 100),
@@ -78,7 +124,52 @@ class RouteRerankService:
             features=features,
         )
 
-    def _choose_next(self, scored: list[RouteRerankResult], selected: list[RouteRerankResult], max_per_objective: int) -> RouteRerankResult:
+    def _learned_route_score(self, route: Route) -> float | None:
+        if not settings.route_model_enabled:
+            return None
+        model = self._load_route_model()
+        if model is None:
+            return None
+        features = {
+            "position": 0,
+            "objective": route.objective,
+            "score": float(route.score),
+            "stop_count": len(route.stops),
+            "duration": float(route.total_duration_minutes),
+            "cost": float(route.total_cost_per_person),
+            "travel": float(route.total_travel_minutes),
+            "reliability": float(route.reliability_score),
+            "degradation_level": route.degradation_level,
+        }
+        probabilities = model.predict_proba([features])[0]
+        classes = list(model.classes_)
+        return float(probabilities[classes.index(1)]) if 1 in classes else None
+
+    @classmethod
+    def _load_route_model(cls) -> Any | None:
+        if cls._ROUTE_MODEL_CHECKED:
+            return cls._ROUTE_MODEL
+        cls._ROUTE_MODEL_CHECKED = True
+        root = Path(__file__).resolve().parents[3] / "data" / "models" / "route_rank"
+        try:
+            metadata = json.loads((root / "model_metadata.json").read_text(encoding="utf-8"))
+            if not metadata.get("admitted"):
+                return None
+            import joblib
+
+            cls._ROUTE_MODEL = joblib.load(root / "route_rank_model.joblib")
+        except (OSError, ValueError, AttributeError, ImportError):
+            cls._ROUTE_MODEL = None
+        return cls._ROUTE_MODEL
+
+    def _choose_next(
+        self,
+        scored: list[RouteRerankResult],
+        selected: list[RouteRerankResult],
+        max_per_objective: int,
+        overlap_exempt_ids: set[str],
+        max_overlap: float,
+    ) -> RouteRerankResult:
         if not selected:
             return scored[0]
         objective_counts: dict[str, int] = {}
@@ -87,12 +178,9 @@ class RouteRerankService:
         for item in scored:
             if objective_counts.get(item.route.objective, 0) >= max_per_objective:
                 continue
-            if all(self._route_overlap(item.route, existing.route) <= self.MAX_OVERLAP for existing in selected):
+            if all(self._route_overlap(item.route, existing.route, overlap_exempt_ids) <= max_overlap for existing in selected):
                 return item
-        for item in scored:
-            if objective_counts.get(item.route.objective, 0) < max_per_objective:
-                return item
-        return scored[0]
+        return None
 
     def _dynamic_weights(self, objective: str, request: RoutePlanRequest) -> dict[str, float]:
         weights = dict(self.BASE_WEIGHTS)
@@ -142,7 +230,12 @@ class RouteRerankService:
     def _poi_model_score(self, route: Route, request: RoutePlanRequest) -> float:
         if not route.stops:
             return 0
-        scores = [request.poi_relevance_scores.get(stop.poi_id) for stop in route.stops if stop.poi_id in request.poi_relevance_scores]
+        objective_scores = request.poi_relevance_scores_by_objective.get(route.objective, {})
+        scores = [
+            objective_scores.get(stop.poi_id, request.poi_relevance_scores.get(stop.poi_id))
+            for stop in route.stops
+            if stop.poi_id in objective_scores or stop.poi_id in request.poi_relevance_scores
+        ]
         if scores:
             return max(0, min(1, (sum(scores) / len(scores) + 0.3) / 1.2))
         return route.score / 100
@@ -220,7 +313,10 @@ class RouteRerankService:
     def _diversity_score(self, route: Route, selected_routes: list[Route], request: RoutePlanRequest) -> float:
         if not selected_routes:
             return 0.75
-        max_overlap = max(self._route_overlap(route, selected) for selected in selected_routes)
+        max_overlap = max(
+            self._route_overlap(route, selected, set(request.intent.must_include_poi_ids))
+            for selected in selected_routes
+        )
         score = 1 - max_overlap
         if request.user_profile.novelty_preference >= 0.7:
             score = min(1, score + 0.15)
@@ -324,9 +420,10 @@ class RouteRerankService:
                 counts[role] = counts.get(role, 0) + 1
         return counts
 
-    def _route_overlap(self, route_a: Route, route_b: Route) -> float:
-        ids_a = {stop.poi_id for stop in route_a.stops}
-        ids_b = {stop.poi_id for stop in route_b.stops}
+    def _route_overlap(self, route_a: Route, route_b: Route, exempt_ids: set[str] | None = None) -> float:
+        exempt_ids = exempt_ids or set()
+        ids_a = {stop.poi_id for stop in route_a.stops} - exempt_ids
+        ids_b = {stop.poi_id for stop in route_b.stops} - exempt_ids
         if not ids_a or not ids_b:
             return 0
         return len(ids_a & ids_b) / min(len(ids_a), len(ids_b))

@@ -1,8 +1,11 @@
+from __future__ import annotations
+
 import math
 
 from app.schemas.poi import POI
-from app.schemas.route import RoutePlanRequest, RouteScoreBreakdown, RouteStop
+from app.schemas.route import Route, RoutePlanRequest, RouteScoreBreakdown, RouteStop
 from app.schemas.user import StrategyWeights
+from app.services.constraint_evaluator import ConstraintEvaluator
 
 
 class ScoringService:
@@ -20,6 +23,9 @@ class ScoringService:
         "indoor_rainy": StrategyWeights(quality=0.15, queue=0.15, distance=0.20, budget=0.10, preference=0.40),
         "night_friendly": StrategyWeights(quality=0.25, queue=0.15, distance=0.15, budget=0.10, preference=0.35),
     }
+
+    def __init__(self) -> None:
+        self.constraint_evaluator = ConstraintEvaluator()
 
     def score(
         self,
@@ -64,29 +70,26 @@ class ScoringService:
         request: RoutePlanRequest,
         poi_by_id: dict[str, POI],
     ) -> int:
-        penalty = 0
+        total_duration = self._route_elapsed_minutes(request.intent.start_time, stops)
         total_queue = sum(stop.queue_minutes for stop in stops)
         total_cost = sum(stop.estimated_cost for stop in stops)
-        time_limit = max(60, request.intent.duration_hours * 60)
-        total_duration = self._route_elapsed_minutes(request.intent.start_time, stops)
-        pois = self._pois_for_stops(stops, poi_by_id)
-
-        if total_duration > time_limit:
-            penalty += min(35, math.ceil((total_duration - time_limit) / 10) * 5)
-
-        budget = max(request.intent.budget_per_person, 1)
-        if total_cost > budget:
-            penalty += min(30, math.ceil(((total_cost - budget) / budget) * 20))
-        if total_cost > budget * 1.5:
-            penalty += 15
-
-        penalty += sum(12 for stop in stops if not self._is_open_for_stop(stop, poi_by_id.get(stop.poi_id)))
-
-        avoid_terms = self._terms([*request.intent.avoid_tags, *request.user_profile.avoid_tags])
-        for poi in pois:
-            risk_text = self._poi_risk_text(poi)
-            if any(self._term_matches(term, risk_text) for term in avoid_terms):
-                penalty += 18
+        temporary_route = Route(
+            route_id="constraint_check",
+            title="",
+            objective=objective,
+            summary="",
+            total_duration_minutes=total_duration,
+            total_cost_per_person=total_cost,
+            total_queue_minutes=total_queue,
+            total_travel_minutes=sum(stop.travel_minutes_from_previous or 0 for stop in stops),
+            total_distance_km=sum(stop.distance_km_from_previous or 0 for stop in stops),
+            score=0,
+            score_breakdown=RouteScoreBreakdown(quality=0, queue=0, budget=0, distance=0, preference=0),
+            stops=stops,
+            reasons=[],
+        )
+        constraints = self.constraint_evaluator.evaluate_route(temporary_route, request, poi_by_id)
+        penalty = min(45, len(constraints.hard_violations) * 18 + round(constraints.penalty))
 
         if objective == "food_first" and not any(self._is_food_poi(stop, poi_by_id.get(stop.poi_id)) for stop in stops):
             penalty += 25

@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 from app.schemas.intent import Intent
 from app.schemas.poi import POI
 from app.schemas.route import Route, RoutePlanRequest, RouteScoreBreakdown, RouteStop

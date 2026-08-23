@@ -1,5 +1,7 @@
 # 路线策略代码逻辑说明
 
+最后同步：2026-08-23。
+
 本文档说明当前 B 侧路线策略的真实代码逻辑，覆盖三类场景：
 
 - 规划路线：用户发起一次新的出行规划或追加约束后重新生成路线。
@@ -17,8 +19,12 @@
 - `backend/app/services/scoring_service.py`：路线五维评分和硬惩罚。
 - `backend/app/services/route_rerank_service.py`：路线集合级动态重排，按用户偏好、目标和风险调整最终路线顺序。
 - `backend/app/services/replan_service.py`：已生成路线的局部替换和动态重规划。
+- `backend/app/services/constraint_evaluator.py`：统一硬约束、软惩罚、warning 和路线可靠性计算。
+- `backend/app/services/route_signal_service.py`：路线曝光和反馈的 append-only SQLite 记录，兼容 JSONL 导出。
+- `backend/app/services/planning_experiment.py`：路线策略实验配置，用于候选规模和模块消融。
 - `backend/app/services/predictive_route_service.py`：mock 天气 + 画像预制路线。
 - `backend/app/services/amap_service.py`、`backend/app/services/mock_route_map_service.py`：两点之间路段耗时、距离、交通方式、polyline 和步骤。
+- `scripts/evaluate_route_strategy.py`：120 案例离线验收、候选规模实验、模块消融和 Markdown/JSON 报告。
 
 ## 1. 总体数据流
 
@@ -30,8 +36,12 @@
 -> StrategyService.infer_tags()
 -> ProfileService.build_strategy_weights()
 -> POIService.search()
+-> FineRankService 按 objective 批量精排
+-> 构造每个 objective 的候选 POI id 集
 -> RouteService.generate_routes()
 -> ScoringService.score() / overall_score()
+-> RouteRerankService 做路线集合级最终选择
+-> RouteSignalService 记录路线曝光
 -> 返回 RoutePlanResponse(routes)
 ```
 
@@ -91,9 +101,20 @@ user_id + city + weather_scenario + 可选 user_profile
 
 ## 3. POI 召回逻辑
 
-入口是 `POIService.search(intent, user_profile, limit=40, strategy_tags)`。
+入口是 `POIService.search(intent, user_profile, limit=None, strategy_tags)`。
 
-普通聊天规划中，`Orchestrator` 不额外传 `limit`，所以默认召回 40 个候选 POI。预制路线会显式传 `limit=48`。
+普通聊天规划使用自适应漏斗：明确商圈或 3 小时以内为 `180 -> 100`，城市级半日为 `320 -> 160`，一日路线为 `420 -> 220`；复杂多偏好场景继续放大 25%-30%。显式传入 `limit` 时仍兼容固定候选数。
+
+Orchestrator 在路线数不足三条时会做两次保守扩召回：
+
+```text
+默认自适应候选
+-> 如果不足 3 条，relax_preferences=True 且 limit=200
+-> 仍不足，relax_preferences=True 且 limit=260
+-> 最后才允许两站轻量路线兜底
+```
+
+扩召回不会放宽城市、区域、must_include、避雷和极端预算等硬约束，只放宽偏好匹配和候选池大小。
 
 ### 3.1 数据来源
 
@@ -123,7 +144,7 @@ user_id + city + weather_scenario + 可选 user_profile
 
 - `primary_category`：主类目，例如 `food`、`culture`、`landmark`、`nature`。
 - `secondary_categories`：辅助标签，例如 `photo`、`indoor`、`night`、`rainy`、`budget`。
-- `district` / `business_area`：区和商圈，例如 `徐汇区`、`武康路-安福路`，会进入召回搜索文本并用于区域软排序。
+- `district` / `business_area`：区和商圈，例如 `徐汇区`、`武康路-安福路`，会进入召回搜索文本；用户显式指定 `target_district` / `target_business_area` 时用于区域过滤和最终约束校验。
 - `route_roles`：路线角色，例如 `main_activity`、`meal`、`coffee_break`、`photo_stop`、`rest_stop`、`transit_anchor`、`night_end`。
 - `experience_tags`：体验标签，例如 `老字号`、`安静`、`文艺`、`夜景`、`雨天`。
 
@@ -131,10 +152,19 @@ user_id + city + weather_scenario + 可选 user_profile
 
 ### 3.2 多路召回
 
-`POIService.search()` 现在会先调用 `RecallService` 生成大候选池，默认内部召回池大小是：
+`POIService.search()` 现在会先调用 `RecallService` 生成大候选池，内部召回池大小来自自适应漏斗：
 
 ```text
-target_pool_size = max(limit * 6, 240)
+明确商圈或 3 小时以内：recall 180，coarse 100
+城市级半日：recall 320，coarse 160
+城市级一日：recall 420，coarse 220
+复杂多偏好：recall * 1.3，coarse * 1.25
+```
+
+当前多路召回已接入 `POIService.search()` 主链路，并使用加权 Reciprocal Rank Fusion 合并不同值域的通道排名：
+
+```text
+rrf_score = sum(channel_weight / (60 + rank))
 ```
 
 当前多路召回包括：
@@ -147,13 +177,26 @@ target_pool_size = max(limit * 6, 240)
 - 路线角色召回 `RouteRoleRecallChannel`：强制补 `main_activity`、`meal`、`coffee_break/rest_stop`、`photo_stop`、`transit_anchor/night_end` 等路线结构角色。
 - fallback 召回：候选不足时补低风险、多类目 POI。
 
+通道权重当前为：
+
+| 通道 | 权重 |
+| --- | ---: |
+| content | 1.0 |
+| profile | 1.0 |
+| collaborative_filtering | 0.9 |
+| two_tower | 1.0 |
+| scenario | 1.1 |
+| route_role | 1.1 |
+
+无画像用户不会走 profile 和 collaborative_filtering；two_tower 会使用稳定的 mock/user embedding 兜底，不依赖 Python 进程随机 hash。
+
 协同过滤和双塔模型的训练数据来自 `data/seed/interaction_events.json`，当前是 16000 条 mock user-item 行为事件，覆盖 80 个用户和 2240 个 POI。事件包括 `view/click/save/like/selected_in_route/completed_visit/skip/replace/dislike`。
 
 ### 3.3 召回过滤
 
 召回后的过滤大致分三层：
 
-1. 城市过滤：优先取 `poi.city == intent.city`。如果该城市没有数据，会用上海数据克隆成 fallback 候选，保证不空。
+1. 城市和区域过滤：只保留目标城市，并按 `target_district` / `target_business_area` 限定区域；没有本地数据时返回空，不复制上海或其他城市 POI。
 2. 严格匹配：要求命中用户偏好、避开 avoid_tags、价格不是极端超预算。
 3. 放宽兜底：如果严格结果不足，会放宽为“不命中避开项 + 不是极端超预算”；仍不足则补低风险 POI。
 
@@ -175,7 +218,7 @@ RecallService 多路召回
 -> 返回 list[POI]
 ```
 
-`CoarseRankService.rank()` 默认在内部取 `coarse_limit = max(limit, 60)`，即先把召回池筛到 40-60 个左右，再交给最终返回逻辑。调用方传 `limit=5/10/12` 这类小结果时仍然支持，不会强制返回 60 个。
+`CoarseRankService.rank()` 按自适应漏斗筛到 100、160 或 220 个左右，再交给 objective 专属精排。调用方显式传小 `limit` 时仍保持兼容。
 
 `POIService._rank_score()` 仍保留为兼容 wrapper，内部委托给 `CoarseRankService.score()`，避免已有测试、调试脚本或 trace 临时代码断掉。
 
@@ -240,11 +283,13 @@ data/models/fine_rank/model_metadata.json
 - 统计特征：人气、排队、实时人流、POI 历史正负交互、同类历史正向率。
 - 上下文特征：城市、时间段、天气、同行人数、场景和路线 objective。
 
-线上 `FineRankService` 会输出：
+线上 `FineRankService` 会针对每个待生成 objective 独立输出：
 
 ```text
 poi_relevance_score = 0.4*p_click + 0.5*p_like - 0.3*p_skip
 ```
+
+分目标分数保存在 `RoutePlanRequest.poi_relevance_scores_by_objective`；旧 `poi_relevance_scores` 作为 `balanced` 兼容 fallback。训练脚本使用时间顺序 80/20 切分，补充高价、高步行、长排队 hard negatives，并报告 Brier score 和 calibration error。
 
 如果模型文件缺失，`FineRankService` 会使用规则 fallback，保证 demo 和测试不因为模型产物缺失而中断。模型输出后还有轻量业务校准：极端超预算、高步行强度、排队/人流风险、disliked POI 和 skipped category 会修正 `p_skip`，避免 mock 数据分布把硬约束学偏。
 
@@ -259,14 +304,17 @@ poi_relevance_score = 0.4*p_click + 0.5*p_like - 0.3*p_skip
 
 对每个 objective，流程是：
 
-1. 用 `_start_candidates()` 对所有 POI 按该 objective 的 POI 分数排序；该分数已融合 `poi_relevance_scores`。
-2. 用 `_diverse_start_seeds()` 从高分 POI 中选多类目 seed，避免只从同一类 POI 开始。
-3. 用 beam search 扩展 partial route，每轮从可行 POI 中取 top `BRANCH_FACTOR = 8`，保留 top `BEAM_WIDTH = 6` 条 partial route。
-4. 每个 objective 默认生成 `INTERNAL_CANDIDATES_PER_OBJECTIVE = 10` 条内部候选；短时长路线会降到 6 条。
-5. 对候选做 stop 序列去重和高重合过滤，再调用 `ScoringService` 打分。
-6. 所有 objective 的 scored candidates 会进入 `RouteRerankService` 做路线层动态重排。
+1. `_objective_candidate_pool()` 先构建 objective 专属 POI 池：精排 Top30、must_include、必去点附近候选、起点附近候选和路线角色配额。
+2. 用 `_start_candidates()` 对该 objective 池按分目标 POI 分数排序；优先读取 `poi_relevance_scores_by_objective[objective]`，缺失时才回退旧 `poi_relevance_scores`。
+3. 用 `_diverse_start_seeds()` 选择 16 个多类目、多角色 seed；如果有必去点，必去点会强制进入 seed。
+4. 用真实状态级 beam search 扩展 partial route，每轮考察 top 12 个下一站并保留 8 条 beam。
+5. Beam 状态直接携带未完成的 `must_include` 和必需角色，并用剩余必去点/角色的最低停留、排队、交通预算提前剪枝。
+6. 搜索阶段只使用缓存的近似距离和交通时间，最多保留 30 条内部状态。
+7. 每个 objective 只对前 8 条候选补充完整 Mock/高德路段，再调用 `ConstraintEvaluator`、`ScoringService` 和可靠性计算。
+8. Beam 候选不足时使用原贪心生成兜底；最终不足三条时，两站轻量路线从同一个 objective 候选仓库派生，不重新执行完整 objective 搜索。
+9. 所有 objective 候选最终统一进入 `RouteRerankService` 和全局路线集合选择。
 
-当前默认普通规划最多 3 个 objective，所以内部通常会生成约 18-30 条候选路线，再进入最终路线排序。
+当前默认普通规划最多 3 个 objective，所以内部通常会生成约 18-30 条候选路线，再进入最终路线排序。每个 objective 的 Beam 搜索预算是 1400ms，详细交通补全预算是 600ms；如果预算耗尽，会停止扩展并保留当前最优可行结果，debug 里记录 `beam_budget_exhausted` 和 `detail_budget_exhausted`。
 
 ### 4.1.1 路线常识约束
 
@@ -334,6 +382,8 @@ poi_relevance_score = 0.4*p_click + 0.5*p_like - 0.3*p_skip
 
 - 加上交通时间、排队时间、游玩时间后不能超过总时长。
 - 到达时需要处于营业窗口内，并且不能晚于最晚入场时间。
+- 城市、区域、must_include、避雷、极端预算等硬约束不能被自动放宽。
+- 剩余时间必须还能完成未覆盖的必去 POI 和必需路线角色。
 - 到达时间和 POI 类型需要符合常识，例如夜间普通夜游路线不会补普通咖啡店。
 - 不能重复已选 POI。
 - 如果路线需要餐饮，优先补餐饮点。
@@ -350,9 +400,18 @@ poi_relevance_score = 0.4*p_click + 0.5*p_like - 0.3*p_skip
 
 Beam search 结果不足时，会回退到现有 `_build_candidate()` 贪心逻辑补齐，保证强约束或候选很少时仍能返回可用路线。
 
+最终选择采用四级降级：
+
+1. 三站、每个 objective 最多一条、普通 POI 重合率不超过 30%。
+2. 三站、每个 objective 最多两条、普通 POI 重合率不超过 50%。
+3. 两站轻量路线、普通 POI 重合率不超过 50%。
+4. 两站路线、普通 POI 重合率不超过 70%，并在 `warnings` 和 `degradation_level` 中说明。
+
+`must_include_poi_ids` 和核心锚点不计入跨路线重合率；完全相同路线始终拒绝。`zero_overlap` 消融实验会把所有降级层级的普通 POI 重合率都固定为 0，用于验证“零重合”对三路线率的影响。
+
 ### 4.5 路线层动态重排
 
-第五阶段新增 `RouteRerankService`，最终排的是路线集合，不是单个 POI，也不是每个 objective 内部的第一名。重排分数是动态权重：
+`RouteRerankService` 已接回最终主链路，最终排的是路线集合，不是单个 POI，也不是每个 objective 内部的第一名。重排分数是动态权重：
 
 ```text
 final_route_score =
@@ -374,9 +433,13 @@ final_route_score =
 - 高 `novelty_preference`：提高路线集合多样性权重。
 - 高 `comfort_preference`：提高结构完整性和风险稳定性权重。
 
-重排时会逐条选择最终路线。每选中一条后，剩余路线的 `diversity_score` 会根据 POI 重合率重新计算；默认尽量把最终路线重合率控制在 `0.7` 以下。`balanced`、`budget`、`low_walking`、拍照/体验、美食等目标覆盖都是软约束：有对应用户偏好时加权更强，没有时不硬塞无关路线。
+重排不再逐条贪心选路线，而是对候选路线组合做全局集合选择。它会同时考虑路线分、objective 覆盖、每个 objective 的最多路线数、软多样性和跨路线重合约束，避免早选一条高分路线后把后续组合卡死。`balanced`、`budget`、`low_walking`、拍照/体验、美食等目标覆盖都是软约束：有对应用户偏好时加权更强，没有时不硬塞无关路线。
 
 `RouteRerankService` 会把推荐原因追加进 `Route.reasons`，例如“更符合少走路偏好，交通段更短”“预算和排队风险更稳”“保留拍照点和主活动，体验更完整”“和其他路线重复点少，提供另一种体验”。
+
+跨路线多样性使用软约束：普通 POI 默认优先控制在 30%，放宽后不超过 50%，最终兜底不超过 70%；`must_include_poi_ids` 不计入重合度，完全相同的路线始终去重。
+
+统一 `ConstraintEvaluator` 负责城市、区域、营业、最晚入场、时长、极端预算、must-include 等硬约束，以及长移动、排队、天气暴露、预约、重复类目等软惩罚。路线额外输出 P50/P80 时长、缓冲、可靠性、风险等级和 warning。
 
 ## 5. 交通路段逻辑
 
@@ -491,12 +554,14 @@ final_route_score =
 4. 读取用户画像。
 5. 生成策略标签和权重。
 6. 召回 POI。
-7. 调 `RouteService.generate_routes()` 生成 1-3 条不同 objective 的路线。
-8. 保存到 session memory，便于后续追问或修改。
+7. 按 objective 批量调用 `FineRankService.score_map()`，生成 `poi_relevance_scores_by_objective` 和 `poi_candidate_ids_by_objective`。
+8. 调 `RouteService.generate_routes()` 生成 1-3 条路线。
+9. 如果不足三条，按 `limit=200`、`limit=260` 扩召回；仍不足时允许两站轻量路线。
+10. 对返回路线记录曝光信号，保存到 session memory，便于后续追问、反馈和修改。
 
-注意：`RouteService.CITY_CENTERS` 中保留了多个城市中心坐标，但当前普通规划只会给上海和北京自动补默认起点。其他城市如果没有真实起点坐标，通常依赖 POI fallback 数据，不会强行套用真实城市中心。
+注意：`RouteService.CITY_CENTERS` 中保留了多个城市中心坐标，但当前 POI 种子只覆盖上海和北京。其他城市没有本地 POI 数据时会直接返回无数据提示，不会借用 fallback POI 或仅凭城市中心坐标强行生成路线。
 
-普通规划的路线数主要由 objective 数决定，通常最多 3 条：两个画像/偏好目标 + `balanced`。
+普通聊天规划的路线数目标是 3 条：两个画像/偏好目标 + `balanced`。自适应、200、260 三轮召回和两站兜底后仍不足 3 条时，主接口返回明确失败说明和空路线列表，不返回 1-2 条半成品；预制路线服务则允许返回当前最优的 1-2 条。120 案例离线门禁要求三路线率不低于 95%。
 
 ## 8. 修改部分路线
 
@@ -718,12 +783,70 @@ overlap / min(len(route_a), len(route_b))
 
 ## 10. 当前实现边界
 
-- POI 召回和路线生成是规则系统，不是全局最优路径算法。
-- 普通规划的路线顺序是“按 objective 选点并评分”，不是旅行商问题求解。
+- POI 精排是表格模型，路线生成是受约束 Beam Search，不承诺全局最优。
+- 训练和评测数据仍以 mock 为主，离线指标不能替代真实用户实验。
 - mock 地图会尽量模拟真实地图字段，但距离和线路不是精确导航数据。
 - 局部修改以替换受影响后续点为主，不会自动把整条路线彻底重排。
 - 预制路线当前是后端服务能力，还没有正式接口。
 - 天气、地图、POI 都是 mock，本阶段目标是体验可信和稳定演示。
+- 路线级学习模型默认关闭；只有真实数据量和离线指标达到准入门槛后才能启用。
+
+### 10.1 V2 收口规则
+
+- objective 搜索池由精排 Top30、必去点、起点/必去点邻近候选和角色配额组成。
+- Beam 状态携带未完成必去点与必需角色，并为剩余硬约束预留时间。
+- 最终路线按 30% 重合、50% 重合、两站轻量、70% 重合四级降级；必去锚点不计重合，完全相同路线始终拒绝。
+- Beam 搜索阶段使用近似距离和缓存矩阵；详细交通只补全高分路线。Mock 地图实例和所有路段统一缓存，每段最多比较两种交通方式；精排使用批量预测。
+- 每个 objective 的 Beam 和重排预算为 1400ms，详细交通预算为 600ms；预算耗尽时停止扩展并使用当前最优可行结果。
+- 路线曝光与反馈存入 SQLite。路线模型只有在 10,000 曝光、1,000 选择、7 天跨度且离线指标优于规则基线后才允许启用。
+- PR CI 执行 120 案例发布门禁和前端 Node 20 构建；完整候选规模及模块消融由定时工作流执行。
+
+### 10.2 路线信号和模型闭环
+
+`RouteSignalService` 使用 `data/runtime/route_signals.db` 作为 append-only SQLite 存储，并启用 WAL。记录两类事件：
+
+- `impression`：每条路线曝光时写入 request、algorithm_version、position、objective、score 和 POI 组成。
+- `feedback`：用户选择、替换、完成、退出或评分时写入 `FeedbackRequest`。
+
+`scripts/export_route_signals.py` 可导出 JSONL，兼容后续离线处理。`scripts/train_route_rank_model.py` 提供路线级训练脚本，但默认不启用线上模型。启用前必须满足：
+
+- 至少 10,000 次路线曝光。
+- 至少 1,000 次路线选择。
+- 曝光数据跨度至少 7 天。
+- 按时间切分评估。
+- 相对规则重排在 NDCG、选择率离线代理指标和校准误差上有提升。
+
+### 10.3 评测和发布门禁
+
+固定评测集由 `scripts/evaluate_route_strategy.py` 生成，覆盖上海、北京各 60 个案例，包括商圈、半日、一日、预算、少走路、雨天、夜间、美食、亲子、老人、必去点、闭店/排队和单主题场景。
+
+当前工作区最新验收报告在 `artifacts/route-strategy/route_strategy_evaluation.md`，对应自适应候选的一轮确定性 120 案例运行：
+
+| 运行 | 案例数 | 可行路线率 | 三路线率 | 角色覆盖率 | Mock P95 | 门禁 |
+| --- | ---: | ---: | ---: | ---: | ---: | --- |
+| adaptive run 1 | 120 | 100.00% | 100.00% | 100.00% | 1772.92 ms | PASS |
+
+同时满足：
+
+- 硬约束违反数为 0。
+- 必去 POI Recall 为 100%。
+- 最终路线必去遗漏数为 0。
+- 非必去 POI 平均跨路线重合率为 7.82%。
+
+发布配置使用：
+
+```text
+PLANNING_PIPELINE_MODE=legacy|shadow|v2
+PLANNING_PIPELINE_ROLLOUT_PERCENT=0..100
+```
+
+旧的 `PLANNING_PIPELINE_V2` 和 `PLANNING_PIPELINE_SHADOW` 仍兼容。未显式配置时默认使用 V2；`v2` 模式下会按 user/session hash 做确定性灰度，支持 10%、50%、100% 放量。
+
+CI 包含：
+
+- Python 3.12 后端测试、编译和 120 案例发布门禁。
+- Node 20 前端 TypeScript + Vite build。
+- 定时/手动的候选规模和模块消融工作流。
 
 ## 11. 调试建议
 
@@ -736,3 +859,6 @@ overlap / min(len(route_a), len(route_b))
 5. 看 `route_steps_from_previous` 和 `route_leg_source_from_previous`：确认地图路段是否来自 mock_map，交通方式和步骤是否可展示。
 6. 局部修改时看 `changed_stops`、`live_warnings`、`replan_reason`。
 7. 预制路线时看三条路线的 POI id 重合率，避免只是标题不同。
+8. 使用 `debug=true` 查看各召回通道数量、RRF 合并、阶段耗时、Beam 状态数、硬约束淘汰原因、缓存命中率、降级层级和最终重排诊断。
+9. 运行 `PYTHONPATH=backend backend/.venv/bin/python scripts/evaluate_route_strategy.py --candidate-limits '' --adaptive --assert-gates --output-dir artifacts/route-strategy` 做 120 case 发布验收。
+10. 跑消融时使用 `--candidate-limits 40,80,120,160,220 --adaptive` 或 `--all-ablations`，结果会同时生成 JSON 和 Markdown。

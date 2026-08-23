@@ -1,6 +1,14 @@
+from __future__ import annotations
+
 import json
 import re
-from enum import StrEnum
+try:
+    from enum import StrEnum
+except ImportError:  # Python 3.10 compatibility for local tooling.
+    from enum import Enum
+
+    class StrEnum(str, Enum):
+        pass
 
 from pydantic import BaseModel
 

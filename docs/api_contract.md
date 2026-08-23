@@ -158,6 +158,13 @@ B 同学调试 POI 召回使用。
 
 B 同学调试路线规划使用。
 
+`RoutePlanRequest` 新增兼容字段：
+
+- `poi_relevance_scores_by_objective`: 按路线目标保存 POI 精排分；缺失时继续使用旧 `poi_relevance_scores`。
+- `debug`: 默认 `false`；为 `true` 时 `RoutePlanResponse.diagnostics` 返回召回、Beam、fallback 和重排诊断。
+
+`Route` 新增可选字段：`p50_duration_minutes`、`p80_duration_minutes`、`buffer_minutes`、`reliability_score`、`risk_level`、`warnings`。旧前端可以忽略。
+
 ## POST /api/routes/evaluate
 
 A 同学调试路线点评大模型使用。该接口不重新生成路线，只接收已经由 `/api/routes/plan` 或 `/api/chat` 产出的 routes，并返回每条路线的简要评分、亮点、风险和推荐语。
@@ -338,5 +345,11 @@ A 同学调试路线点评大模型使用。该接口不重新生成路线，只
 - `data_sources` 当前可能是 `local/mock`，后续真实地图 API 接入后可出现 `amap/baidu/google/mapbox`。
 
 ## POST /api/feedback
+
+反馈请求除原评分字段外，可选传入 `event_type`、`request_id`、`algorithm_version`、`selected_poi_ids`、`completed_poi_ids`、`replaced_poi_ids` 和 `abandoned`。路线曝光和反馈写入 append-only SQLite；可导出 JSONL，不改变现有反馈响应结构。
+
+`RoutePlanRequest` 还支持内部可选字段 `poi_candidate_ids_by_objective`。路线响应新增默认值为 `0` 的 `degradation_level`；两站轻量路线会同时返回 warning。`debug=true` 时诊断包含阶段耗时、Beam 状态、硬约束淘汰原因、地图缓存命中率、降级步骤和不可行说明。
+
+发布配置使用 `PLANNING_PIPELINE_MODE=legacy|shadow|v2` 与 `PLANNING_PIPELINE_ROLLOUT_PERCENT=0..100`。旧 `PLANNING_PIPELINE_V2/SHADOW` 仍兼容；未显式配置时默认使用 V2。
 
 行程评分和画像更新使用。
