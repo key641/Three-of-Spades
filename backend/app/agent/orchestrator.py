@@ -159,11 +159,12 @@ class AgentOrchestrator:
                 )
             )
             await emit_pending_trace()
-        intent = contextual_intent
+        intent = self._normalize_intent_regions(contextual_intent)
         merge_request = request
         if session_state.last_intent and not intent.city_from_message:
             merge_request = request.model_copy(update={"city": None})
-        intent = self.profile_service.merge_request_into_intent(intent, merge_request)
+        intent = self._normalize_intent_regions(self.profile_service.merge_request_into_intent(intent, merge_request))
+        intent = self._align_start_with_target_region(intent)
         fallback_understanding = self._build_query_understanding(message_route, context_applied)
         fallback_delta = self._build_intent_delta(intent, request.message, session_state, message_route)
         understanding, delta, delta_source = await self._parse_query_delta(
@@ -175,6 +176,7 @@ class AgentOrchestrator:
         )
         await emit_pending_trace()
         intent, trip_state, state_summary = apply_query_delta(intent, session_state, understanding, delta)
+        intent = self._align_start_with_target_region(self._normalize_intent_regions(intent))
         intent.must_include_roles = list(trip_state.must_include)
         delta_details = state_summary.model_dump()
         delta_details["source"] = delta_source
@@ -187,10 +189,13 @@ class AgentOrchestrator:
             )
         )
         await emit_pending_trace()
+        # “附近”类请求会由前端携带当前位置，并在解析阶段推断城市；此处仅在
+        # 消息、会话、请求和坐标都无法确定城市时才追问，不能因用户没直说城市而阻断。
         if (
             message_route.planning_mode == PlanningMode.NEW_PLAN
-            and not intent.city_from_message
+            and not intent.city
             and not request.city
+            and not self._gps_city_from_request(request)
         ):
             return self._handle_clarification(
                 request,
@@ -201,7 +206,7 @@ class AgentOrchestrator:
                     clarification_type="missing_required_field",
                     missing_field="city",
                     priority="required",
-                    question="你想去哪个城市？",
+                    question="你想去附近哪里？",
                     can_continue_with_defaults=False,
                 ),
                 intent,
@@ -217,7 +222,13 @@ class AgentOrchestrator:
             return self._handle_clarification(request, session_state, trace, clarification, intent)
 
         if intent.start_lat is None and intent.start_lng is None and request.start_lat is not None and request.start_lng is not None:
-            city_pois = self.poi_service.search(Intent(city=intent.city), limit=5)
+            # 指定目标区域时，不能仅校验 GPS 是否落在同一城市；过远的起点会耗尽短行程的时间预算。
+            start_validation_intent = Intent(
+                city=intent.city,
+                target_district=intent.target_district,
+                target_business_area=intent.target_business_area,
+            )
+            city_pois = self.poi_service.search(start_validation_intent, limit=20)
             min_dist = self._min_distance_to_pois(request.start_lat, request.start_lng, city_pois)
             if min_dist is not None and min_dist <= 8.0:
                 intent = intent.model_copy(update={
@@ -608,9 +619,64 @@ class AgentOrchestrator:
             distances.append(6371 * 2 * math.atan2(math.sqrt(a), math.sqrt(1 - a)))
         return min(distances, default=None)
 
+    def _align_start_with_target_region(self, intent: Intent) -> Intent:
+        """区域规划时，避免将远距离的前端默认/GPS 坐标当作路线起点。"""
+        if not (intent.target_district or intent.target_business_area):
+            return intent
+        regional_pois = self.poi_service.search(
+            Intent(
+                city=intent.city,
+                target_district=intent.target_district,
+                target_business_area=intent.target_business_area,
+            ),
+            limit=80,
+            relax_preferences=True,
+        )
+        if not regional_pois:
+            return intent
+        if intent.start_lat is not None and intent.start_lng is not None:
+            distance = self._min_distance_to_pois(intent.start_lat, intent.start_lng, regional_pois)
+            if distance is not None and distance <= 8.0:
+                return intent
+        region_name = intent.target_business_area or intent.target_district or "目标区域"
+        return intent.model_copy(
+            update={
+                "start_location_name": f"{region_name}附近",
+                "start_lat": sum(poi.lat for poi in regional_pois) / len(regional_pois),
+                "start_lng": sum(poi.lng for poi in regional_pois) / len(regional_pois),
+            }
+        )
+
     def _apply_default_city_start(self, intent: Intent) -> tuple[Intent, dict[str, object] | None]:
         if intent.start_lat is not None and intent.start_lng is not None:
             return intent, None
+
+        # 对区域规划使用区域候选点的中心作为起点，避免例如朝阳区行程错误地从西单出发。
+        if intent.target_district or intent.target_business_area:
+            regional_pois = self.poi_service.search(
+                Intent(
+                    city=intent.city,
+                    target_district=intent.target_district,
+                    target_business_area=intent.target_business_area,
+                ),
+                limit=80,
+                relax_preferences=True,
+            )
+            if regional_pois:
+                default_start = {
+                    "name": intent.target_business_area or intent.target_district or "目标区域中心",
+                    "lat": sum(poi.lat for poi in regional_pois) / len(regional_pois),
+                    "lng": sum(poi.lng for poi in regional_pois) / len(regional_pois),
+                }
+                updated = intent.model_copy(
+                    update={
+                        "start_location_name": intent.start_location_name or f"{default_start['name']}附近",
+                        "start_lat": default_start["lat"],
+                        "start_lng": default_start["lng"],
+                    }
+                )
+                return updated, default_start
+
         default_start = self.DEFAULT_CITY_STARTS.get(intent.city)
         if default_start is None:
             return intent, None
@@ -1350,15 +1416,19 @@ class AgentOrchestrator:
                         "role": "system",
                         "content": (
                             "你是路线规划 Agent 的结果总结器。"
-                            "根据已召回的 POI 和已生成的路线，用中文给用户做一个简短总结。"
+                            "根据已召回的 POI 和已生成的路线，用中文给用户做一个简短、易扫读的总结。"
                             "只总结给定内容，不要编造不存在的地点或路线。"
-                            "当 routes 不为空时，优先把结构化路线字段写进用户可见文本："
-                            "用 total_distance_km 和 total_travel_minutes 说明整体距离和交通时间；"
-                            "用 stop.reason、highlight_text、ugc_tip 解释为什么推荐、有什么亮点和避坑；"
-                            "用 transport_mode_from_previous、distance_km_from_previous、travel_minutes_from_previous 说明站点之间怎么走。"
-                            "字段为空时跳过，不要编造。"
-                            "如果 routes 为空，说明候选点不足，并建议用户换城市或补充偏好。"
-                            "回复控制在 2 到 4 句话。"
+                            "使用纯文本分段格式，不使用 Markdown：禁止出现 *、#、-、>、``` 等符号。"
+                            "可以使用少量与内容匹配的 emoji 帮助扫读；每个小标题最多一个 emoji，不要连续堆叠或在句中随意插入。"
+                            "固定输出 4 个部分，并以换行分隔："
+                            "🗺️ 行程概览：一句话说明已生成几条路线及整体特点；"
+                            "✨ 推荐方案：依次列出 方案一、方案二、方案三，每条单独一行，格式为“方案一｜路线标题：亮点；约X公里，交通约Y分钟，人均约Z元”。"
+                            "💡 出行提示：仅在有明确排队、交通或避坑信息时用一句话说明，否则省略此部分。"
+                            "👉 下一步：用一句话邀请用户继续调整，例如少走路、少排队或更省钱。"
+                            "当 routes 不为空时，优先使用 total_distance_km、total_travel_minutes、total_cost_per_person 和 route.reasons。"
+                            "stop.reason、highlight_text、ugc_tip 只提炼为简短亮点；字段为空时跳过，不要编造。"
+                            "如果 routes 为空，使用“📍 当前结果”和“👉 你可以调整”两个纯文本小标题说明原因和下一步。"
+                            "总长度控制在 8 行以内。"
                         ),
                     },
                     {
@@ -1371,7 +1441,7 @@ class AgentOrchestrator:
             content = response["choices"][0]["message"]["content"].strip()
             trace.append(AgentTraceStep(step="summarize_routes", label="LLM 总结召回和路线结果", status="done"))
             logger.info("step done step=summarize_routes mode=llm content=%s", self._preview(content))
-            return content or fallback_message
+            return self._normalize_route_summary_format(content) or fallback_message
         except Exception as exc:
             unavailable_message = (
                 f"LLM 总结不可用（{type(exc).__name__}），以下先展示路线引擎生成的结构化结果："
@@ -1387,12 +1457,26 @@ class AgentOrchestrator:
             logger.exception("step failed step=summarize_routes mode=llm fallback=true error=%s", type(exc).__name__)
             return unavailable_message
 
+    def _normalize_route_summary_format(self, content: str) -> str:
+        """清理模型偶发输出的 Markdown 标记，保留用于层级提示的 emoji。"""
+        lines: list[str] = []
+        for raw_line in content.splitlines():
+            line = raw_line.strip()
+            if not line:
+                continue
+            line = re.sub(r"^#{1,6}\s*", "", line)
+            line = re.sub(r"^(?:[-*+]\s+|\d+[.)]\s+)", "", line)
+            line = line.replace("**", "").replace("`", "")
+            if line:
+                lines.append(line)
+        return "\n".join(lines[:8])
+
     def _build_route_summary_fallback(self, routes: list[Route]) -> str:
         if not routes:
-            return "我先按你们的需求生成了几条可执行路线，后续可以继续让我少排队、更省钱或换一家。"
+            return "📍 当前结果：暂时没有生成可执行路线。\n👉 你可以调整：告诉我想少走路、少排队或换个区域，我会继续帮你安排。"
 
         route = routes[0]
-        parts = [f"我先推荐「{route.title}」"]
+        parts = ["🗺️ 行程概览：已为你生成可执行路线。", f"✨ 推荐方案：方案一｜{route.title}"]
         metrics: list[str] = []
         if route.total_duration_minutes:
             metrics.append(f"总时长约 {route.total_duration_minutes} 分钟")
@@ -1405,8 +1489,7 @@ class AgentOrchestrator:
         if route.total_queue_minutes:
             metrics.append(f"排队约 {route.total_queue_minutes} 分钟")
         if metrics:
-            parts.append("，" + "，".join(metrics))
-        parts.append("。")
+            parts[-1] += "：" + "，".join(metrics) + "。"
 
         detail_lines: list[str] = []
         for stop in route.stops:
@@ -1438,10 +1521,11 @@ class AgentOrchestrator:
                 detail_lines.append(f"到{leg.name}这段" + "，".join(leg_bits))
 
         if detail_lines:
-            parts.append(" ".join(detail_lines[:3]) + "。")
+            parts.append("💡 出行提示：" + "；".join(detail_lines[:3]) + "。")
         if route.reasons:
-            parts.append("推荐理由：" + "、".join(route.reasons[:3]) + "。")
-        return "".join(parts)
+            parts.append("🌟 推荐理由：" + "、".join(route.reasons[:3]) + "。")
+        parts.append("👉 下一步：如果你想调整节奏、预算或排队时间，直接告诉我即可。")
+        return "\n".join(parts)
 
     def _format_transport_mode(self, mode: str) -> str:
         mode_labels = {
@@ -1567,7 +1651,7 @@ class AgentOrchestrator:
         try:
             intent = await self._llm_parse_intent(message)
             gps_city = self._gps_city_from_request(request)
-            return intent.model_copy(update={"city": gps_city}) if gps_city and not intent.city_from_message else intent
+            return intent.model_copy(update={"city": gps_city}) if gps_city and not intent.city else intent
         except Exception as exc:
             logger.warning("prefetch parse_intent failed error=%s", type(exc).__name__)
             return None
@@ -1586,7 +1670,7 @@ class AgentOrchestrator:
         try:
             logger.info("step start step=parse_intent mode=llm")
             intent = await self._llm_parse_intent(message)
-            if gps_city and not intent.city_from_message:
+            if gps_city and not intent.city:
                 intent = intent.model_copy(update={"city": gps_city})
             trace.append(AgentTraceStep(step="parse_intent", label="LLM 解析用户意图", status="done", details=self._intent_trace_details(intent)))
             logger.info("step done step=parse_intent mode=llm")
@@ -1670,7 +1754,7 @@ class AgentOrchestrator:
                 normalized[key] = defaults[key]
             else:
                 normalized[key] = str(normalized[key])
-        normalized["city"] = str(normalized.get("city") or "").strip()
+        normalized["city"] = self._normalize_city_name(normalized.get("city"))
 
         if normalized.get("start_location_name") is not None:
             normalized["start_location_name"] = str(normalized["start_location_name"])
@@ -1702,7 +1786,25 @@ class AgentOrchestrator:
         else:
             normalized["need_clarification"] = bool(value)
 
-        return normalized
+        return self._normalize_intent_regions(Intent.model_validate(normalized)).model_dump()
+
+    def _normalize_intent_regions(self, intent: Intent) -> Intent:
+        """移除目标区域中重复的城市前缀，保持与 POI 的 district 字段一致。"""
+        district = str(intent.target_district or "").strip()
+        city = self._normalize_city_name(intent.city)
+        if city and district.startswith(city) and len(district) > len(city):
+            district = district[len(city):].strip()
+        if city != intent.city or district != intent.target_district:
+            return intent.model_copy(update={"city": city, "target_district": district or None})
+        return intent
+
+    def _normalize_city_name(self, value: object) -> str:
+        """将模型可能重复输出的城市名收敛为 POI 数据使用的标准名称。"""
+        city = str(value or "").strip()
+        for known_city in self.DEFAULT_CITY_STARTS:
+            if city and city.replace(known_city, "") == "":
+                return known_city
+        return city
 
     def _coerce_int(self, value: object, default: int) -> int:
         if isinstance(value, int):

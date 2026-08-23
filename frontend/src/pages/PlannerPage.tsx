@@ -213,7 +213,9 @@ interface PlannerPageProps {
   preset?: PlannerPreset | null;
   onPresetConsumed?: () => void;
   onBackToHome?: () => void;
-  onTripFinished?: (route: Route, avgScore: number, conversation?: ChatSessionSnapshot) => void;
+  onTripFinished?: (route: Route, avgScore: number, conversation?: ChatSessionSnapshot, tripId?: string) => void;
+  /** 首条用户消息写入时创建历史行程草稿。 */
+  onConversationStart?: (message: string) => string;
   /** 新建行程：保存当前会话（如有）并重置 */
   onNewTrip?: () => void;
   /** 将进行中的路线状态同步至应用层，供首页持续展示 */
@@ -221,7 +223,7 @@ interface PlannerPageProps {
   /** 应用层保存的进行中路线，用于从首页恢复行程看板 */
   activeTrip?: Route | null;
   /** 仅保存路线到历史（不跳首页） */
-  onSaveTrip?: (route: Route, conversation?: ChatSessionSnapshot) => void;
+  onSaveTrip?: (route: Route, conversation?: ChatSessionSnapshot, tripId?: string) => void;
   initialMsg?: string;
   onOpenSidebar?: () => void;
   /** 注册 send 函数给 App 层全局输入栏使用 */
@@ -841,7 +843,7 @@ function StatusBadge({ status }: { status: "planning" | "ready" | "active" }) {
 }
 
 // ── 主页面 ────────────────────────────────────────────────────
-export function PlannerPage({ profile, onResetProfile, preset, onPresetConsumed, onBackToHome, onTripFinished, onNewTrip, onActiveTripChange, activeTrip, onSaveTrip, initialMsg, onOpenSidebar, onSendReady, onInjectText, onDisabledChange, onViewModeChange }: PlannerPageProps) {
+export function PlannerPage({ profile, onResetProfile, preset, onPresetConsumed, onBackToHome, onTripFinished, onConversationStart, onNewTrip, onActiveTripChange, activeTrip, onSaveTrip, initialMsg, onOpenSidebar, onSendReady, onInjectText, onDisabledChange, onViewModeChange }: PlannerPageProps) {
   const { messages, response, liveTrace, loading, error, lastRequest, send, inject, reset, snapshot, restore, answerClarify, patchRouteStops } = useChat();
   const [localProfile, setLocalProfile] = useState<OnboardingProfile>(profile);
   const [trip, setTrip] = useState<TripConstraints | null>(null);
@@ -878,6 +880,7 @@ export function PlannerPage({ profile, onResetProfile, preset, onPresetConsumed,
   const directBoardRef = useRef(false);
   // 历史会话需要展示其完整对话内容，路线卡只显示对应历史路线。
   const [historyRouteId, setHistoryRouteId] = useState<string | null>(null);
+  const conversationTripIdRef = useRef<string | null>(null);
 
   // 消费来自首页的预设参数
   useLayoutEffect(() => {
@@ -940,6 +943,18 @@ export function PlannerPage({ profile, onResetProfile, preset, onPresetConsumed,
     send(msg, localProfile, DEFAULT_TRIP_CONSTRAINTS);
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
+
+  // 首条用户消息出现时立即写入侧边栏历史草稿；后续路线结果会更新同一条记录。
+  useEffect(() => {
+    const firstUserMessage = messages.find((message) => message.role === "user");
+    if (!firstUserMessage) {
+      conversationTripIdRef.current = null;
+      return;
+    }
+    if (!historyRouteId && !conversationTripIdRef.current) {
+      conversationTripIdRef.current = onConversationStart?.(firstUserMessage.content) ?? null;
+    }
+  }, [messages, historyRouteId, onConversationStart]);
 
   // ── 注册 send 函数给 App 层全局输入栏 ──
   useEffect(() => {
@@ -1102,7 +1117,7 @@ setSelectedRouteId(routeId);
       ? routes.find((route) => route.route_id === selectedRouteId) ?? routes[0]
       : routes[0];
     if (routeToSave && !activeTrip) {
-      onSaveTrip?.(routeToSave, snapshot());
+      onSaveTrip?.(routeToSave, snapshot(), conversationTripIdRef.current ?? undefined);
     }
     reset();
     setTrip(null);
@@ -1199,7 +1214,7 @@ const routeTitle = boardRoute?.title ?? (response?.routes?.[0]?.title ?? "");
                   autoExpand
                   onAction={handleRouteOptimizeAction}
                   onPoiAction={handlePoiAction}
-                  onTripFinished={(route, avgScore) => onTripFinished?.(route, avgScore, snapshot())}
+                  onTripFinished={(route, avgScore) => onTripFinished?.(route, avgScore, snapshot(), conversationTripIdRef.current ?? undefined)}
                   onRoutePreview={(routeId) => {
                     const idx = (response?.routes ?? []).findIndex((r) => r.route_id === routeId);
                     if (idx !== -1) {
@@ -1353,7 +1368,7 @@ const routeTitle = boardRoute?.title ?? (response?.routes?.[0]?.title ?? "");
                         loading={false}
                         onAction={handleRouteOptimizeAction}
                         onPoiAction={handlePoiAction}
-                        onTripFinished={(route, avgScore) => onTripFinished?.(route, avgScore, snapshot())}
+                        onTripFinished={(route, avgScore) => onTripFinished?.(route, avgScore, snapshot(), conversationTripIdRef.current ?? undefined)}
                         onRoutePreview={(routeId) => handleEnterRouteBoard(routeId)}
                         onLiveStopsChange={(routeId, newStops) => {
                           setMapStops(newStops);

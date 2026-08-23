@@ -721,6 +721,8 @@ button:disabled { cursor: not-allowed; opacity: 0.45; transform: none; box-shado
   background: #ffffff;
   color: var(--color-text);
   border-radius: 18px 18px 18px 4px;
+  /* 保留后端路线总结中的换行，让概览、方案和提示分段显示。 */
+  white-space: pre-wrap;
 }
 
 /* 打字动效 */
@@ -2852,6 +2854,7 @@ line-height: 1;
    Onboarding 引导页（对齐 beta 规范 · 去毛玻璃 · 统一设计语言）
    ============================================================ */
 .ob-shell {
+  --ob-status-bar-height: calc(44px + env(safe-area-inset-top, 0px));
   display: flex;
   flex-direction: column;
   height: 100dvh;
@@ -2870,7 +2873,8 @@ line-height: 1;
   display: flex;
   align-items: center;
   gap: 8px;
-  padding: 6px 20px 0;
+  /* 为 fixed 状态栏预留空间，避免进度条被时间与系统图标遮挡。 */
+  padding: calc(var(--ob-status-bar-height) + 6px) 20px 0;
   position: relative;
 }
 

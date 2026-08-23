@@ -8,17 +8,17 @@ export interface AgentThinkingSummary {
 }
 
 const STEP_SUMMARY: Record<string, string> = {
-  route_message: "正在判断这句话属于新规划、补充需求还是路线追问",
-  clarify_intent: "发现需求还不够清晰，正在准备一个轻量追问",
-  parse_intent: "正在把自然语言整理成路线规划意图",
-  apply_session_context: "正在继承上一轮的城市、人数、时长和主场景",
-  apply_query_delta: "正在合并本轮新增或修改的旅行状态",
-  get_user_profile: "正在读取你的偏好画像",
-  build_strategy_weights: "正在把偏好转换成路线排序权重",
-  search_pois: "正在召回可选地点",
-  generate_routes: "正在生成候选路线",
-  summarize_routes: "正在根据结构化路线生成回复",
-  direct_llm_chat: "识别为非路线问题并直接回复",
+  route_message: "正在理解你的需求",
+  clarify_intent: "有一项关键信息想和你确认",
+  parse_intent: "正在整理这次出行的关键信息",
+  apply_session_context: "已结合你前面提到的出行安排",
+  apply_query_delta: "已更新这次出行的要求",
+  get_user_profile: "正在参考你的游玩偏好",
+  build_strategy_weights: "正在按你的偏好挑选方案",
+  search_pois: "正在寻找合适的地点",
+  generate_routes: "正在组合可行的游玩方案",
+  summarize_routes: "正在整理推荐结果",
+  direct_llm_chat: "正在为你准备回复",
 };
 
 const NEXT_STEP_HINTS: Record<string, string> = {
@@ -89,9 +89,9 @@ const FIELD_LABELS: Record<string, string> = {
 export function buildThinkingSummary(steps: AgentTraceStep[], loading = false): AgentThinkingSummary {
   if (loading && steps.length === 0) {
     return {
-      headline: "Agent 思考过程",
-      statusText: "正在理解需求",
-      items: ["先判断你的需求类型", "再结合已有出行状态决定是否重规划"],
+    headline: "正在帮你规划",
+    statusText: "正在理解你的需求",
+    items: ["整理你的出行要求", "结合前面的安排给出合适建议"],
       issueCount: 0,
     };
   }
@@ -103,8 +103,8 @@ export function buildThinkingSummary(steps: AgentTraceStep[], loading = false): 
     .slice(0, 4);
 
   return {
-    headline: "Agent 思考过程",
-    statusText: issueCount > 0 ? "处理过程中遇到了一些问题" : "思考完毕",
+    headline: "正在帮你规划",
+    statusText: issueCount > 0 ? "规划时遇到一点问题，正在换一种方式处理" : "规划完成", 
     items,
     issueCount,
   };
@@ -294,11 +294,11 @@ export function buildNarrativeSentences(steps: AgentTraceStep[], userInput?: str
       const reason = asText(d.reason);
 
       const parts: string[] = [];
-      if (evidence) parts.push(`依据原话「${evidence}」`);
       if (reason) parts.push(reason);
-      if (turnLabel) parts.push(`判定为**${turnLabel}**`);
-      if (d.inherit_previous === true) parts.push("继承上一轮出行上下文");
-      if (d.preserve_scenario === true) parts.push("保留原来的出行场景");
+      if (turnLabel) parts.push(`我会按「${turnLabel}」来帮你安排`);
+      if (d.inherit_previous === true) parts.push("会结合你前面说过的安排");
+      if (d.preserve_scenario === true) parts.push("保留原来的出行主题");
+      if (!parts.length && evidence) parts.push("已理解你刚刚的需求");
 
       if (parts.length) sentences.push(parts.join("，"));
       continue;
@@ -311,21 +311,18 @@ export function buildNarrativeSentences(steps: AgentTraceStep[], userInput?: str
       const duration = asNumber(d.duration_hours);
       const budget = asNumber(d.budget_per_person);
       const startTime = asText(d.start_time);
-      const scenario = asText(d.scenario);
-      const preferences = asTextList(d.preferences).slice(0, 4);
+      const explicitConditions: string[] = [];
+      if (city) explicitConditions.push(city);
+      if (people !== null) explicitConditions.push(`${people}人`);
+      if (startTime) explicitConditions.push(`${startTime}出发`);
+      if (duration !== null) explicitConditions.push(`${duration}小时`);
+      if (budget !== null) explicitConditions.push(`人均${budget}元`);
 
-      const stateParts: string[] = [];
-      if (city) stateParts.push(city);
-      if (people !== null) stateParts.push(`${people}人`);
-      if (startTime) stateParts.push(`${startTime}出发`);
-      if (duration !== null) stateParts.push(`${duration}小时`);
-      if (budget !== null) stateParts.push(`人均${budget}元`);
-      if (scenario) stateParts.push(labelValue(scenario));
-      if (preferences.length) stateParts.push(`偏好${preferences.map(labelValue).join("、")}`);
-
-      if (stateParts.length) {
-        const prefix = step.step === "apply_session_context" ? "继承后出行状态" : "出行状态";
-        sentences.push(`${prefix}：${stateParts.join(" · ")}`);
+      // 解析出的 scenario / preferences 既可能来自用户原话，也可能来自档案与默认策略；
+      // 它们会在「用户偏好」步骤单独说明，避免误导为本轮明确输入。
+      if (explicitConditions.length) {
+        const prefix = step.step === "apply_session_context" ? "我会沿用这些出行条件" : "已确认这次的出行条件";
+        sentences.push(`${prefix}：${explicitConditions.join(" · ")}`);
       }
       continue;
     }
@@ -343,25 +340,25 @@ export function buildNarrativeSentences(steps: AgentTraceStep[], userInput?: str
       if (changed.length) parts.push(`修改 ${changed.map(labelValue).join("、")}`);
       if (removed.length) parts.push(`移除 ${removed.map(labelValue).join("、")}`);
 
-      if (parts.length) sentences.push(`本轮状态变更：${parts.join("；")}`);
+      if (parts.length) sentences.push(`我已按你的新想法调整：${parts.join("；")}`);
       continue;
     }
 
     // ── 用户画像 ────────────────────────────────────────────
     if (step.step === "get_user_profile") {
-      const preferences = asTextList(d.preferences).slice(0, 4);
-      const avoidTags = asTextList(d.avoid_tags).slice(0, 3);
+      const preferences = asTextList(d.preferences).map(labelValue).slice(0, 4);
+      const avoidTags = asTextList(d.avoid_tags).map(labelValue).slice(0, 3);
       const parts: string[] = [];
-      if (preferences.length) parts.push(`偏好 ${preferences.join("、")}`);
-      if (avoidTags.length) parts.push(`避开 ${avoidTags.join("、")}`);
-      if (parts.length) sentences.push(`读取画像：${parts.join("，")}`);
-      else sentences.push("读取画像：无额外偏好记录");
+      if (preferences.length) parts.push(`长期偏好：${preferences.join("、")}`);
+      if (avoidTags.length) parts.push(`尽量避开：${avoidTags.join("、")}`);
+      if (parts.length) sentences.push(`我会参考你的用户档案：${parts.join("；")}`);
+      else sentences.push("你的用户档案中暂时没有额外偏好，本次会按当前需求推荐");
       continue;
     }
 
     // ── 策略权重 ────────────────────────────────────────────
     if (step.step === "build_strategy_weights") {
-      sentences.push("正在根据你的偏好生成路线排序策略");
+      sentences.push("正在按你的偏好挑选更合适的方案");
       continue;
     }
 
@@ -369,7 +366,7 @@ export function buildNarrativeSentences(steps: AgentTraceStep[], userInput?: str
     if (step.step === "search_pois") {
       const names = asTextList(d.names).slice(0, 4);
       const nameStr = names.length ? `（含 ${names.join("、")} 等）` : "";
-      sentences.push(`筛选周边候选地点${nameStr}`);
+      sentences.push(`正在挑选合适的地点${nameStr}`);
       continue;
     }
 
@@ -377,7 +374,7 @@ export function buildNarrativeSentences(steps: AgentTraceStep[], userInput?: str
     if (step.step === "generate_routes") {
       const titles = asTextList(d.route_titles).slice(0, 3);
       const titleStr = titles.length ? `：${titles.join("、")}` : "";
-      sentences.push(`生成候选路线${titleStr}`);
+      sentences.push(`已整理出可选方案${titleStr}`);
       continue;
     }
 
@@ -385,15 +382,15 @@ export function buildNarrativeSentences(steps: AgentTraceStep[], userInput?: str
     if (step.step === "clarify_intent") {
       const missing = asText(d.missing_field);
       const question = asText(d.question);
-      if (missing) sentences.push(`信息不足（缺少${labelValue(missing)}），需要向你确认`);
-      else if (question) sentences.push(`需要向你确认：${question}`);
-      else sentences.push("需要向你进一步确认出行信息");
+      if (missing) sentences.push(`还想确认一下${labelValue(missing)}，这样安排会更准确`);
+      else if (question) sentences.push(`还想和你确认：${question}`);
+      else sentences.push("还想确认一项出行信息，方便给你更合适的建议");
       continue;
     }
 
     // ── 直接回复 ────────────────────────────────────────────
     if (step.step === "direct_llm_chat") {
-      sentences.push("识别为非路线规划问题，直接回复");
+      sentences.push("正在为你准备回复");
       continue;
     }
 

@@ -17,6 +17,7 @@ from app.agent.v2.understanding import TurnUnderstandingService
 from app.agent.v2.verifier import OutcomeVerifier
 from app.config import PROJECT_ROOT, settings
 from app.schemas.chat import AgentTraceStep, ChatRequest, ChatResponse
+from app.schemas.intent import Intent
 from app.services.profile_service import ProfileService
 from app.state.repository import SQLiteStateRepository, StateConflictError, StateRepository
 
@@ -156,7 +157,7 @@ class V2AgentRuntime:
             response.agent_trace = [*trace, *response.agent_trace]
             return response
 
-        intent = state_to_intent(updated)
+        intent = self._execution_intent(state_to_intent(updated))
         profile = self.profile_service.get_profile(request.user_id)
         strategy_tags = self.profile_service.strategy_service.infer_tags(request.message, intent, profile)
         strategy_weights = self.profile_service.build_strategy_weights(intent, profile, strategy_tags)
@@ -218,6 +219,37 @@ class V2AgentRuntime:
             trace_id=trace_id,
             warnings=warnings,
             degradation={"level": max((route.degradation_level for route in routes), default=0), "changes": degradation_steps},
+        )
+
+    def _execution_intent(self, intent: Intent) -> Intent:
+        """为指定区域的执行阶段校正不在区域附近的默认/GPS 起点。"""
+        if not (intent.target_district or intent.target_business_area):
+            return intent
+
+        regional_intent = intent.model_copy(update={"start_lat": None, "start_lng": None})
+        regional_pois = self.executor.toolset.poi_service.search(
+            regional_intent,
+            limit=80,
+            relax_preferences=True,
+        )
+        if not regional_pois:
+            return intent
+
+        is_far_from_region = (
+            intent.start_lat is not None
+            and intent.start_lng is not None
+            and self.legacy._min_distance_to_pois(intent.start_lat, intent.start_lng, regional_pois) > 8.0
+        )
+        if intent.start_lat is not None and intent.start_lng is not None and not is_far_from_region:
+            return intent
+
+        region_name = intent.target_business_area or intent.target_district or "目标区域"
+        return intent.model_copy(
+            update={
+                "start_location_name": f"{region_name}附近",
+                "start_lat": sum(poi.lat for poi in regional_pois) / len(regional_pois),
+                "start_lng": sum(poi.lng for poi in regional_pois) / len(regional_pois),
+            }
         )
 
     def _load_state(self, session_id: str) -> TripStateV2:

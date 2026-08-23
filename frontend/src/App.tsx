@@ -196,8 +196,13 @@ function saveHistory(list: HistoryTrip[]) {
   } catch { /* ignore */ }
 }
 
-/** 从 Route 对象生成 HistoryTrip 记录 */
-function routeToHistoryTrip(route: Route, avgScore: number, conversation?: ChatSessionSnapshot): HistoryTrip {
+function getConversationTitle(conversation?: ChatSessionSnapshot): string | null {
+  const firstUserMessage = conversation?.messages.find((message) => message.role === "user")?.content.trim();
+  return firstUserMessage ? firstUserMessage.slice(0, 24) : null;
+}
+
+/** 从 Route 对象生成 HistoryTrip 记录。标题始终优先使用用户的第一句话。 */
+function routeToHistoryTrip(route: Route, avgScore: number, conversation?: ChatSessionSnapshot, id?: string): HistoryTrip {
   const selectedRoute = conversation?.response?.routes.find((candidate) => candidate.route_id === route.route_id);
   const resolvedRoute = selectedRoute ?? route;
   const stops = resolvedRoute.stops ?? [];
@@ -221,8 +226,8 @@ function routeToHistoryTrip(route: Route, avgScore: number, conversation?: ChatS
   const dateLabel = `${now.getMonth() + 1}月${now.getDate()}日`;
 
   return {
-    id: `trip_${Date.now()}`,
-    title: resolvedRoute.title,
+    id: id ?? `trip_${Date.now()}`,
+    title: getConversationTitle(conversation) ?? "未命名行程",
     date: dateLabel,
     district,
     poi_count: stops.length,
@@ -310,25 +315,50 @@ export default function App() {
     setActiveTab(tab);
   }
 
-  // ── 行程结束，保存记录并回首页 ──
-  function handleTripFinished(route: Route, avgScore: number, conversation?: ChatSessionSnapshot) {
-    const record = routeToHistoryTrip(route, avgScore, conversation);
+  // ── 首条消息发出即创建草稿，确保对话尚未产出路线时也能出现在侧边栏。 ──
+  function handleConversationStart(message: string): string {
+    const now = new Date();
+    const record: HistoryTrip = {
+      id: `trip_${Date.now()}`,
+      title: message.trim().slice(0, 24) || "未命名行程",
+      date: `${now.getMonth() + 1}月${now.getDate()}日`,
+      district: "",
+      poi_count: 0,
+      duration_label: "规划中",
+      goals: [],
+      emoji: "🗺️",
+      summary: "对话进行中…",
+    };
     setTripHistory((prev) => {
       const next = [record, ...prev];
       saveHistory(next);
       return next;
     });
+    return record.id;
+  }
+
+  function upsertTrip(route: Route, avgScore: number, conversation: ChatSessionSnapshot | undefined, tripId?: string) {
+    const record = routeToHistoryTrip(route, avgScore, conversation, tripId);
+    setTripHistory((prev) => {
+      const exists = tripId && prev.some((trip) => trip.id === tripId);
+      const next = exists
+        // 草稿在首条消息写入时已经确定标题，后续无论选择哪条方案都不能覆盖它。
+        ? prev.map((trip) => trip.id === tripId ? { ...record, title: trip.title } : trip)
+        : [record, ...prev];
+      saveHistory(next);
+      return next;
+    });
+  }
+
+  // ── 行程结束，更新已有草稿并回首页 ──
+  function handleTripFinished(route: Route, avgScore: number, conversation?: ChatSessionSnapshot, tripId?: string) {
+    upsertTrip(route, avgScore, conversation, tripId);
     setActiveTab("home");
   }
 
-  // ── 仅保存行程（不跳首页），用于新建行程时保存当前会话 ──
-  function handleSaveTrip(route: Route, conversation?: ChatSessionSnapshot) {
-    const record = routeToHistoryTrip(route, 0, conversation);
-    setTripHistory((prev) => {
-      const next = [record, ...prev];
-      saveHistory(next);
-      return next;
-    });
+  // ── 新建行程前保存当前会话，优先更新首条消息创建的草稿。 ──
+  function handleSaveTrip(route: Route, conversation?: ChatSessionSnapshot, tripId?: string) {
+    upsertTrip(route, 0, conversation, tripId);
   }
 
   // ── 行程重命名 ──
@@ -459,6 +489,7 @@ export default function App() {
               onPresetConsumed={() => setPlannerPreset(null)}
               onBackToHome={() => setActiveTab("home")}
               onTripFinished={handleTripFinished}
+              onConversationStart={handleConversationStart}
               onNewTrip={() => {
                 setPlannerPreset(null);
                 setGlobalInputText("");
