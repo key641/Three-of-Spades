@@ -81,15 +81,14 @@ function SummaryMap({ stops }: { stops: RouteStop[] }) {
       scrollWheelZoom: false,
     });
 
-    // 高德矢量底图
+    // 高德平面矢量底图（style=7 路网 + style=8 中文注记叠加）
     L.tileLayer(
       "https://wprd0{s}.is.autonavi.com/appmaptile?x={x}&y={y}&z={z}&size=1&scl=2&style=7",
       { subdomains: ["1","2","3","4"], maxZoom: 20 },
     ).addTo(map);
-    // 高德注记层
     L.tileLayer(
       "https://wprd0{s}.is.autonavi.com/appmaptile?x={x}&y={y}&z={z}&size=2&scl=1&style=8",
-      { subdomains: ["1","2","3","4"], maxZoom: 20, opacity: 0.9 },
+      { subdomains: ["1","2","3","4"], maxZoom: 20, opacity: 0.85 },
     ).addTo(map);
 
     mapRef.current = map;
@@ -100,7 +99,7 @@ function SummaryMap({ stops }: { stops: RouteStop[] }) {
 
       // 绘制连线
       L.polyline(latlngs, {
-        color: "#FF6600", weight: 2.5, opacity: 0.75, dashArray: "6 5",
+        color: "#1677FF", weight: 3.5, opacity: 0.85,
       }).addTo(map);
 
       // 绘制标记

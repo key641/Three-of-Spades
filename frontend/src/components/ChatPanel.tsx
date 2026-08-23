@@ -139,12 +139,14 @@ function ClarifyCard({
   );
 }
 
+const EMPTY_CLARIFICATION_GROUPS: ClarificationGroup[] = [];
+
 export function ChatPanel({
   messages,
   loading,
   error,
   clarifyingQuestion,
-  clarificationGroups = [],
+  clarificationGroups = EMPTY_CLARIFICATION_GROUPS,
   inferredContext,
   onClarify,
   afterFirstUserMessage,
@@ -270,7 +272,7 @@ export function ChatPanel({
         <React.Fragment key={msg.timestamp}>
           {/* 最后一条 AI 消息的起点标记，loading 结束后滚到此处 */}
           {idx === lastAiMsgIdx && (
-            <div ref={lastResponseRef} style={{ height: 0 }} />
+            <div ref={lastResponseRef} className="scroll-marker" style={{ height: 0 }} />
           )}
 
           {/* ── clarify 消息：持久追问卡片（LYNN 方案） ── */}
@@ -320,20 +322,20 @@ export function ChatPanel({
 
           {/* 最后一条 assistant 消息后插入方案卡片（非 loading 状态） */}
           {afterLastAssistant && !loading && idx === lastAssistantIdx && (
-            <div style={{ marginTop: 8 }}>{afterLastAssistant}</div>
+            <div style={{ marginTop: 0 }}>{afterLastAssistant}</div>
           )}
         </React.Fragment>
       ))}
 
-      {/* 实时 AgentTrace：loading 过程中始终显示 */}
+      {/* 实时 AgentTrace + typing-dots：loading 过程中始终显示，包裹在 message-block-assistant 中保持结构一致 */}
       {beforeLoadingBubble && loading && (
-        <div ref={agentTraceRef}>{beforeLoadingBubble}</div>
-      )}
-      {loading && (
-        <div className="bubble bubble-assistant typing-dots">
-          <span />
-          <span />
-          <span />
+        <div className="message-block message-block-assistant" ref={agentTraceRef}>
+          <div className="message-trace">{beforeLoadingBubble}</div>
+          <div className="bubble bubble-assistant typing-dots">
+            <span />
+            <span />
+            <span />
+          </div>
         </div>
       )}
 

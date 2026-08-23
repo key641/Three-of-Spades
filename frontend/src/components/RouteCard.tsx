@@ -1,4 +1,4 @@
-import { Wallet, CheckCircle2, Circle, MapPin, AlertCircle, Zap } from "lucide-react";
+import { MapPin, AlertCircle, Zap } from "lucide-react";
 import { useState } from "react";
 import type { Route, RouteStop } from "../api/types";
 import { RouteOptimizeBar } from "./ActionBar";
@@ -14,7 +14,6 @@ interface RouteCardProps {
   onSelect?: (route: Route) => void;
   onAction?: (action: string, routeId: string) => void;
   onPoiAction?: (action: PoiAction, routeId: string) => void;
-  onInjectChat?: (text: string) => void;
   /** stops 被本地编辑后回调（用于地图同步） */
   onStopsChange?: (routeId: string, stops: RouteStop[]) => void;
 }
@@ -28,13 +27,17 @@ function formatDuration(minutes: number): string {
   return `${minutes}分钟`;
 }
 
-/** 从 stops 提取时间段，如 "12:00 → 18:00"；若无数据则降级为时长 */
+/** 从 stops 提取当天日期与时间段，如 "8月23日 周日 14:00–19:30"；若无数据则降级为时长 */
 function formatTimeRange(route: Route): string {
   const stops = route.stops;
   if (stops?.length) {
     const start = stops[0].start_time;
-    const end   = stops[stops.length - 1].end_time;
-    if (start && end) return `${start} → ${end}`;
+    const end = stops[stops.length - 1].end_time;
+    if (start && end) {
+      const today = new Date();
+      const weekdays = ["周日", "周一", "周二", "周三", "周四", "周五", "周六"];
+      return `${today.getMonth() + 1}月${today.getDate()}日 ${weekdays[today.getDay()]} ${start}–${end}`;
+    }
   }
   return formatDuration(route.total_duration_minutes);
 }
@@ -84,7 +87,7 @@ function buildTripTips(route: Route): string[] {
   return tips;
 }
 
-export function RouteCard({ route, selected, onSelect, onAction, onPoiAction, onInjectChat, onStopsChange }: RouteCardProps) {
+export function RouteCard({ route, selected, onSelect, onAction, onPoiAction, onStopsChange }: RouteCardProps) {
   const [localStops, setLocalStops] = useState<RouteStop[]>(route.stops ?? []);
   const tripTips = buildTripTips(route);
   const stopCount = localStops.length;
@@ -96,14 +99,10 @@ export function RouteCard({ route, selected, onSelect, onAction, onPoiAction, on
         <div className="replan-notice"><Zap size={12} style={{ flexShrink: 0 }} /> {route.replan_reason}</div>
       )}
 
-      {/* 头部：标题 + 人均 + 地点数 */}
+      {/* 头部：时间 */}
       <div className="route-card-header">
-        <h3 className="route-card-title">{stripLeadingEmoji(route.title)}</h3>
+        <h3 className="route-card-title">{formatTimeRange(route)}</h3>
         <div className="route-card-header-meta">
-          <span className="route-header-meta-item">
-            <Wallet size={11} />
-            人均¥{route.total_cost_per_person}
-          </span>
           {stopCount > 0 && (
             <span className="route-header-meta-item">
               <MapPin size={11} />
@@ -112,11 +111,6 @@ export function RouteCard({ route, selected, onSelect, onAction, onPoiAction, on
           )}
         </div>
       </div>
-
-      {/* 核心摘要：一句话说明白这条路线 */}
-      {route.summary && (
-        <p className="route-summary">{route.summary}</p>
-      )}
 
       {/* 出行提示（排队 / 预约汇总） */}
       {tripTips.length > 0 && (
@@ -137,7 +131,6 @@ export function RouteCard({ route, selected, onSelect, onAction, onPoiAction, on
           onPoiAction={onPoiAction
             ? (action) => onPoiAction(action, route.route_id)
             : undefined}
-          onInjectChat={onInjectChat}
           onStopsChange={(newStops) => {
             setLocalStops(newStops);
             onStopsChange?.(route.route_id, newStops);
@@ -145,27 +138,8 @@ export function RouteCard({ route, selected, onSelect, onAction, onPoiAction, on
         />
       )}
 
-      {/* 路线级优化按钮（折叠式） */}
+      {/* 路线级优化操作（常驻展示） */}
       <RouteOptimizeBar routeId={route.route_id} onAction={onAction} />
-
-      {/* ── 选定方案按钮 ── */}
-      <button
-        type="button"
-        className={`route-select-btn${selected ? " selected" : ""}`}
-        onClick={() => onSelect?.({ ...route, stops: localStops })}
-      >
-        {selected ? (
-          <>
-            <CheckCircle2 size={15} />
-            当前出行方案
-          </>
-        ) : (
-          <>
-            <Circle size={15} />
-            选这条
-          </>
-        )}
-      </button>
     </article>
   );
 }

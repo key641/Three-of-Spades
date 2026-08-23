@@ -273,10 +273,10 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 }
 
 /**
- * 将 agent trace steps 串联成一段自然语言叙述，供用户阅读。
- * 格式例：用户说「…」→ 依据原话「…」，判定为新规划 → 出行状态：上海 · 2人 … → 筛选周边候选地点 → 生成候选路线。
+ * 将 agent trace steps 串联成自然语言叙述句子数组，供前端逐行渲染。
+ * 每个元素是一个思考步骤的自然语言描述。
  */
-export function buildNarrativeText(steps: AgentTraceStep[], userInput?: string): string {
+export function buildNarrativeSentences(steps: AgentTraceStep[], userInput?: string): string[] {
   const sentences: string[] = [];
 
   // 1. 用户输入开场
@@ -404,5 +404,13 @@ export function buildNarrativeText(steps: AgentTraceStep[], userInput?: string):
     }
   }
 
-  return sentences.join(" → ");
+  return sentences;
+}
+
+/**
+ * 将 agent trace steps 串联成一段自然语言叙述，供用户阅读。
+ * 格式例：用户说「…」→ 依据原话「…」，判定为新规划 → 出行状态：上海 · 2人 … → 筛选周边候选地点 → 生成候选路线。
+ */
+export function buildNarrativeText(steps: AgentTraceStep[], userInput?: string): string {
+  return buildNarrativeSentences(steps, userInput).join(" → ");
 }

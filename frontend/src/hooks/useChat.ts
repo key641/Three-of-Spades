@@ -1,5 +1,5 @@
 import { useRef, useState } from "react";
-import { resetChatSession, sendChatMessageStream } from "../api/chatApi";
+import { getChatSessionId, resetChatSession, sendChatMessageStream, setChatSessionId } from "../api/chatApi";
 import type { AgentTraceStep, ChatResponse, ClarificationGroup } from "../api/types";
 import type { OnboardingProfile, TripConstraints } from "./useOnboarding";
 import { waitForGps } from "../utils/gpsCache";
@@ -21,6 +21,12 @@ export interface ChatMessage {
   clarifyAnswerLabels?: string;
 }
 
+export interface ChatSessionSnapshot {
+  sessionId: string;
+  messages: ChatMessage[];
+  response: ChatResponse | null;
+}
+
 export function useChat() {
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [response, setResponse] = useState<ChatResponse | null>(null);
@@ -29,6 +35,7 @@ export function useChat() {
   const [error, setError] = useState<string | null>(null);
   const [lastRequest, setLastRequest] = useState<Record<string, unknown> | null>(null);
   const hasSentProfile = useRef(false);
+  const activeProfileSigRef = useRef<string | null>(null);
   const requestSeqRef = useRef(0);
   const inFlightRef = useRef(false);
   const lastProfileSigRef = useRef<string | null>(null);
@@ -67,10 +74,11 @@ export function useChat() {
     const requestSeq = ++requestSeqRef.current;
 
     try {
-      const profileSig = buildProfileSignature(profile);
-      const includeProfile =
-        !hasSentProfile.current ||
-        (profileSig !== null && profileSig !== lastProfileSigRef.current);
+    const profileSig = buildProfileSignature(profile);
+    activeProfileSigRef.current = profileSig;
+    const includeProfile =
+      !hasSentProfile.current ||
+      (profileSig !== null && profileSig !== lastProfileSigRef.current);
       const locationOptions = await getCurrentLocationOptions();
 
       // 记录本次发送的请求体快照，供 Debug Panel 展示
@@ -145,22 +153,28 @@ export function useChat() {
         };
         setMessages((prev) => [...prev, preMsg, clarifyRecord]);
       } else {
-        // 正常轮次：先插一条「理解！正在规划」前置气泡，再插 assistant 回复气泡
-        const preMsg: ChatMessage = {
-          role: "assistant",
-          content: "理解！正在规划",
-          timestamp: Date.now(),
-          // agent_trace 挂在前置气泡上展示
-          agentTrace: res.agent_trace && res.agent_trace.length > 0 ? res.agent_trace : undefined,
-          agentUserInput: message,
-        };
-        const newMsgs: ChatMessage[] = [preMsg];
-        // res.message 可能包含额外文案（如后端有说明性文字），有内容则追加
+        // 正常轮次：直接插入 assistant 回复气泡
+        // agent_trace 挂在回复气泡上展示；若无回复文案则用 trace 类型（只渲染思考步骤，无气泡）
+        const traceData = res.agent_trace && res.agent_trace.length > 0 ? res.agent_trace : undefined;
+        const newMsgs: ChatMessage[] = [];
+
         if (res.message && res.message.trim()) {
+          // 有回复文案：正常 assistant 气泡，挂 agent_trace
           newMsgs.push({
             role: "assistant",
             content: res.message,
-            timestamp: Date.now() + 1,
+            timestamp: Date.now(),
+            agentTrace: traceData,
+            agentUserInput: message,
+          });
+        } else if (traceData) {
+          // 无回复文案但有思考步骤：插入 trace 类型消息（只渲染 AgentTrace，不渲染气泡）
+          newMsgs.push({
+            role: "trace",
+            content: "",
+            timestamp: Date.now(),
+            agentTrace: traceData,
+            agentUserInput: message,
           });
         }
         setMessages((prev) => [...prev, ...newMsgs]);
@@ -222,9 +236,43 @@ export function useChat() {
     setLoading(false);
     hasSentProfile.current = false;
     lastProfileSigRef.current = null;
+    activeProfileSigRef.current = null;
     requestSeqRef.current += 1;
     inFlightRef.current = false;
     resetChatSession();
+  }
+
+  /**
+   * 当前会话的可恢复快照。
+   * 历史记录只保留用户与助手的最终内容，不存 Agent 推理步骤或实时状态。
+   */
+  function snapshot(): ChatSessionSnapshot {
+    return {
+      sessionId: getChatSessionId(),
+      messages: messages
+        .filter((message) => message.role !== "trace")
+        .map(({ agentTrace: _agentTrace, agentUserInput: _agentUserInput, ...message }) => message),
+      response,
+    };
+  }
+
+  /** 恢复已完成会话。恢复过程不触发接口请求，也不会展示实时 Agent 思考态。 */
+  function restore(saved: ChatSessionSnapshot) {
+    requestSeqRef.current += 1;
+    inFlightRef.current = false;
+    setChatSessionId(saved.sessionId);
+    // 兼容此前已保存的快照：恢复时同样剥离旧版本中残留的思考步骤。
+    setMessages(
+      saved.messages
+        .filter((message) => message.role !== "trace")
+        .map(({ agentTrace: _agentTrace, agentUserInput: _agentUserInput, ...message }) => message),
+    );
+    setResponse(saved.response);
+    setLiveTrace([]);
+    setLoading(false);
+    setError(null);
+    hasSentProfile.current = true;
+    lastProfileSigRef.current = activeProfileSigRef.current;
   }
 
   /**
@@ -243,7 +291,7 @@ export function useChat() {
     });
   }
 
-  return { messages, response, liveTrace, loading, error, lastRequest, send, inject, reset, answerClarify, patchRouteStops };
+  return { messages, response, liveTrace, loading, error, lastRequest, send, inject, reset, snapshot, restore, answerClarify, patchRouteStops };
 }
 
 // 默认起点：北京市西城区西单

@@ -8,7 +8,7 @@ import {
 } from "lucide-react";
 import type { Route, RouteStop, TransitSegment } from "../api/types";
 import { RouteCard } from "./RouteCard";
-import { RouteTimeline, CrowdIcon, type PoiAction } from "./RouteTimeline";
+import { RouteTimeline, type PoiAction } from "./RouteTimeline";
 import { RouteOptimizeBar } from "./ActionBar";
 import { TripSummaryOverlay } from "./TripSummaryOverlay";
 
@@ -19,14 +19,16 @@ export interface RouteCompareProps {
   onAction?: (actionKey: string, routeId: string) => void;
   /** 从 PoiCard 冒泡上来的 POI 级操作 */
   onPoiAction?: (action: PoiAction, routeId: string) => void;
-  /** 注入聊天框文本（用于增加节点等操作） */
-  onInjectChat?: (text: string) => void;
   /** 行程完结并关闭总结页时回调（保存记录+回首页） */
   onTripFinished?: (route: Route, avgScore: number) => void;
   /** 当用户切换预览的路线时回调（路线 id），用于同步地图 */
   onRoutePreview?: (routeId: string) => void;
   /** 已选方案的 stops 被本地编辑后，把最新 stops 传给父级（用于地图同步） */
   onLiveStopsChange?: (routeId: string, stops: RouteStop[]) => void;
+  /** 看板视图中自动展开详情，跳过摘要卡片列表 */
+  autoExpand?: boolean;
+  /** 自动选中第一条路线并展示行程跟踪条 */
+  autoSelect?: boolean;
 }
 
 // ── 骨架屏 ──────────────────────────────────────────────────
@@ -74,12 +76,11 @@ function getCurrentStopIndex(stops: RouteStop[]): number {
 }
 
 // ── 已选方案置顶条 ─────────────────────────────────────────
-interface ActiveTripBarProps {
+export interface ActiveTripBarProps {
   route: Route;
   onUnselect: () => void;
   onAction?: (actionKey: string, routeId: string) => void;
   onPoiAction?: (action: PoiAction, routeId: string) => void;
-  onInjectChat?: (text: string) => void;
   onTripFinished?: (route: Route, avgScore: number) => void;
   /** stops 被本地编辑（删除/排序/插入）后回调，用于同步地图 */
   onStopsChange?: (stops: RouteStop[]) => void;
@@ -253,7 +254,7 @@ function makeRestStop(after: RouteStop, restMin: number): RouteStop {
 const EXTEND_OPTIONS = [15, 30, 45, 60] as const;
 
 
-function ActiveTripBar({ route, onUnselect, onAction, onInjectChat, onTripFinished, onStopsChange }: ActiveTripBarProps) {
+export function ActiveTripBar({ route, onUnselect, onAction, onTripFinished, onStopsChange }: ActiveTripBarProps) {
   // 本地可编辑 stops 列表
   const [stops, setStops] = useState<RouteStop[]>(route.stops);
   // 当前所在节点
@@ -425,13 +426,6 @@ function ActiveTripBar({ route, onUnselect, onAction, onInjectChat, onTripFinish
     onStopsChange?.(prev);
   }
 
-  // ── 跟 AI 说（注入聊天框） ────────────────────────────────
-  function handleTalkAI(idx: number) {
-    const s = stops[idx];
-    const hint = `我在出行中，想修改「${s.name}」这个节点，`;
-    onInjectChat?.(hint);
-    setMenuIdx(null);
-  }
 
   // ── 删除节点（本地直接删除 + 重算时间） ──────────────────
   function handleDeleteStop(idx: number) {
@@ -466,16 +460,6 @@ function ActiveTripBar({ route, onUnselect, onAction, onInjectChat, onTripFinish
 
     return (
       <div className="vtl-menu">
-        {/* 跟 AI 说想怎么修改路线 */}
-        <button
-          className="vtl-menu-item vtl-menu-item--ai"
-          onClick={() => handleTalkAI(idx)}
-        >
-          <MessageSquare size={13} />
-          跟 AI 说想怎么修改路线
-        </button>
-
-        <div className="vtl-menu-divider" />
 
         {/* 删除当前节点（只剩 1 个时不可删）*/}
         <button
@@ -571,21 +555,10 @@ function ActiveTripBar({ route, onUnselect, onAction, onInjectChat, onTripFinish
                   <div className="vtl-header">
                     <span className="vtl-time">{stop.start_time}–{stop.end_time}</span>
                     <div className="vtl-name-row">
-                      {/* 排队图标在地名前面 */}
-                      {state !== "done" && stop.queue_level && stop.queue_level !== "none" && (
-                        <span
-                          className="vtl-crowd-inline"
-                          title={{
-                            low: "排队较少",
-                            medium: "排队一般",
-                            high: "排队较多",
-                            very_high: "排队非常多",
-                          }[stop.queue_level]}
-                        >
-                          <CrowdIcon level={stop.queue_level} />
-                          {stop.queue_minutes > 0 && (
-                            <span className="vtl-crowd-min">{stop.queue_minutes}min</span>
-                          )}
+                      {/* 排队小标签在地名前面 */}
+                      {state !== "done" && stop.queue_level && stop.queue_level !== "none" && stop.queue_minutes > 0 && (
+                        <span className={`vtl-queue-tag vtl-queue-tag--${stop.queue_level}`}>
+                          等{stop.queue_minutes}分钟
                         </span>
                       )}
                       {state !== "done" && stop.queue_level === "none" && (
@@ -779,9 +752,9 @@ const FALLBACK_GRADIENTS = [
 
 // 路线标签渐变色（与首页猜你喜欢标签风格一致）
 const LABEL_GRADIENTS: [string, string][] = [
-  ["#38c98a", "#1a9e68"],
-  ["#845EC2", "#5c3d99"],
-  ["#F59E0B", "#b45309"],
+  ["#FF6B6B", "#FF8E53"],
+  ["#4ECDC4", "#44A8AA"],
+  ["#FFD93D", "#FF9F1C"],
 ];
 
 function RouteSummaryCard({ route, index, onExpand, onPreview }: RouteSummaryCardProps) {
@@ -794,6 +767,9 @@ function RouteSummaryCard({ route, index, onExpand, onPreview }: RouteSummaryCar
   const startTime = stops[0]?.start_time ?? "";
   const endTime   = stops[stops.length - 1]?.end_time ?? "";
   const timeRange = startTime && endTime ? `${startTime} → ${endTime}` : "";
+
+  // 交通时间：优先用 route.total_travel_minutes，否则从 stops 累加
+  const travelMin = route.total_travel_minutes ?? stops.reduce((sum, s) => sum + (s.travel_minutes_from_previous ?? 0), 0);
 
   // 站点流程预览（前3个）
   const previewStops = stops.slice(0, 3);
@@ -895,17 +871,13 @@ function RouteSummaryCard({ route, index, onExpand, onPreview }: RouteSummaryCar
 
       {/* 右侧：文字内容 */}
       <div className="rsc-body">
-        {/* 标题（去除 emoji）*/}
+        {/* 第一行：标题 + 时间范围 */}
         <div className="rsc-top">
           <span className="rsc-title">{stripLeadingEmoji(route.title)}</span>
+          {timeRange && <span className="rsc-time-inline">{timeRange}</span>}
         </div>
 
-        {/* 推荐理由（一行，来自 reasons 第2条） */}
-        {extraReasons[0] && (
-          <div className="rsc-reason-line">"{extraReasons[0]}"</div>
-        )}
-
-        {/* 第一行：地点流（彩点 + 名称 + 分隔符，超出可横滑） */}
+        {/* 第二行：地点流（彩点 + 名称 + 分隔符，超出可横滑） */}
         {stops.length > 0 && (
           <div className="rsc-poi-line">
             {stops.map((s, i) => (
@@ -923,38 +895,25 @@ function RouteSummaryCard({ route, index, onExpand, onPreview }: RouteSummaryCar
           </div>
         )}
 
-        {/* 第二行：时间 + 均价 */}
+        {/* 第三行：首站距离 + 交通时间 */}
         <div className="rsc-meta-row">
-          <Clock size={9} strokeWidth={2} />
-          <span>{timeRange || "–"}</span>
-          <span className="rsc-meta-dot">·</span>
-          <Wallet size={9} strokeWidth={2} />
-          <span>¥{route.total_cost_per_person}/人</span>
+          {(() => {
+            const dist = stops[0]?.distance_m;
+            return dist != null ? (
+              <>
+                <MapPin size={9} strokeWidth={2} />
+                <span>首站{dist >= 1000 ? `${(dist / 1000).toFixed(1)}km` : `${dist}m`}</span>
+              </>
+            ) : null;
+          })()}
+          {travelMin > 0 && (
+            <>
+              {stops[0]?.distance_m != null && <span className="rsc-meta-dot">·</span>}
+              <Clock size={9} strokeWidth={2} />
+              <span>交通{travelMin}分钟</span>
+            </>
+          )}
         </div>
-
-        {/* 第三行：各站点停留时长占比进度条 */}
-        {stops.length > 0 && (() => {
-          const durations = stops.map((s) => {
-            const [sh, sm] = s.start_time.split(":").map(Number);
-            const [eh, em] = s.end_time.split(":").map(Number);
-            return Math.max((eh * 60 + em) - (sh * 60 + sm), 5);
-          });
-          const total = durations.reduce((a, b) => a + b, 0) || 1;
-          return (
-            <div className="rsc-timeline-bar">
-              {stops.map((s, i) => (
-                <div
-                  key={s.poi_id}
-                  className="rsc-timeline-seg"
-                  style={{
-                    width: `${(durations[i] / total) * 100}%`,
-                    background: CATEGORY_COLOR[s.category] ?? "#9CA3AF",
-                  }}
-                />
-              ))}
-            </div>
-          );
-        })()}
       </div>
 
       {/* 右箭头 */}
@@ -964,18 +923,25 @@ function RouteSummaryCard({ route, index, onExpand, onPreview }: RouteSummaryCar
 }
 
 // ── 主组件 ──────────────────────────────────────────────────
-export function RouteCompare({ routes, loading = false, onAction, onPoiAction, onInjectChat, onTripFinished, onRoutePreview, onLiveStopsChange }: RouteCompareProps) {
+export function RouteCompare({ routes, loading = false, onAction, onPoiAction, onTripFinished, onRoutePreview, onLiveStopsChange, autoExpand = false, autoSelect = false }: RouteCompareProps) {
   const [expandedRouteId, setExpandedRouteId] = useState<string | null>(null);
   // 保存用户选中的完整路线（含编辑后的 stops）
-  const [selectedRoute, setSelectedRoute] = useState<Route | null>(null);
+  const [selectedRoute, setSelectedRoute] = useState<Route | null>(() => autoSelect && routes.length > 0 ? { ...routes[0] } : null);
 
   // 当 AI 重新规划（route_id 集合变化）时才清除已选和展开状态。
   // 注意：不能用 routes 引用，因为 patchRouteStops 也会改变 routes 引用（修改 stops），
   // 那样会导致每次删节点都把 selectedRoute 清空。
   const routeIdsKey = routes.map((r) => r.route_id).join(",");
   useEffect(() => {
-    setSelectedRoute(null);
+    if (!autoSelect) {
+      setSelectedRoute(null);
+    }
     setExpandedRouteId(null);
+    // 看板视图自动展开 / 选中第一条
+    if (routes.length > 0) {
+      if (autoExpand) setExpandedRouteId(routes[0].route_id);
+      if (autoSelect) setSelectedRoute({ ...routes[0] });
+    }
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [routeIdsKey]);
 
@@ -995,8 +961,8 @@ export function RouteCompare({ routes, loading = false, onAction, onPoiAction, o
 
   return (
     <section className="route-section">
-      {/* ── 摘要小卡片列表（选中路线后隐藏）── */}
-      {!expandedRoute && !selectedRoute && (
+      {/* ── 摘要小卡片列表：选中方案后仍保留，便于随时比较和切换。 ── */}
+      {!expandedRoute && (
         <>
           {showSkeletons && (
             <div className="route-summary-list">
@@ -1017,10 +983,6 @@ export function RouteCompare({ routes, loading = false, onAction, onPoiAction, o
 
           {showRoutes && (
             <div className="route-summary-list">
-              <div className="route-summary-header">
-                <span className="route-summary-header-title">为你规划了 {routes.length} 条方案</span>
-                
-              </div>
               {routes.map((route, i) => (
                 <RouteSummaryCard
                   key={route.route_id}
@@ -1054,23 +1016,32 @@ export function RouteCompare({ routes, loading = false, onAction, onPoiAction, o
             onSelect={handleSelect}
             onAction={onAction}
             onPoiAction={onPoiAction}
-            onInjectChat={onInjectChat}
             onStopsChange={(routeId, newStops) => onLiveStopsChange?.(routeId, newStops)}
           />
         </div>
       )}
 
-      {/* ── 已选方案行程轨道（展示在最底部） ── */}
+      {/* ── 已选方案行程轨道；其余方案保留在下方，支持随时重新比较。 ── */}
       {liveSelectedRoute && (
-        <ActiveTripBar
-          route={liveSelectedRoute}
-          onUnselect={() => setSelectedRoute(null)}
-          onAction={onAction}
-          onPoiAction={onPoiAction}
-          onInjectChat={onInjectChat}
-          onTripFinished={onTripFinished}
-          onStopsChange={(newStops) => onLiveStopsChange?.(liveSelectedRoute.route_id, newStops)}
-        />
+        <>
+          <ActiveTripBar
+            route={liveSelectedRoute}
+            onUnselect={() => setSelectedRoute(null)}
+            onAction={onAction}
+            onPoiAction={onPoiAction}
+            onTripFinished={onTripFinished}
+            onStopsChange={(newStops) => onLiveStopsChange?.(liveSelectedRoute.route_id, newStops)}
+          />
+          {routes.length > 1 && (
+            <CompareCollapsed
+              routes={routes}
+              selectedRouteId={liveSelectedRoute.route_id}
+              onSelect={handleSelect}
+              onAction={onAction}
+              onPoiAction={onPoiAction}
+            />
+          )}
+        </>
       )}
     </section>
   );

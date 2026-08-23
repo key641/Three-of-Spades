@@ -49,6 +49,8 @@ export const DEFAULT_TRIP_CONSTRAINTS: TripConstraints = {
 };
 
 const STORAGE_KEY = "tos_onboarding_profile";
+const ANDY_USER_ID = "user_andy";
+const ANDY_NICKNAME = "Andy";
 
 type OnboardingProfilePatch = Omit<Partial<OnboardingProfile>, "preference_weights"> & {
   preference_weights?: Partial<OnboardingProfile["preference_weights"]>;
@@ -77,10 +79,11 @@ export function loadProfile(): OnboardingProfile | null {
     const raw = localStorage.getItem(STORAGE_KEY);
     if (!raw) return null;
     const profile = JSON.parse(raw) as OnboardingProfile;
-    // 演示默认昵称：若未设置则补充「小桃」
-    if (!profile.nickname) {
-      profile.nickname = "小桃";
-      localStorage.setItem(STORAGE_KEY, JSON.stringify(profile));
+    // Demo 统一使用 Andy 的用户档案；迁移旧的“小桃”/匿名本地记录，保留其已有偏好。
+    if (profile.user_id !== ANDY_USER_ID || !profile.nickname || profile.nickname === "小桃") {
+      const andyProfile = { ...profile, user_id: ANDY_USER_ID, nickname: ANDY_NICKNAME };
+      localStorage.setItem(STORAGE_KEY, JSON.stringify(andyProfile));
+      return andyProfile;
     }
     return profile;
   } catch {
@@ -95,13 +98,15 @@ export function saveProfile(partial: Partial<OnboardingProfile>): OnboardingProf
   const budget_level = partial.budget_level ?? "flex";
 
   const profile: OnboardingProfile = {
-    user_id:      `user_${Date.now()}`,
     scenarios,
     scenario:     scenarios[0] ?? "citywalk",   // 向后兼容
     preferences,
     avoid_tags:   partial.avoid_tags ?? [],
     budget_level,
     ...partial,
+    // 统一写入 Andy 的用户身份，防止提交表单时被传入值覆盖。
+    user_id:      ANDY_USER_ID,
+    nickname:     ANDY_NICKNAME,
     // 强制覆盖计算字段
     preference_weights: buildWeights(preferences, budget_level),
   };
