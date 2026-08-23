@@ -149,7 +149,7 @@ class RouteService:
         )
         degradation_level = 0
         if len(selected) < self.TARGET_ROUTE_COUNT:
-            self.last_diagnostics["degradation_steps"].append("same_objective_overlap_50")
+            self.last_diagnostics["degradation_steps"].append("relaxed_overlap_50")
             selected = self._select_final_routes(
                 request,
                 candidates,
@@ -157,7 +157,7 @@ class RouteService:
                 self.TARGET_ROUTE_COUNT,
                 floor,
                 max_overlap=relaxed_overlap,
-                max_per_objective=2,
+                max_per_objective=1,
             )
 
         if len(selected) < self.TARGET_ROUTE_COUNT and not request.intent.must_include_poi_ids:
@@ -189,7 +189,7 @@ class RouteService:
                 self.TARGET_ROUTE_COUNT,
                 self.RELAXED_MIN_ROUTE_STOPS,
                 max_overlap=relaxed_overlap,
-                max_per_objective=2,
+                max_per_objective=1,
             )
             degradation_level = 2
 
@@ -202,7 +202,7 @@ class RouteService:
                 self.TARGET_ROUTE_COUNT,
                 self.RELAXED_MIN_ROUTE_STOPS,
                 max_overlap=final_overlap,
-                max_per_objective=3,
+                max_per_objective=1,
             )
             degradation_level = 3
 

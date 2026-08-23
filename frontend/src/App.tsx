@@ -196,9 +196,11 @@ function saveHistory(list: HistoryTrip[]) {
   } catch { /* ignore */ }
 }
 
+const CONVERSATION_TITLE_MAX_LENGTH = 10;
+
 function getConversationTitle(conversation?: ChatSessionSnapshot): string | null {
   const firstUserMessage = conversation?.messages.find((message) => message.role === "user")?.content.trim();
-  return firstUserMessage ? firstUserMessage.slice(0, 24) : null;
+  return firstUserMessage ? firstUserMessage.slice(0, CONVERSATION_TITLE_MAX_LENGTH) : null;
 }
 
 /** 从 Route 对象生成 HistoryTrip 记录。标题始终优先使用用户的第一句话。 */
@@ -320,7 +322,7 @@ export default function App() {
     const now = new Date();
     const record: HistoryTrip = {
       id: `trip_${Date.now()}`,
-      title: message.trim().slice(0, 24) || "未命名行程",
+      title: message.trim().slice(0, CONVERSATION_TITLE_MAX_LENGTH) || "未命名行程",
       date: `${now.getMonth() + 1}月${now.getDate()}日`,
       district: "",
       poi_count: 0,

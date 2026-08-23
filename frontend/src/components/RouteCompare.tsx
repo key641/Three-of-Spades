@@ -780,10 +780,9 @@ function RouteSummaryCard({ route, index, onExpand, onPreview }: RouteSummaryCar
 
   const fallbackGradient = FALLBACK_GRADIENTS[index % FALLBACK_GRADIENTS.length];
 
-  // 第一个 reason 作为图片角标，其余在右侧展示
+  // 图片角标保持简短，避免较长的推荐理由挤压封面图。
   const reasons = route.reasons ?? [];
-  const badgeReason = reasons[0] ?? null;
-  const extraReasons = reasons.slice(1, 3); // 最多再展示2个
+  const badgeReason = reasons[0]?.slice(0, 7) ?? null;
 
   // ── 图片滑动逻辑 ──────────────────────────────────────────
   const imgWrapRef = useRef<HTMLDivElement>(null);

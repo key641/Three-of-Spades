@@ -1144,6 +1144,8 @@ const isBoardRouteActive = Boolean(activeTrip && boardRoute && activeTrip.route_
 // ── 状态判断 ──
 const statusBadge: "planning" | "ready" | "active" = loading ? "planning" : isBoardRouteActive ? "active" : hasRoutes ? "ready" : "planning";
 const routeTitle = boardRoute?.title ?? (response?.routes?.[0]?.title ?? "");
+// 对话页标题属于会话本身，始终取首条用户消息，不受当前路线切换影响。
+const conversationTitle = messages.find((message) => message.role === "user")?.content.trim() ?? "";
 
   // ── 路线看板底部面板高度变化时，重算地图可视安全区 ──
   useEffect(() => {
@@ -1308,11 +1310,8 @@ const routeTitle = boardRoute?.title ?? (response?.routes?.[0]?.title ?? "");
             >
               <Menu size={20} />
             </button>
-            {routeTitle && (
-              <span className="planner-chat-title">{routeTitle}</span>
-            )}
-            {!routeTitle && hasRoutes && (
-              <span className="planner-chat-title">{response?.routes?.[0]?.title}</span>
+            {conversationTitle && (
+              <span className="planner-chat-title">{conversationTitle}</span>
             )}
             <button
               type="button"
