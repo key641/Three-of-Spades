@@ -1,11 +1,5 @@
 import React, { useRef, useState, useEffect } from "react";
 import {
-  Footprints,
-  UtensilsCrossed,
-  Palette,
-  Trees,
-  Baby,
-  Dices,
   Check,
   ChevronLeft,
   Sparkles,
@@ -19,6 +13,13 @@ import {
 
 import type { OnboardingProfile } from "../hooks/useOnboarding";
 import { saveProfile } from "../hooks/useOnboarding";
+import footIllustration from "../assets/onboarding-foot.png";
+import foodIllustration from "../assets/onboarding-food.png";
+import paletteIllustration from "../assets/onboarding-palette.png";
+import flowerIllustration from "../assets/onboarding-flower.png";
+import kiteIllustration from "../assets/onboarding-kite.png";
+import diceIllustration from "../assets/onboarding-dice.png";
+import boyIllustration from "../assets/onboarding-boy.png";
 
 // ── iOS 风格状态栏图标（与 App.tsx 同款 SVG） ──────────────
 function IconCellular() {
@@ -84,13 +85,13 @@ interface OnboardingPageProps {
 
 // ── 数据配置 ──────────────────────────────────────────────────
 
-const SCENARIOS: { key: string; icon: React.ReactNode; label: string; desc: string }[] = [
-  { key: "citywalk",  icon: <Footprints size={22} strokeWidth={1.6} />,      label: "街头漫游", desc: "咖啡馆 · 集市 · 新店" },
-  { key: "foodie",    icon: <UtensilsCrossed size={22} strokeWidth={1.6} />, label: "美食探店", desc: "地道风味 · 网红餐厅" },
-  { key: "culture",   icon: <Palette size={22} strokeWidth={1.6} />,        label: "文化艺术", desc: "美术馆 · 历史遗迹" },
-  { key: "nature",    icon: <Trees size={22} strokeWidth={1.6} />,          label: "自然放松", desc: "公园 · 徒步 · 吸氧" },
-  { key: "family",    icon: <Baby size={22} strokeWidth={1.6} />,          label: "亲子家庭", desc: "寓教于乐 · 安全省心" },
-  { key: "freestyle", icon: <Dices size={22} strokeWidth={1.6} />,          label: "随心而行", desc: "随遇而安 · 偶遇惊喜" },
+const SCENARIOS: { key: string; illustration: string; label: string; desc: string }[] = [
+  { key: "citywalk",  illustration: footIllustration,    label: "街头漫游", desc: "咖啡馆 · 集市 · 新店" },
+  { key: "foodie",    illustration: foodIllustration,    label: "美食探店", desc: "地道风味 · 网红餐厅" },
+  { key: "culture",   illustration: paletteIllustration, label: "文化艺术", desc: "美术馆 · 历史遗迹" },
+  { key: "nature",    illustration: flowerIllustration,  label: "自然放松", desc: "公园 · 徒步 · 吸氧" },
+  { key: "family",    illustration: kiteIllustration,    label: "亲子家庭", desc: "寓教于乐 · 安全省心" },
+  { key: "freestyle", illustration: diceIllustration,    label: "随心而行", desc: "随遇而安 · 偶遇惊喜" },
 ];
 
 // 偏好标签 — 按维度分组
@@ -262,9 +263,9 @@ export function OnboardingPage({ onDone }: OnboardingPageProps) {
         <div className="ob-ritual-overlay">
           <div className="ob-ritual-glow" />
           <div className="ob-ritual-core">
-            <Sparkles size={32} strokeWidth={1.5} className="ob-ritual-icon" />
+            <img src={boyIllustration} alt="" aria-hidden="true" className="ob-ritual-icon" width={42} height={42} decoding="async" />
           </div>
-          <p className="ob-ritual-text">正在为你定制专属出行算法…</p>
+          <p className="ob-ritual-text">正在理解用户的行为偏好</p>
           <div className="ob-ritual-progress">
             <div className="ob-ritual-progress-bar" />
           </div>
@@ -286,7 +287,7 @@ export function OnboardingPage({ onDone }: OnboardingPageProps) {
         {step === 1 && (
           <div className="ob-step ob-step-enter">
             <div className="ob-brand-area">
-              <Sparkles size={28} strokeWidth={1.3} className="ob-brand-spark" />
+              <img src={boyIllustration} alt="" aria-hidden="true" className="ob-brand-illustration" width={48} height={48} decoding="async" />
               <h1 className="ob-title">欢迎来到 Drifto</h1>
               <p className="ob-subtitle">探索属于你的城市漫游生活</p>
             </div>
@@ -297,14 +298,16 @@ export function OnboardingPage({ onDone }: OnboardingPageProps) {
             </div>
 
             <div className="ob-scenario-grid">
-              {SCENARIOS.map(({ key, icon, label, desc }) => (
+              {SCENARIOS.map(({ key, illustration, label, desc }) => (
                 <button
                   key={key}
                   type="button"
                   className={`ob-scenario-card${scenarios.includes(key) ? " selected" : ""}`}
                   onClick={() => toggleTag(scenarios, setScenarios, key)}
                 >
-                  <span className="ob-scenario-icon">{icon}</span>
+                  <span className="ob-scenario-icon">
+                    <img src={illustration} alt="" aria-hidden="true" />
+                  </span>
                   <div className="ob-scenario-text">
                     <span className="ob-scenario-label">{label}</span>
                     <span className="ob-scenario-desc">{desc}</span>

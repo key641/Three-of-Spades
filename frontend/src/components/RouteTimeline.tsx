@@ -150,6 +150,8 @@ interface PoiCardProps {
 
 function PoiCard({ stop, index, isRemoving }: PoiCardProps) {
   const nameRef = useRef<HTMLParagraphElement>(null);
+  // mock 与真实接口均会提供亮点/推荐理由；brief 仅作为兼容兜底。
+  const description = stop.highlight_text || stop.brief || stop.reason || stop.ugc_tip;
   const nameDragRef = useRef<{ dragging: boolean; startX: number; startScroll: number }>({ dragging: false, startX: 0, startScroll: 0 });
 
   const handleNameMouseDown = (e: React.MouseEvent) => {
@@ -227,9 +229,9 @@ function PoiCard({ stop, index, isRemoving }: PoiCardProps) {
 
         </div>
 
-        {/* 第三行：AI 推荐理由 */}
-        {stop.brief && (
-          <p className="poi-card-brief">{stop.brief}</p>
+        {/* 第三行：地点亮点 / 推荐理由 */}
+        {description && (
+          <p className="poi-card-brief">{description}</p>
         )}
       </div>
     </div>

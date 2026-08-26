@@ -97,11 +97,6 @@ function SummaryMap({ stops }: { stops: RouteStop[] }) {
     if (stops.length > 0) {
       const latlngs: [number, number][] = stops.map(getStopLatLng);
 
-      // 绘制连线
-      L.polyline(latlngs, {
-        color: "#1677FF", weight: 3.5, opacity: 0.85,
-      }).addTo(map);
-
       // 绘制标记
       stops.forEach((stop, idx) => {
         const pos   = latlngs[idx];

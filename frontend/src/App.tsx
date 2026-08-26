@@ -86,6 +86,8 @@ interface PlannerPreset {
   conversation?: ChatSessionSnapshot;
   /** 历史记录选择的路线 ID。 */
   routeId?: string;
+  /** 对应会话历史 ID；恢复后继续将消息实时保存到同一条记录。 */
+  tripId?: string;
 }
 
 // ── 历史行程记录 ──────────────────────────────────────────
@@ -111,9 +113,18 @@ export interface HistoryTrip {
   conversation?: ChatSessionSnapshot;
   /** 历史记录对应的精确路线标识，避免仅用标题匹配时回退到第一条路线。 */
   route_id?: string;
+  /** 后台状态：thinking 表示仍在生成；unread 表示已生成但尚未查看。 */
+  attention?: "thinking" | "unread";
 }
 
 const HISTORY_KEY = "trip_history_v1";
+const ACTIVE_TRIP_KEY = "active_trip_v1";
+
+/** 进行中的行程必须连同完整会话保存，首页返回规划页时才能复原逐轮聊天记录。 */
+interface ActiveTrip {
+  route: Route;
+  conversation: ChatSessionSnapshot;
+} 
 
 function loadHistory(): HistoryTrip[] {
   try {
@@ -153,6 +164,25 @@ function migrateHistoryRouteReference(trip: HistoryTrip): HistoryTrip {
  * 老版本只保存了路线摘要，缺少逐轮消息；将既有内容转为只读的本地历史快照。
  * 这样打开历史不会再请求接口或显示流式思考，同时不会伪造不存在的完整对话。
  */
+/** 将进行中的完整路线包装为本地可恢复会话，供首页“查看”直接回到地图看板。 */
+function createActiveTripConversation(route: Route): ChatSessionSnapshot {
+  const sessionId = `active_${route.route_id}`;
+  const response: ChatResponse = {
+    session_id: sessionId,
+    message: "",
+    need_clarification: false,
+    routes: [route],
+    agent_trace: [],
+  };
+  return {
+    sessionId,
+    messages: [
+      { role: "assistant", content: `当前正在进行「${route.title}」。`, timestamp: Date.now(), routeBatch: [route] },
+    ],
+    response,
+  };
+}
+
 function createLegacyConversationSnapshot(trip: HistoryTrip): ChatSessionSnapshot {
   const route: Route = {
     route_id: trip.route_id ?? `legacy_${trip.id}`,
@@ -193,6 +223,26 @@ function parseDurationMinutes(label: string): number {
 function saveHistory(list: HistoryTrip[]) {
   try {
     localStorage.setItem(HISTORY_KEY, JSON.stringify(list));
+  } catch { /* ignore */ }
+}
+
+function loadActiveTrip(): ActiveTrip | null {
+  try {
+    const raw = localStorage.getItem(ACTIVE_TRIP_KEY);
+    if (!raw) return null;
+    const saved = JSON.parse(raw) as ActiveTrip | Route;
+    // 兼容此前只保存 Route 的本地数据；下一次选择出发后会被完整快照覆盖。
+    if ("route" in saved && "conversation" in saved) return saved;
+    return { route: saved as Route, conversation: createActiveTripConversation(saved as Route) };
+  } catch {
+    return null;
+  }
+}
+
+function saveActiveTrip(trip: ActiveTrip | null) {
+  try {
+    if (trip) localStorage.setItem(ACTIVE_TRIP_KEY, JSON.stringify(trip));
+    else localStorage.removeItem(ACTIVE_TRIP_KEY);
   } catch { /* ignore */ }
 }
 
@@ -254,7 +304,7 @@ export default function App() {
   // 行程历史记录
   const [tripHistory, setTripHistory] = useState<HistoryTrip[]>(() => loadHistory());
   // 当前进行中的行程独立于对话生命周期，确保新建行程回首页后仍可查看。
-  const [activeTrip, setActiveTrip] = useState<Route | null>(null);
+  const [activeTrip, setActiveTrip] = useState<ActiveTrip | null>(() => loadActiveTrip());
 
   // ── 全局输入栏状态 ──
   const [globalInputText, setGlobalInputText] = useState("");
@@ -296,7 +346,12 @@ export default function App() {
 
   function handleViewActiveTrip() {
     if (!activeTrip) return;
-    setPlannerPreset({ title: activeTrip.title, directBoard: true });
+    setPlannerPreset({
+      title: activeTrip.route.title,
+      directBoard: true,
+      conversation: activeTrip.conversation,
+      routeId: activeTrip.route.route_id,
+    });
     setActiveTab("plan");
   }
 
@@ -317,26 +372,70 @@ export default function App() {
     setActiveTab(tab);
   }
 
-  // ── 首条消息发出即创建草稿，确保对话尚未产出路线时也能出现在侧边栏。 ──
-  function handleConversationStart(message: string): string {
-    const now = new Date();
-    const record: HistoryTrip = {
-      id: `trip_${Date.now()}`,
-      title: message.trim().slice(0, CONVERSATION_TITLE_MAX_LENGTH) || "未命名行程",
-      date: `${now.getMonth() + 1}月${now.getDate()}日`,
-      district: "",
-      poi_count: 0,
-      duration_label: "规划中",
-      goals: [],
-      emoji: "🗺️",
-      summary: "对话进行中…",
-    };
+  /**
+   * 所有对话共用唯一的持久化入口：首次消息原子地创建历史行程并写入快照，
+   * 之后每次消息/回复更新都覆写同一条记录，避免「创建草稿」和「保存快照」脱节。
+   */
+  function persistConversation(conversation: ChatSessionSnapshot, existingTripId?: string): string {
+    const firstUserMessage = conversation.messages.find((message) => message.role === "user")?.content.trim();
+    const fallbackTripId = `trip_${crypto.randomUUID?.() ?? Date.now()}`;
+    const candidateTripId = existingTripId
+      ?? tripHistory.find((trip) => trip.conversation?.sessionId === conversation.sessionId)?.id
+      ?? fallbackTripId;
     setTripHistory((prev) => {
-      const next = [record, ...prev];
+      // 后台完成的请求可能在用户已切换到其他历史时返回；此时用 sessionId 找回原记录。
+      const existingBySession = prev.find((trip) => trip.conversation?.sessionId === conversation.sessionId);
+      const tripId = existingTripId ?? existingBySession?.id ?? candidateTripId;
+      const existing = prev.find((trip) => trip.id === tripId);
+      const now = new Date();
+      const record: HistoryTrip = existing ?? {
+        id: tripId,
+        title: firstUserMessage?.slice(0, CONVERSATION_TITLE_MAX_LENGTH) || "未命名行程",
+        date: `${now.getMonth() + 1}月${now.getDate()}日`,
+        district: "",
+        poi_count: 0,
+        duration_label: "规划中",
+        goals: [],
+        emoji: "🗺️",
+        summary: "对话进行中…",
+      };
+      const next = existing
+        ? prev.map((trip) => trip.id === tripId ? { ...trip, conversation } : trip)
+        : [{ ...record, conversation }, ...prev];
       saveHistory(next);
       return next;
     });
-    return record.id;
+    return candidateTripId;
+  }
+
+  function setConversationAttention(tripId: string, attention?: HistoryTrip["attention"]) {
+    setTripHistory((prev) => {
+      const next = prev.map((trip) => trip.id === tripId ? { ...trip, attention } : trip);
+      saveHistory(next);
+      return next;
+    });
+  }
+
+  /** 后台流式思考按 session 写回原会话，返回时可继续显示已生成的过程。 */
+  function handleBackgroundConversationProgress(conversation: ChatSessionSnapshot) {
+    setTripHistory((prev) => {
+      const next = prev.map((trip) => trip.conversation?.sessionId === conversation.sessionId
+        ? { ...trip, conversation, attention: "thinking" as const }
+        : trip);
+      saveHistory(next);
+      return next;
+    });
+  }
+
+  /** 后台完成的会话按 session 定位，标记为未读而不打断用户当前浏览。 */
+  function handleBackgroundConversationSettled(conversation: ChatSessionSnapshot) {
+    setTripHistory((prev) => {
+      const next = prev.map((trip) => trip.conversation?.sessionId === conversation.sessionId
+        ? { ...trip, conversation, attention: "unread" as const }
+        : trip);
+      saveHistory(next);
+      return next;
+    });
   }
 
   function upsertTrip(route: Route, avgScore: number, conversation: ChatSessionSnapshot | undefined, tripId?: string) {
@@ -383,6 +482,8 @@ export default function App() {
 
   // ── 从侧边栏点击历史行程：优先恢复原会话，旧数据才退化为重新规划 ──
   function handleSelectTrip(trip: HistoryTrip) {
+    // 用户查看后立即清除「生成中 / 未读回复」提示。
+    setConversationAttention(trip.id);
     // 即使页面未刷新，旧记录也在点击时即时补齐快照，确保绝不触发重新规划。
     const restoredTrip = migrateHistoryRouteReference(trip);
     if (restoredTrip !== trip) {
@@ -395,25 +496,16 @@ export default function App() {
     setPlannerPreset({
       goals: restoredTrip.goals,
       title: restoredTrip.title,
-      directBoard: true,
+      // 历史入口恢复完整对话即可，不直接跳转到某一条方案的地图看板。
+      directBoard: false,
       conversation: restoredTrip.conversation,
-      routeId: restoredTrip.route_id,
+      tripId: restoredTrip.id,
     });
     setActiveTab("plan");
   }
 
   return (
     <div className={`app-root${isSidebarOpen ? " sidebar-open" : ""}`}>
-      {/* ── 全局物理纸张微粒噪点层 ── */}
-      <div className="grain-overlay" />
-
-      {/* ── 弥散呼吸光斑系统 ── */}
-      <div className="ambient-blobs-layer">
-        <div className="ambient-blob ambient-blob-sage" />
-        <div className="ambient-blob ambient-blob-coral" />
-        <div className="ambient-blob ambient-blob-lavender" />
-      </div>
-
       {/* ── 侧边栏抽屉（始终渲染在左侧） ── */}
       <Sidebar
         isOpen={isSidebarOpen}
@@ -440,37 +532,37 @@ export default function App() {
       {/* ── 手机状态栏（全局固定顶部） ── */}
       <PhoneStatusBar />
 
+      {/* 侧边栏打开时遮罩整个原页面（含底部输入栏） */}
+      {isSidebarOpen && (
+        <div
+          className="sidebar-dismiss-overlay"
+          onClick={() => setIsSidebarOpen(false)}
+          onTouchStart={(e) => {
+            const touch = e.touches[0];
+            e.currentTarget.dataset.touchX = String(touch.clientX);
+          }}
+          onTouchEnd={(e) => {
+            const rawStartX = e.currentTarget.dataset.touchX;
+            const startX = rawStartX === undefined ? undefined : Number(rawStartX);
+            if (startX === undefined) return;
+            const endX = e.changedTouches[0].clientX;
+            if (startX - endX > 60) {
+              setIsSidebarOpen(false);
+            }
+            delete e.currentTarget.dataset.touchX;
+          }}
+        />
+      )}
+
       {/* ── 主内容区（可整体平移 + 手势关闭侧边栏） ── */}
       <div className="app-pages-wrapper">
-        {/* 侧边栏打开时的点击/滑动关闭层 */}
-        {isSidebarOpen && (
-          <div
-            className="sidebar-dismiss-overlay"
-            onClick={() => setIsSidebarOpen(false)}
-            onTouchStart={(e) => {
-              const touch = e.touches[0];
-              e.currentTarget.dataset.touchX = String(touch.clientX);
-            }}
-            onTouchEnd={(e) => {
-              const rawStartX = e.currentTarget.dataset.touchX;
-              const startX = rawStartX === undefined ? undefined : Number(rawStartX);
-              if (startX === undefined) return;
-              const endX = e.changedTouches[0].clientX;
-              if (startX - endX > 60) {
-                setIsSidebarOpen(false);
-              }
-              delete e.currentTarget.dataset.touchX;
-            }}
-          />
-        )}
-
         {/* ── 页面内容区 ── */}
         <div className="app-pages">
           {/* 极简首页 */}
           <div className={`app-page${activeTab === "home" ? " active" : ""}`}>
             <HomePage
               profile={profile}
-              activeTrip={activeTrip}
+              activeTrip={activeTrip?.route ?? null}
               onViewActiveTrip={handleViewActiveTrip}
               onOpenSidebar={() => setIsSidebarOpen(true)}
               onTagClick={(text) => {
@@ -491,14 +583,21 @@ export default function App() {
               onPresetConsumed={() => setPlannerPreset(null)}
               onBackToHome={() => setActiveTab("home")}
               onTripFinished={handleTripFinished}
-              onConversationStart={handleConversationStart}
+              onConversationPersist={persistConversation}
+              onConversationAttention={setConversationAttention}
+              onBackgroundConversationProgress={handleBackgroundConversationProgress}
+              onBackgroundConversationSettled={handleBackgroundConversationSettled}
               onNewTrip={() => {
                 setPlannerPreset(null);
                 setGlobalInputText("");
                 setActiveTab("home");
               }}
-              onActiveTripChange={setActiveTrip}
-              activeTrip={activeTrip}
+              onActiveTripChange={(route, conversation) => {
+                const trip = route && conversation ? { route, conversation } : null;
+                setActiveTrip(trip);
+                saveActiveTrip(trip);
+              }}
+              activeTrip={activeTrip?.route ?? null}
               onSaveTrip={handleSaveTrip}
               initialMsg={plannerPreset?.initialMsg}
               onOpenSidebar={() => setIsSidebarOpen(true)}

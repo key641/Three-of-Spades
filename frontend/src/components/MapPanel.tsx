@@ -273,7 +273,6 @@ export function MapPanel({ routes, activeRouteIndex, activePoi, onPoiClick, shee
   const mapRef       = useRef<L.Map | null>(null);
   const markersRef   = useRef<L.Marker[]>([]);
   const clusterMarkersRef = useRef<L.Marker[]>([]);
-  const routeLayersRef = useRef<L.Polyline[]>([]);
   const userMarkerRef = useRef<L.Marker | null>(null);
   const rafRef       = useRef<number>(0);
   const fitTimerRef  = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -410,9 +409,6 @@ export function MapPanel({ routes, activeRouteIndex, activePoi, onPoiClick, shee
     markersRef.current = [];
     clusterMarkersRef.current.forEach((m) => m.remove());
     clusterMarkersRef.current = [];
-    routeLayersRef.current.forEach((layer) => layer.remove());
-    routeLayersRef.current = [];
-
     // activeRouteIndex === -1 表示用户尚未主动选择方案，不渲染任何标记
     if (activeRouteIndex < 0) return;
 
@@ -448,36 +444,6 @@ export function MapPanel({ routes, activeRouteIndex, activePoi, onPoiClick, shee
       if (active) marker.openPopup();
     });
 
-    // 从“当前位置 → 1 → 2 → 3 …… → 回家”完整绘制。后续站点优先使用高德道路轨迹，
-    // 缺失时按地图坐标生成弧线作为可见降级，避免路线出现断段。
-    const userPosition = getVisibleUserPosition();
-    const routeOrigins = userPosition
-      ? [userPosition, ...latlngs]
-      : [...latlngs.slice(0, -1)];
-    const routeTargets = userPosition
-      ? [...latlngs, userPosition]
-      : latlngs.slice(1);
-    const routeStops = userPosition
-      ? [...stops, null]
-      : stops.slice(1);
-    const routeColors = ["#0B6CFF", "#8B5CF6", "#F97316", "#10B981", "#EC4899", "#06B6D4"];
-    routeLayersRef.current = routeTargets.flatMap((target, index) => {
-      const routePath = getRoutePath(
-        routeOrigins[index],
-        target,
-        routeStops[index]?.polyline_from_previous,
-        routeStops[index]?.route_leg_source_from_previous,
-      );
-      const color = routeColors[index % routeColors.length];
-      const outline = L.polyline(routePath, {
-        color: "#FFFFFF", weight: 12, opacity: 0.96, lineCap: "round", lineJoin: "round",
-      }).addTo(map);
-      const route = L.polyline(routePath, {
-        color, weight: 7, opacity: 1, lineCap: "round", lineJoin: "round",
-      }).addTo(map);
-      return [outline, route];
-    });
-
     const updateClusters = () => {
       clusterMarkersRef.current.forEach((marker) => marker.remove());
       clusterMarkersRef.current = [];
@@ -504,6 +470,7 @@ export function MapPanel({ routes, activeRouteIndex, activePoi, onPoiClick, shee
     updateClustersRef.current = updateClusters;
 
     // POI 与地图上实际显示的用户位置必须共同参与 bounds 计算。
+    const userPosition = getVisibleUserPosition();
     const allBoundsPoints = userPosition ? [...latlngs, userPosition] : latlngs;
 
     // 根据上方真实可视区域执行 fitBounds，自动计算缩放级别和中心点。

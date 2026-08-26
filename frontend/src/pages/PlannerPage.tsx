@@ -12,6 +12,7 @@ import type { PoiAction } from "../components/RouteTimeline";
 import { DEFAULT_TRIP_CONSTRAINTS } from "../hooks/useOnboarding";
 import { useChat } from "../hooks/useChat";
 import { setGpsCache } from "../utils/gpsCache";
+import andyAvatar from "../assets/andy-avatar-192.png";
 
 // ── 路线编辑 Sheet ────────────────────────────────────────────
 interface RouteEditSheetProps {
@@ -205,6 +206,8 @@ interface PlannerPreset {
   conversation?: ChatSessionSnapshot;
   /** 历史记录选择的精确路线 ID。 */
   routeId?: string;
+  /** 对应会话历史 ID；用于恢复后持续保存到同一条记录。 */
+  tripId?: string;
 }
 
 interface PlannerPageProps {
@@ -214,12 +217,18 @@ interface PlannerPageProps {
   onPresetConsumed?: () => void;
   onBackToHome?: () => void;
   onTripFinished?: (route: Route, avgScore: number, conversation?: ChatSessionSnapshot, tripId?: string) => void;
-  /** 首条用户消息写入时创建历史行程草稿。 */
-  onConversationStart?: (message: string) => string;
+  /** 创建或更新一段会话对应的历史记录；首次保存时会原子地创建记录。 */
+  onConversationPersist?: (conversation: ChatSessionSnapshot, tripId?: string) => string;
+  /** 更新会话在侧边栏的后台状态提示。 */
+  onConversationAttention?: (tripId: string, attention?: "thinking" | "unread") => void;
+  /** 已离开会话的后台请求生成思考步骤时，写回原会话。 */
+  onBackgroundConversationProgress?: (conversation: ChatSessionSnapshot) => void;
+  /** 已离开会话的后台请求完成后，将结果标记为未读。 */
+  onBackgroundConversationSettled?: (conversation: ChatSessionSnapshot) => void;
   /** 新建行程：保存当前会话（如有）并重置 */
   onNewTrip?: () => void;
-  /** 将进行中的路线状态同步至应用层，供首页持续展示 */
-  onActiveTripChange?: (route: Route | null) => void;
+  /** 将进行中的路线及其完整会话同步至应用层，供首页恢复聊天记录。 */
+  onActiveTripChange?: (route: Route | null, conversation?: ChatSessionSnapshot) => void;
   /** 应用层保存的进行中路线，用于从首页恢复行程看板 */
   activeTrip?: Route | null;
   /** 仅保存路线到历史（不跳首页） */
@@ -843,8 +852,24 @@ function StatusBadge({ status }: { status: "planning" | "ready" | "active" }) {
 }
 
 // ── 主页面 ────────────────────────────────────────────────────
-export function PlannerPage({ profile, onResetProfile, preset, onPresetConsumed, onBackToHome, onTripFinished, onConversationStart, onNewTrip, onActiveTripChange, activeTrip, onSaveTrip, initialMsg, onOpenSidebar, onSendReady, onInjectText, onDisabledChange, onViewModeChange }: PlannerPageProps) {
+export function PlannerPage({ profile, onResetProfile, preset, onPresetConsumed, onBackToHome, onTripFinished, onConversationPersist, onConversationAttention, onBackgroundConversationProgress, onBackgroundConversationSettled, onNewTrip, onActiveTripChange, activeTrip, onSaveTrip, initialMsg, onOpenSidebar, onSendReady, onInjectText, onDisabledChange, onViewModeChange }: PlannerPageProps) {
   const { messages, response, liveTrace, loading, error, lastRequest, send, inject, reset, snapshot, restore, answerClarify, patchRouteStops } = useChat();
+  // 请求即使在切换到其他历史后才结束，也按原 session 写回其历史记录。
+  const sendForConversation = (
+    message: string,
+    requestProfile?: OnboardingProfile,
+    requestTrip?: TripConstraints,
+    silent = false,
+    options: Record<string, unknown> = {},
+  ) => send(
+    message,
+    requestProfile,
+    requestTrip,
+    silent,
+    options,
+    (completedSnapshot: ChatSessionSnapshot) => onBackgroundConversationSettled?.(completedSnapshot),
+    (progressSnapshot: ChatSessionSnapshot) => onBackgroundConversationProgress?.(progressSnapshot),
+  );
   const [localProfile, setLocalProfile] = useState<OnboardingProfile>(profile);
   const [trip, setTrip] = useState<TripConstraints | null>(null);
   const [showSetup, setShowSetup] = useState(!(initialMsg ?? preset?.initialMsg));
@@ -878,13 +903,16 @@ export function PlannerPage({ profile, onResetProfile, preset, onPresetConsumed,
 
   // 是否从侧边栏直接进入（方案就绪后自动跳看板）
   const directBoardRef = useRef(false);
-  // 历史会话需要展示其完整对话内容，路线卡只显示对应历史路线。
-  const [historyRouteId, setHistoryRouteId] = useState<string | null>(null);
-  const conversationTripIdRef = useRef<string | null>(null);
+// 当前会话对应的历史记录 ID；新会话首次持久化时生成，恢复时沿用。
+const conversationTripIdRef = useRef<string | null>(null);
 
   // 消费来自首页的预设参数
   useLayoutEffect(() => {
     if (!preset) return;
+    // 离开当前会话但其请求尚未完成时，在侧边栏显示橘色思考提示。
+    if (loading && conversationTripIdRef.current) {
+      onConversationAttention?.(conversationTripIdRef.current, "thinking");
+    }
     directBoardRef.current = !!preset.directBoard;
     if (preset.conversation) {
       restore(preset.conversation);
@@ -896,15 +924,16 @@ export function PlannerPage({ profile, onResetProfile, preset, onPresetConsumed,
       setTrip(null);
       setFollowUp(null);
       setShowSetup(false);
-      setHistoryRouteId(restoredRoute?.route_id ?? null);
+      conversationTripIdRef.current = preset.tripId ?? null;
       setSelectedRouteId(restoredRoute?.route_id ?? null);
       setActiveRouteIndex(restoredRoute ? Math.max(restoredRoutes.indexOf(restoredRoute), 0) : -1);
       setMapRouteIndex(restoredRoute ? Math.max(restoredRoutes.indexOf(restoredRoute), 0) : -1);
       setMapStops(restoredRoute ? [...restoredRoute.stops] : null);
-      // 历史记录打开后先完整展示已保存的对话；用户可自行进入路线看板。
-      setViewMode("chat");
+      // 历史默认打开对话；首页“查看当前行程”携带 directBoard 时直接回到保存的路线看板。
+      setViewMode(preset.directBoard && restoredRoute ? "board" : "chat");
+      if (preset.directBoard) directBoardRef.current = false;
     } else if (preset.directBoard && activeTrip && preset.title === activeTrip.title) {
-      setHistoryRouteId(null);
+      conversationTripIdRef.current = null;
       setActiveTripRoute(activeTrip);
       setTripStarted(true);
       setSelectedRouteId(activeTrip.route_id);
@@ -915,23 +944,23 @@ export function PlannerPage({ profile, onResetProfile, preset, onPresetConsumed,
       setViewMode("board");
     } else if (preset.initialMsg) {
       const msg = preset.initialMsg;
-      setHistoryRouteId(null);
+      conversationTripIdRef.current = null;
       reset();
       setTrip(null);
       setFollowUp(null);
       setShowSetup(false);
       Promise.resolve().then(() => {
-        send(msg, localProfile, DEFAULT_TRIP_CONSTRAINTS);
+        sendForConversation(msg, localProfile, DEFAULT_TRIP_CONSTRAINTS);
       });
     } else {
-      setHistoryRouteId(null);
+      conversationTripIdRef.current = null;
       setShowSetup(true);
       setTrip(null);
       setFollowUp(null);
     }
     onPresetConsumed?.();
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [preset, activeTrip]);
+  }, [preset, activeTrip, loading, onConversationAttention]);
 
   // 首次挂载：如果有 initialMsg 则自动进入对话
   const initialMsgRef = useRef<string | undefined>(initialMsg);
@@ -940,26 +969,23 @@ export function PlannerPage({ profile, onResetProfile, preset, onPresetConsumed,
     if (!msg) return;
     initialMsgRef.current = undefined;
     reset();
-    send(msg, localProfile, DEFAULT_TRIP_CONSTRAINTS);
+    sendForConversation(msg, localProfile, DEFAULT_TRIP_CONSTRAINTS);
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  // 首条用户消息出现时立即写入侧边栏历史草稿；后续路线结果会更新同一条记录。
+  // 任意含用户消息的会话都实时落盘。首次落盘会创建历史行程，恢复会话则复用其 tripId。
   useEffect(() => {
-    const firstUserMessage = messages.find((message) => message.role === "user");
-    if (!firstUserMessage) {
-      conversationTripIdRef.current = null;
-      return;
-    }
-    if (!historyRouteId && !conversationTripIdRef.current) {
-      conversationTripIdRef.current = onConversationStart?.(firstUserMessage.content) ?? null;
-    }
-  }, [messages, historyRouteId, onConversationStart]);
+    if (!messages.some((message) => message.role === "user")) return;
+    conversationTripIdRef.current = onConversationPersist?.(snapshot(), conversationTripIdRef.current ?? undefined)
+      ?? conversationTripIdRef.current;
+  // snapshot / callback 每次 render 都会生成；只跟随实际会话状态变化。
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [messages, response, loading]);
 
   // ── 注册 send 函数给 App 层全局输入栏 ──
   useEffect(() => {
     onSendReady?.((msg: string) => {
-      send(msg, localProfile, trip ?? DEFAULT_TRIP_CONSTRAINTS);
+      sendForConversation(msg, localProfile, trip ?? DEFAULT_TRIP_CONSTRAINTS);
     });
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [localProfile, trip]);
@@ -977,10 +1003,6 @@ export function PlannerPage({ profile, onResetProfile, preset, onPresetConsumed,
 
   // ── 视图切换逻辑 ──
   const hasRoutes = (response?.routes?.length ?? 0) > 0;
-  const displayedRoutes = historyRouteId
-    ? (response?.routes ?? []).filter((route) => route.route_id === historyRouteId)
-    : (response?.routes ?? []);
-
   // 当有方案时，自动选中第一个切换到路线视图
   useEffect(() => {
     if (hasRoutes && !loading) {
@@ -1027,7 +1049,7 @@ export function PlannerPage({ profile, onResetProfile, preset, onPresetConsumed,
     const supplement = buildFollowUpSupplement(answers);
     const finalMsg = buildInitMessage(followUp.trip).replace("，帮我规划一下今天的行程吧！", supplement + "，帮我规划一下今天的行程吧！");
     setFollowUp(null);
-    send(finalMsg, localProfile, followUp.trip);
+    sendForConversation(finalMsg, localProfile, followUp.trip);
   }
 
   function handleSkip() {
@@ -1080,7 +1102,7 @@ setSelectedRouteId(routeId);
     };
     const message = requestByAction[action];
     if (!message) return;
-    send(message, localProfile, trip ?? DEFAULT_TRIP_CONSTRAINTS);
+    sendForConversation(message, localProfile, trip ?? DEFAULT_TRIP_CONSTRAINTS);
     setViewMode("chat");
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [localProfile, trip, response?.routes]);
@@ -1099,7 +1121,7 @@ setSelectedRouteId(routeId);
     else if (action.type === "swap_as") msg = `${name}中的「${action.poiName}」帮我换成${action.category}类型的地点`;
     else if (action.type === "remove") msg = `${name}中去掉「${action.poiName}」，帮我重新衔接路线`;
     if (msg) {
-      send(msg, localProfile, trip ?? DEFAULT_TRIP_CONSTRAINTS);
+      sendForConversation(msg, localProfile, trip ?? DEFAULT_TRIP_CONSTRAINTS);
       setViewMode("chat");
     }
   // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -1193,7 +1215,7 @@ const conversationTitle = messages.find((message) => message.role === "user")?.c
             </button>
             <span className="route-board-title">{routeTitle}</span>
 <span className={`route-board-status${isBoardRouteActive ? " route-board-status--active" : ""}`}>
-{isBoardRouteActive ? "行程进行中" : "方案进行中"}
+{isBoardRouteActive ? "行程进行中" : "方案编辑中"}
             </span>
           </header>
 
@@ -1263,9 +1285,11 @@ const conversationTitle = messages.find((message) => message.role === "user")?.c
                     }
                     if (selectedRoute) {
                       setTripStarted(true);
-                      const startedRoute = { ...selectedRoute, stops: [...selectedRoute.stops] };
-                      setActiveTripRoute(startedRoute);
-                      onActiveTripChange?.(startedRoute);
+const startedRoute = { ...selectedRoute, stops: [...selectedRoute.stops] };
+setActiveTripRoute(startedRoute);
+// 选择出发即更新首条消息创建的历史草稿，保存完整方案与对话快照。
+onSaveTrip?.(startedRoute, snapshot(), conversationTripIdRef.current ?? undefined);
+onActiveTripChange?.(startedRoute, snapshot());
                       const idx = (response?.routes ?? []).findIndex((r) => r.route_id === selectedRoute.route_id);
                       if (idx !== -1) {
                         setActiveRouteIndex(idx);
@@ -1300,6 +1324,8 @@ const conversationTitle = messages.find((message) => message.role === "user")?.c
       {/* ── 对话视图 (Chat View) ── */}
       {viewMode === "chat" && (
         <div className="planner-chat-view">
+          <img src={andyAvatar} alt="" className="planner-topbar-background-avatar" aria-hidden="true" width={180} height={180} decoding="async" />
+
           {/* 顶部导航 */}
           <header className="planner-chat-topbar">
             <button
@@ -1343,7 +1369,15 @@ const conversationTitle = messages.find((message) => message.role === "user")?.c
                 messages={messages}
                 loading={loading}
                 error={error}
-                onClarify={(answer, extra) => answerClarify(answer, localProfile, trip ?? DEFAULT_TRIP_CONSTRAINTS, undefined, extra)}
+                onClarify={(answer, extra) => answerClarify(
+  answer,
+  localProfile,
+  trip ?? DEFAULT_TRIP_CONSTRAINTS,
+  undefined,
+  extra,
+  (completedSnapshot) => onBackgroundConversationSettled?.(completedSnapshot),
+  (progressSnapshot) => onBackgroundConversationProgress?.(progressSnapshot),
+)}
                 afterFirstUserMessage={
                   (followUp && !loading) ? (
                     <SmartFollowUp
@@ -1359,11 +1393,12 @@ const conversationTitle = messages.find((message) => message.role === "user")?.c
                     userInput={[...messages].reverse().find((m) => m.role === "user")?.content}
                   />
                 }
-                afterLastAssistant={
-                  hasRoutes ? (
+                renderAfterMessage={(message) => {
+                  if (!message.routeBatch?.length) return null;
+                  return (
                     <div className="chat-inline-routes">
                       <RouteCompare
-                        routes={displayedRoutes}
+                        routes={message.routeBatch}
                         loading={false}
                         onAction={handleRouteOptimizeAction}
                         onPoiAction={handlePoiAction}
@@ -1371,14 +1406,12 @@ const conversationTitle = messages.find((message) => message.role === "user")?.c
                         onRoutePreview={(routeId) => handleEnterRouteBoard(routeId)}
                         onLiveStopsChange={(routeId, newStops) => {
                           setMapStops(newStops);
-                          const idx = (response?.routes ?? []).findIndex((r) => r.route_id === routeId);
-                          if (idx !== -1) setMapRouteIndex(idx);
                           patchRouteStops(routeId, newStops);
                         }}
                       />
                     </div>
-                  ) : undefined
-                }
+                  );
+                }}
               />
             </div>
 
@@ -1391,7 +1424,7 @@ const conversationTitle = messages.find((message) => message.role === "user")?.c
               onSend={(msg) => {
                 reset();
                 setShowSetup(false);
-                send(msg, localProfile, DEFAULT_TRIP_CONSTRAINTS);
+                sendForConversation(msg, localProfile, DEFAULT_TRIP_CONSTRAINTS);
               }}
             />
           )}

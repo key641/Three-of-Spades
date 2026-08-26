@@ -1,6 +1,7 @@
 import { useState } from "react";
-import { Plus, Settings, Trash2, Check, Edit2, Pencil, User, Route, Clock, ChevronRight } from "lucide-react";
+import { Plus, Settings, Trash2, Check, Edit2, Pencil, Route, Clock, ChevronRight } from "lucide-react";
 import type { OnboardingProfile } from "../hooks/useOnboarding";
+import andyAvatar from "../assets/andy-avatar-64.png";
 import type { HistoryTrip } from "../App";
 
 export interface SidebarProps {
@@ -76,10 +77,8 @@ export function Sidebar({
               onOpenSettings();
             }}
           >
-            <div className="sidebar-user-avatar">
-              <User size={18} strokeWidth={2} style={{ color: "var(--color-primary-dark)" }} />
-            </div>
-            <div className="sidebar-user-name">Andy</div>
+            <img src={andyAvatar} alt="Andy" className="sidebar-user-avatar" width={44} height={44} decoding="async" />
+            <div className="sidebar-user-name">{profile.nickname || "Andy"}</div>
           </div>
 
           <button
@@ -100,20 +99,20 @@ export function Sidebar({
         <div className="sidebar-trips-section">
           <div className="sidebar-section-header">
             <h3 className="sidebar-section-title">我的行程</h3>
-            {trips.length > 0 && (
-              <button
-                type="button"
-                className="sidebar-edit-btn"
-                onClick={() => {
-                  setIsEditing(!isEditing);
-                  setEditingId(null);
-                }}
-                title={isEditing ? "完成" : "编辑"}
-                aria-label={isEditing ? "完成" : "编辑"}
-              >
-                <Pencil size={14} strokeWidth={2} />
-              </button>
-            )}
+            <button
+              type="button"
+              className="sidebar-edit-btn"
+              onClick={() => {
+                setIsEditing(!isEditing);
+                setEditingId(null);
+              }}
+              title={isEditing ? "完成" : "编辑"}
+              aria-label={isEditing ? "完成" : "编辑"}
+              disabled={trips.length === 0}
+              aria-hidden={trips.length === 0}
+            >
+              {isEditing ? "完成编辑" : "编辑"}
+            </button>
           </div>
 
           {/* 新建行程按钮 */}
@@ -129,14 +128,16 @@ export function Sidebar({
             <span>新建行程</span>
           </button>
 
-          {trips.length === 0 ? (
-            <div className="sidebar-empty-hint">
-              还没有规划过的行程<br />
-              点击上方「新建行程」开始探索
-            </div>
-          ) : (
-            <div className="sidebar-trips-list">
-              {trips.map((trip) => {
+          {/* 统一使用固定的列表视口承载空态或行程列表，避免内容变化挤动上方操作区。 */}
+          <div className="sidebar-trips-content">
+            {trips.length === 0 ? (
+              <div className="sidebar-empty-hint">
+                还没有规划过的行程<br />
+                点击上方「新建行程」开始探索
+              </div>
+            ) : (
+              <div className="sidebar-trips-list">
+                {trips.map((trip) => {
                 const isActive = trip.id === activeTripId;
                 const isItemEditing = isEditing && editingId === trip.id;
 
@@ -188,7 +189,16 @@ export function Sidebar({
                       </div>
                     ) : (
                       <div className="sidebar-trip-item-row">
-                        <div className="sidebar-trip-title">{trip.title}</div>
+                        <div className="sidebar-trip-title-wrap">
+                          <div className="sidebar-trip-title">{trip.title}</div>
+                          {trip.attention && (
+                            <span
+                              className={`sidebar-trip-attention-dot ${trip.attention}`}
+                              aria-label={trip.attention === "thinking" ? "模型正在思考" : "有未读回复"}
+                              title={trip.attention === "thinking" ? "模型正在思考" : "有未读回复"}
+                            />
+                          )}
+                        </div>
                         {isEditing && (
                           <div className="sidebar-trip-actions">
                             <button
@@ -213,9 +223,10 @@ export function Sidebar({
                     )}
                   </div>
                 );
-              })}
-            </div>
-          )}
+                })}
+              </div>
+            )}
+          </div>
         </div>
       </aside>
 

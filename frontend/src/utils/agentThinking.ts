@@ -279,10 +279,7 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 export function buildNarrativeSentences(steps: AgentTraceStep[], userInput?: string): string[] {
   const sentences: string[] = [];
 
-  // 1. 用户输入开场
-  if (userInput && userInput.trim()) {
-    sentences.push(`用户说「${userInput.trim()}」`);
-  }
+  // 用户已知自己的输入，不再重复展示，专注呈现可理解的规划进度。
 
   for (const step of steps) {
     const d = step.details ?? {};
@@ -290,15 +287,11 @@ export function buildNarrativeSentences(steps: AgentTraceStep[], userInput?: str
     // ── 意图路由 ────────────────────────────────────────────
     if (step.step === "route_message") {
       const turnLabel = asText(d.turn_type_label) ?? asText(d.intent_type_label);
-      const evidence = asText(d.evidence);
-      const reason = asText(d.reason);
-
       const parts: string[] = [];
-      if (reason) parts.push(reason);
-      if (turnLabel) parts.push(`我会按「${turnLabel}」来帮你安排`);
-      if (d.inherit_previous === true) parts.push("会结合你前面说过的安排");
+      if (turnLabel) parts.push(`已识别为${turnLabel}`);
+      if (d.inherit_previous === true) parts.push("会结合之前的安排");
       if (d.preserve_scenario === true) parts.push("保留原来的出行主题");
-      if (!parts.length && evidence) parts.push("已理解你刚刚的需求");
+      if (!parts.length) parts.push("正在理解你的出行需求");
 
       if (parts.length) sentences.push(parts.join("，"));
       continue;
@@ -329,18 +322,7 @@ export function buildNarrativeSentences(steps: AgentTraceStep[], userInput?: str
 
     // ── 状态变更 ────────────────────────────────────────────
     if (step.step === "apply_query_delta") {
-      const kept = asTextList(d.kept);
-      const added = asTextList(d.added);
-      const removed = asTextList(d.removed);
-      const changed = isRecord(d.changed) ? Object.keys(d.changed) : [];
-
-      const parts: string[] = [];
-      if (kept.length) parts.push(`保留 ${kept.map(labelValue).join("、")}`);
-      if (added.length) parts.push(`新增 ${added.map(labelValue).join("、")}`);
-      if (changed.length) parts.push(`修改 ${changed.map(labelValue).join("、")}`);
-      if (removed.length) parts.push(`移除 ${removed.map(labelValue).join("、")}`);
-
-      if (parts.length) sentences.push(`我已按你的新想法调整：${parts.join("；")}`);
+      // 变更明细可能包含内部字段或规则表达，已在出行条件中体现，不单独展示。
       continue;
     }
 
@@ -356,17 +338,15 @@ export function buildNarrativeSentences(steps: AgentTraceStep[], userInput?: str
       continue;
     }
 
-    // ── 策略权重 ────────────────────────────────────────────
-    if (step.step === "build_strategy_weights") {
-      sentences.push("正在按你的偏好挑选更合适的方案");
+    // ── 策略匹配 ────────────────────────────────────────────
+    if (step.step === "derive_strategy_tags" || step.step === "build_strategy_weights") {
+      sentences.push("正在匹配符合你偏好的游玩节奏");
       continue;
     }
 
     // ── 召回 POI ────────────────────────────────────────────
     if (step.step === "search_pois") {
-      const names = asTextList(d.names).slice(0, 4);
-      const nameStr = names.length ? `（含 ${names.join("、")} 等）` : "";
-      sentences.push(`正在挑选合适的地点${nameStr}`);
+      sentences.push("正在从附近挑选合适的地点");
       continue;
     }
 
@@ -394,14 +374,11 @@ export function buildNarrativeSentences(steps: AgentTraceStep[], userInput?: str
       continue;
     }
 
-    // ── 兜底：用 label（fallback/error 步骤静默，不展示内部错误）───────────
+    // ── 未定义的系统步骤不向用户展示，避免暴露内部实现细节 ─────────────────
     if (step.status === "fallback" || step.status === "error") continue;
-    if (step.label && step.label.trim()) {
-      sentences.push(humanizeLabel(step.label));
-    }
   }
 
-  return sentences;
+  return sentences.filter((sentence, index) => sentences.indexOf(sentence) === index);
 }
 
 /**

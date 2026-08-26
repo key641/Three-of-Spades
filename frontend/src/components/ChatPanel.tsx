@@ -20,8 +20,8 @@ interface ChatPanelProps {
   afterFirstUserMessage?: React.ReactNode;
   /** 插入到消息列表末尾、loading 打字动效之前（如 AgentTrace） */
   beforeLoadingBubble?: React.ReactNode;
-  /** 插入到最后一条 assistant 消息之后（如路线方案卡片），仅在非 loading 状态显示 */
-  afterLastAssistant?: React.ReactNode;
+  /** 为某条回复提供其专属的附加内容（如该轮生成的方案卡片）。 */
+  renderAfterMessage?: (message: ChatMessage) => React.ReactNode;
 }
 
 // ── 追问卡片（活跃 / 只读两态） ────────────────────────────────
@@ -151,7 +151,7 @@ export function ChatPanel({
   onClarify,
   afterFirstUserMessage,
   beforeLoadingBubble,
-  afterLastAssistant,
+  renderAfterMessage,
 }: ChatPanelProps) {
   const bottomRef       = useRef<HTMLDivElement>(null);
   const agentTraceRef   = useRef<HTMLDivElement>(null);
@@ -244,12 +244,6 @@ export function ChatPanel({
   // 找到第一条 user 消息的索引，追问卡片插入其后
   const firstUserIdx = messages.findIndex((m) => m.role === "user");
 
-  // 最后一条 assistant 消息的索引：方案卡片插入其后
-  const lastAssistantIdx = messages.reduce<number>(
-    (acc, m, i) => (m.role === "assistant" ? i : acc),
-    -1,
-  );
-
   // 最后一条非 user 消息（assistant / clarify / trace）：loading 结束后滚到此处顶部
   const lastAiMsgIdx = messages.reduce<number>(
     (acc, m, i) => (m.role !== "user" ? i : acc),
@@ -320,10 +314,8 @@ export function ChatPanel({
             <>{afterFirstUserMessage}</>
           )}
 
-          {/* 最后一条 assistant 消息后插入方案卡片（非 loading 状态） */}
-          {afterLastAssistant && !loading && idx === lastAssistantIdx && (
-            <div style={{ marginTop: 0 }}>{afterLastAssistant}</div>
-          )}
+          {/* 已完成轮次的方案始终留在原位置；加载新一轮时只在列表末尾追加实时思考态。 */}
+          {renderAfterMessage?.(msg)}
         </React.Fragment>
       ))}
 

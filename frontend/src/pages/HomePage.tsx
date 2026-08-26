@@ -1,6 +1,8 @@
-import { Menu, Footprints, UtensilsCrossed, Zap, BadgePercent, Baby, Coffee, Navigation, Sparkles, MapPinned, ArrowUpRight } from "lucide-react";
+import { Menu, Footprints, UtensilsCrossed, Zap, BadgePercent, Baby, Coffee, Navigation } from "lucide-react";
 import type { Route } from "../api/types";
 import type { OnboardingProfile } from "../hooks/useOnboarding";
+import homeLogo from "../assets/home-logo.svg";
+import homeBackground from "../assets/home-background-250.png";
 
 export interface HomePageProps {
   profile: OnboardingProfile;
@@ -25,16 +27,7 @@ const QUICK_TAGS = [
 export function HomePage({ onOpenSidebar, onTagClick, activeTrip, onViewActiveTrip }: HomePageProps) {
   return (
     <div className="home-shell">
-      {/* 氛围层：以等高线和漫游轨迹建立“正在出发”的空间感。 */}
-      <div className="home-atmosphere" aria-hidden="true">
-        <span className="home-orbit home-orbit-one" />
-        <span className="home-orbit home-orbit-two" />
-        <span className="home-map-grid" />
-        <span className="home-route-line home-route-line-one" />
-        <span className="home-route-line home-route-line-two" />
-        <span className="home-location-ping home-location-ping-one" />
-        <span className="home-location-ping home-location-ping-two" />
-      </div>
+      <img src={homeBackground} alt="" className="home-background-art" aria-hidden="true" width={250} height={619} decoding="async" />
 
       {/* ── 顶部栏 ── */}
       <header className="home-topbar">
@@ -47,7 +40,6 @@ export function HomePage({ onOpenSidebar, onTagClick, activeTrip, onViewActiveTr
         >
           <Menu size={20} />
         </button>
-        <div className="home-topbar-status"><span />探索模式</div>
       </header>
 
       {activeTrip && (
@@ -64,20 +56,14 @@ export function HomePage({ onOpenSidebar, onTagClick, activeTrip, onViewActiveTr
       {/* ── 中间区域：品牌与出发引导 ── */}
       <main className="home-main-content">
         <div className="home-hero-brand">
-          <div className="home-hero-kicker"><Sparkles size={13} /> 为此刻的你规划</div>
+          <img src={homeLogo} alt="Drifto" className="home-brand-logo-img" />
           <h1 className="home-brand-title-text">Drifto，随心而行</h1>
           <p className="home-brand-slogan">把一个念头，变成一段值得出发的路线</p>
-          <div className="home-hero-signal" aria-label="AI 已准备好为你规划行程">
-            <span className="home-hero-signal-icon"><MapPinned size={15} /></span>
-            <span><b>AI 路线引擎已就绪</b><small>告诉我你的时间、心情和目的地</small></span>
-            <ArrowUpRight size={16} />
-          </div>
         </div>
       </main>
 
       {/* ── 底部沉底区域：快捷标签（输入栏由 App 层全局渲染） ── */}
       <footer className="home-bottom-dock">
-        <div className="home-quick-tags-heading"><span>从一个灵感开始</span><i /></div>
         {/* 快捷需求胶囊 */}
         <div className="home-quick-tags" role="group" aria-label="快捷需求标签">
           {QUICK_TAGS.map((tag) => {

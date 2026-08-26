@@ -11,6 +11,15 @@ import { RouteCard } from "./RouteCard";
 import { RouteTimeline, type PoiAction } from "./RouteTimeline";
 import { RouteOptimizeBar } from "./ActionBar";
 import { TripSummaryOverlay } from "./TripSummaryOverlay";
+import routeThemeCamera from "../assets/route-theme-camera.png";
+import routeThemeCoin from "../assets/route-theme-coin.png";
+import routeThemeKite from "../assets/route-theme-kite.png";
+import routeThemeMoon from "../assets/route-theme-moon.png";
+import routeThemeUmbrella from "../assets/route-theme-umbrella.png";
+import routeThemeBoy from "../assets/route-theme-boy.png";
+import routeThemeFood from "../assets/route-theme-food.png";
+import routeThemeFlower from "../assets/route-theme-flower.png";
+import routeThemeMilk from "../assets/route-theme-milk.png";
 
 export interface RouteCompareProps {
   routes: Route[];
@@ -750,19 +759,40 @@ const FALLBACK_GRADIENTS = [
   "linear-gradient(135deg, #F59E0B 0%, #EF4444 100%)",
 ];
 
-// 路线标签渐变色（与首页猜你喜欢标签风格一致）
+// 路线亮点标签：高饱和多巴胺配色，按方案顺序循环。
 const LABEL_GRADIENTS: [string, string][] = [
-  ["#FF6B6B", "#FF8E53"],
-  ["#4ECDC4", "#44A8AA"],
-  ["#FFD93D", "#FF9F1C"],
+["#ff5d8f", "#ff8a5b"],
+["#4f7cff", "#5bc8ff"],
+["#ffbd2e", "#ff7b54"],
+["#8b5cf6", "#d36cff"],
+["#18b98b", "#50d6a4"],
 ];
+
+const ROUTE_THEME_ILLUSTRATIONS: Record<string, { src: string; label: string }> = {
+  photo_citywalk: { src: routeThemeCamera, label: "相机" },
+  photo_food: { src: routeThemeCamera, label: "相机" },
+  budget: { src: routeThemeCoin, label: "金币" },
+  nature_relax: { src: routeThemeFlower, label: "花朵" },
+  night_friendly: { src: routeThemeMoon, label: "月亮" },
+  indoor_rainy: { src: routeThemeUmbrella, label: "雨伞" },
+  balanced: { src: routeThemeBoy, label: "出发" },
+  food_first: { src: routeThemeFood, label: "美食" },
+  low_walking: { src: routeThemeMilk, label: "轻松休闲" },
+};
+
+function getRouteThemeIllustration(route: Route) {
+  const routeText = `${route.title} ${route.summary}`;
+  if (/春游|踏青|春日/.test(routeText)) return { src: routeThemeKite, label: "风筝" };
+  return ROUTE_THEME_ILLUSTRATIONS[route.objective] ?? ROUTE_THEME_ILLUSTRATIONS.balanced;
+}
 
 function RouteSummaryCard({ route, index, onExpand, onPreview }: RouteSummaryCardProps) {
   const [imgIndex, setImgIndex] = useState(0);
+  const [failedImageUrls, setFailedImageUrls] = useState<Set<string>>(() => new Set());
   const stops = route.stops ?? [];
 
-  // 收集有封面图的 stops
-  const imgStops = stops.filter((s) => s.cover_image_url);
+  // 收集可展示的封面图。加载失败时即时移除，稳定回退到本地渐变背景。
+  const imgStops = stops.filter((s) => s.cover_image_url && !failedImageUrls.has(s.cover_image_url));
 
   const startTime = stops[0]?.start_time ?? "";
   const endTime   = stops[stops.length - 1]?.end_time ?? "";
@@ -783,6 +813,7 @@ function RouteSummaryCard({ route, index, onExpand, onPreview }: RouteSummaryCar
   // 图片角标保持简短，避免较长的推荐理由挤压封面图。
   const reasons = route.reasons ?? [];
   const badgeReason = reasons[0]?.slice(0, 7) ?? null;
+  const themeIllustration = getRouteThemeIllustration(route);
 
   // ── 图片滑动逻辑 ──────────────────────────────────────────
   const imgWrapRef = useRef<HTMLDivElement>(null);
@@ -839,6 +870,13 @@ function RouteSummaryCard({ route, index, onExpand, onPreview }: RouteSummaryCar
                   className="rsc-img"
                   src={s.cover_image_url}
                   alt={s.name}
+                  loading="lazy"
+                  decoding="async"
+                  onError={() => setFailedImageUrls((urls) => {
+                    const nextUrls = new Set(urls);
+                    nextUrls.add(s.cover_image_url!);
+                    return nextUrls;
+                  })}
                 />
               ))}
             </div>
@@ -870,6 +908,17 @@ function RouteSummaryCard({ route, index, onExpand, onPreview }: RouteSummaryCar
 
       {/* 右侧：文字内容 */}
       <div className="rsc-body">
+        <img
+          src={themeIllustration.src}
+          alt=""
+          className="rsc-theme-illustration"
+          aria-hidden="true"
+          width={58}
+          height={58}
+          loading="lazy"
+          decoding="async"
+        />
+
         {/* 第一行：标题 + 时间范围 */}
         <div className="rsc-top">
           <span className="rsc-title">{stripLeadingEmoji(route.title)}</span>

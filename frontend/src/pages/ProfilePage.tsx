@@ -2,7 +2,8 @@ import { useState } from "react";
 import { ArrowLeft, ChevronLeft, ChevronRight, Send } from "lucide-react";
 import type { OnboardingProfile } from "../hooks/useOnboarding";
 import { PhoneStatusBar } from "../App";
-import logoSvg from "../assets/logo.svg";
+import homeBackground from "../assets/home-background-250.png";
+import andyAvatar from "../assets/andy-avatar-64.png";
 
 const SCENARIO_LABEL: Record<string, string> = {
   citywalk: "街头漫游",
@@ -69,7 +70,8 @@ function FeedbackOverlay({ onClose }: { onClose: () => void }) {
 
 function AboutOverlay({ onClose }: { onClose: () => void }) {
   return (
-    <div className="profile-subpage-overlay">
+    <div className="profile-subpage-overlay about-subpage-overlay">
+      <img src={homeBackground} alt="" className="about-background-art" aria-hidden="true" width={250} height={619} decoding="async" />
       <PhoneStatusBar />
       <div className="profile-subpage-topbar">
         <button type="button" className="profile-subpage-back" onClick={onClose} aria-label="返回">
@@ -80,7 +82,6 @@ function AboutOverlay({ onClose }: { onClose: () => void }) {
       </div>
       <div className="about-body">
         <div className="about-hero">
-          <div className="about-logo-wrap"><img src={logoSvg} alt="Drifto" className="about-logo-img" /></div>
           <p className="about-tagline">随漂流动，随心而行</p>
         </div>
         <div className="about-content">
@@ -94,7 +95,7 @@ function AboutOverlay({ onClose }: { onClose: () => void }) {
             <div className="about-feature-item"><div><p className="about-feature-title">边走边改</p><p className="about-feature-desc">临时换地点、延长停留，一句话搞定</p></div></div>
           </div>
           <div className="about-divider" />
-          <p className="about-footer-text">Drifto 由美团黑客松团队「三张黑桃」打造<br /><span className="about-footer-sub">愿每一次出发，都刚刚好</span></p>
+          <p className="about-footer-text">Drifto 由黑客松团队「黑桃三」打造<br /><span className="about-footer-sub">愿每一次出发，都刚刚好</span></p>
         </div>
       </div>
     </div>
@@ -121,7 +122,7 @@ export function ProfilePage({ profile, onResetProfile, onBack }: ProfilePageProp
           <span className="profile-topbar-spacer" />
         </div>
         <div className="profile-header-user">
-          <div className="profile-avatar profile-avatar--initials">{(profile.nickname || "Andy").slice(0, 1).toUpperCase()}</div>
+          <img src={andyAvatar} alt="Andy" className="profile-avatar" width={48} height={48} decoding="async" />
           <div className="profile-header-info"><p className="profile-name">{profile.nickname || "旅行者"}</p></div>
         </div>
       </header>
@@ -138,7 +139,7 @@ export function ProfilePage({ profile, onResetProfile, onBack }: ProfilePageProp
         </section>
         <section className="profile-menu-list profile-menu-list--quiet">
           <button type="button" className="profile-menu-item" onClick={() => setShowFeedback(true)}><span className="profile-menu-label">意见反馈</span><ChevronRight size={14} className="profile-menu-arrow" /></button>
-          <button type="button" className="profile-menu-item" onClick={() => setShowAbout(true)}><span className="profile-menu-label">关于 Drifto 随漂流动</span><span className="profile-menu-version">v1.0.0</span></button>
+          <button type="button" className="profile-menu-item" onClick={() => setShowAbout(true)}><span className="profile-menu-label">关于 Drifto</span><span className="profile-menu-version">v1.0.0</span></button>
         </section>
       </div>
 
